@@ -102,6 +102,10 @@ class NotificationService : Service(), TextToSpeech.OnInitListener {
             while (isActive) {
                 Log.d(TAG, "Checking events cycle...")
 
+                // Retrieve user preference for announcement time, defaulting to 10 minutes
+                val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
+                val announceMinutes = prefs.getInt("announce_minutes", 10)
+
                 // Get both the formatted text for notification and the raw event objects for logic
                 val (notificationText, events) = readTodayEvents()
 
@@ -115,11 +119,14 @@ class NotificationService : Service(), TextToSpeech.OnInitListener {
                         val title = event.title
                         val begin = event.begin
 
-                        // Check if the event starts in 10 minutes (Window: 9 to 10 minutes)
+                        // Check if the event starts in the user-defined window (e.g. 9 to 10 minutes)
                         val timeDiff = begin - now
-                        if (timeDiff in (9 * 60 * 1000)..<(10 * 60 * 1000)) {
+                        val minWindow = (announceMinutes - 1) * 60 * 1000
+                        val maxWindow = announceMinutes * 60 * 1000
+                        
+                        if (timeDiff in minWindow..<maxWindow) {
                             if (isTtsReady) {
-                                Log.d(TAG, "Announcing event in 10 mins: $title")
+                                Log.d(TAG, "Announcing event in $announceMinutes mins: $title")
                                 val speechText = "Event: $title"
                                 tts.speak(speechText, TextToSpeech.QUEUE_ADD, null, title)
                             } else {
@@ -128,7 +135,7 @@ class NotificationService : Service(), TextToSpeech.OnInitListener {
                         }
                     }
                 }
-                // Check every 60 seconds to catch the 10-minute window
+                // Check every 60 seconds to catch the window
                 delay(60 * 1000L)
             }
         }
