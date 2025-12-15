@@ -17,12 +17,16 @@ import android.util.Log
 import kotlinx.coroutines.*
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.ranges.contains
 
 private const val CHANNEL_ID = "Calendar"
 private const val NOTIFICATION_ID = 1
 private const val TAG = "NotificationService"
 
 class NotificationService : Service(), TextToSpeech.OnInitListener {
+
+    // Data class to hold event details for both logic (timestamp) and display
+    private data class CalendarEvent(val title: String, val begin: Long)
 
     private val serviceJob = Job()
     private val serviceScope = CoroutineScope(Dispatchers.Main + serviceJob)
@@ -54,7 +58,7 @@ class NotificationService : Service(), TextToSpeech.OnInitListener {
                 .build()
 
             tts.setAudioAttributes(audioAttributes)
-            
+
             // Check if language is supported and log the result
             val result = tts.setLanguage(Locale.getDefault())
             if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
@@ -97,9 +101,32 @@ class NotificationService : Service(), TextToSpeech.OnInitListener {
         serviceScope.launch(Dispatchers.IO) {
             while (isActive) {
                 Log.d(TAG, "Checking events cycle...")
-                val eventsText = readTodayEvents()
+
+                // Get both the formatted text for notification and the raw event objects for logic
+                val (notificationText, events) = readTodayEvents()
+
+                val now = System.currentTimeMillis()
+
                 withContext(Dispatchers.Main) {
-                    startForegroundServiceState(eventsText)
+                    startForegroundServiceState(notificationText)
+
+                    for (event in events) {
+                        // Access properties directly from the data object
+                        val title = event.title
+                        val begin = event.begin
+
+                        // Check if the event starts in 10 minutes (Window: 9 to 10 minutes)
+                        val timeDiff = begin - now
+                        if (timeDiff in (9 * 60 * 1000)..<(10 * 60 * 1000)) {
+                            if (isTtsReady) {
+                                Log.d(TAG, "Announcing event in 10 mins: $title")
+                                val speechText = "Event: $title"
+                                tts.speak(speechText, TextToSpeech.QUEUE_ADD, null, title)
+                            } else {
+                                Log.w(TAG, "TTS not ready, skipping event: $title")
+                            }
+                        }
+                    }
                 }
                 // Check every 60 seconds to catch the 10-minute window
                 delay(60 * 1000L)
@@ -107,9 +134,10 @@ class NotificationService : Service(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun readTodayEvents(): String {
-        val events = mutableListOf<String>()
-        val now = System.currentTimeMillis()
+    // Refactored to return Pair<String, List<CalendarEvent>> to provide both display text and raw data
+    private fun readTodayEvents(): Pair<String, List<CalendarEvent>> {
+        val events = mutableListOf<CalendarEvent>()
+        val displayStrings = mutableListOf<String>()
 
         try {
             val projection = arrayOf(
@@ -151,32 +179,24 @@ class NotificationService : Service(), TextToSpeech.OnInitListener {
                 while (it.moveToNext()) {
                     val title = it.getString(titleIdx) ?: "No Title"
                     val begin = it.getLong(beginIdx)
-                    events.add("${dateFormat.format(Date(begin))} $title")
 
-                    // Check if the event starts in 10 minutes (within a 1-minute window)
-                    // Range: [10 mins, 11 mins)
-                    val timeDiff = begin - now
-                    if (timeDiff in (1 * 60 * 1000)..<(111 * 60 * 1000)) {
-                        if (isTtsReady) {
-                            Log.d(TAG, "Announcing event in 10 mins: $title")
-                            val speechText = "Event: $title"
-                            tts.speak(speechText, TextToSpeech.QUEUE_ADD, null, title)
-                        } else {
-                            Log.w(TAG, "TTS not ready, skipping event: $title")
-                        }
-                    }
+                    // Add to object list for logic
+                    events.add(CalendarEvent(title, begin))
+                    // Add to string list for notification display
+                    displayStrings.add("${dateFormat.format(Date(begin))} $title")
                 }
             }
         } catch (e: SecurityException) {
             Log.e(TAG, "Permission denied reading calendar", e)
-            return "Permission denied"
+            return Pair("Permission denied", emptyList())
         } catch (e: Exception) {
             Log.e(TAG, "Error reading calendar", e)
-            return "Error reading calendar: ${e.localizedMessage}"
+            return Pair("Error reading calendar: ${e.localizedMessage}", emptyList())
         }
 
-        if (events.isEmpty()) return "No events today"
-        return events.joinToString("\n")
+        if (events.isEmpty()) return Pair("No events today", emptyList())
+
+        return Pair(displayStrings.joinToString("\n"), events)
     }
 
     private fun createNotificationChannel() {
