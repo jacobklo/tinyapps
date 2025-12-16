@@ -135,8 +135,8 @@ class NotificationService : Service(), TextToSpeech.OnInitListener {
                         }
                     }
                 }
-                // Check every 60 seconds to catch the window
-                delay(60 * 1000L)
+                // Check every 59 seconds to catch the window
+                delay(59 * 1000L)
             }
         }
     }
