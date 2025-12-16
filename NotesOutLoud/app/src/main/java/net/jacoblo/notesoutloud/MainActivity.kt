@@ -1,0 +1,682 @@
+package net.jacoblo.notesoutloud
+
+import android.annotation.SuppressLint
+import android.content.Context
+import android.content.Intent
+import android.graphics.Bitmap
+import android.os.Bundle
+import android.view.ViewGroup
+import android.webkit.JavascriptInterface
+import android.webkit.WebChromeClient
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.widget.FrameLayout
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import net.jacoblo.notesoutloud.ui.theme.NotesOutLoudTheme
+import org.json.JSONArray
+import org.json.JSONObject
+
+data class TocItem(val id: String, val text: String, val level: Int)
+
+class TocJavascriptInterface(private val onTocLoaded: (List<TocItem>) -> Unit) {
+    @JavascriptInterface
+    fun updateToc(json: String) {
+        try {
+            val items = ArrayList<TocItem>()
+            val jsonArray = JSONArray(json)
+            for (i in 0 until jsonArray.length()) {
+                val obj = jsonArray.getJSONObject(i)
+                items.add(TocItem(
+                    obj.getString("id"),
+                    obj.getString("text"),
+                    obj.getInt("level")
+                ))
+            }
+            onTocLoaded(items)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+}
+
+class MainActivity : ComponentActivity() {
+    
+    // Manage tabs at Activity level
+    private val tabs = mutableStateListOf<BrowserTab>()
+    private val activeTabIndex = mutableStateOf(0)
+    
+    // Store injected scripts (URL and Content)
+    private val userScripts = mutableStateListOf<UserScript>()
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+
+        // Load saved tabs and scripts from persistent storage
+        loadSavedState()
+
+        // Handle initial intent
+        handleIntent(intent)
+
+        setContent {
+            NotesOutLoudTheme {
+                BrowserScreen(
+                    tabs = tabs,
+                    activeTabIndex = activeTabIndex.value,
+                    userScripts = userScripts,
+                    onTabSelected = { activeTabIndex.value = it },
+                    onNewTab = { addNewTab() },
+                    onCloseTab = { closeTab(it) },
+                    onAddScript = { url -> addScript(url) },
+                    onRemoveScript = { script -> userScripts.remove(script) },
+                    onZoomIn = {
+                        tabs.getOrNull(activeTabIndex.value)?.webView?.zoomIn()
+                    },
+                    onZoomOut = {
+                        tabs.getOrNull(activeTabIndex.value)?.webView?.zoomOut()
+                    }
+                )
+            }
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        saveState()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        if (intent?.action == Intent.ACTION_VIEW) {
+            val url = intent.dataString
+            if (url != null) {
+                addNewTab(url)
+            }
+        } else if (tabs.isEmpty()) {
+            addNewTab("https://www.google.com")
+        }
+    }
+
+    private fun addNewTab(url: String = "https://www.google.com") {
+        val tocItems = mutableStateListOf<TocItem>()
+        // Callback to update TOC items on the Main thread
+        val onTocLoaded: (List<TocItem>) -> Unit = { items ->
+             lifecycleScope.launch(Dispatchers.Main) {
+                 tocItems.clear()
+                 tocItems.addAll(items)
+             }
+        }
+
+        val webView = createWebView(onTocLoaded)
+        webView.loadUrl(url)
+        tabs.add(BrowserTab(webView, mutableStateOf(url), mutableStateOf("New Tab"), tocItems))
+        activeTabIndex.value = tabs.lastIndex
+    }
+
+    private fun closeTab(index: Int) {
+        if (index in tabs.indices) {
+            val tab = tabs.removeAt(index)
+            tab.webView.destroy()
+            if (activeTabIndex.value >= tabs.size) {
+                activeTabIndex.value = maxOf(0, tabs.size - 1)
+            }
+        }
+    }
+
+    private fun saveState() {
+        val sharedPref = getPreferences(Context.MODE_PRIVATE) ?: return
+        with(sharedPref.edit()) {
+            val tabsJson = JSONArray()
+            tabs.forEach { tab ->
+                tabsJson.put(tab.url.value)
+            }
+            putString("saved_tabs", tabsJson.toString())
+            
+            val scriptsJson = JSONArray()
+            userScripts.forEach { script ->
+                val scriptObj = JSONObject()
+                scriptObj.put("url", script.url)
+                scriptObj.put("content", script.content)
+                scriptsJson.put(scriptObj)
+            }
+            putString("saved_scripts", scriptsJson.toString())
+            
+            apply()
+        }
+    }
+
+    private fun loadSavedState() {
+        val sharedPref = getPreferences(Context.MODE_PRIVATE) ?: return
+        
+        val savedScripts = sharedPref.getString("saved_scripts", null)
+        if (savedScripts != null) {
+            try {
+                val jsonArray = JSONArray(savedScripts)
+                for (i in 0 until jsonArray.length()) {
+                    val obj = jsonArray.getJSONObject(i)
+                    userScripts.add(UserScript(obj.getString("url"), obj.getString("content")))
+                }
+            } catch (e: Exception) { 
+                e.printStackTrace() 
+            }
+        }
+
+        val savedTabs = sharedPref.getString("saved_tabs", null)
+        if (savedTabs != null) {
+            try {
+                val jsonArray = JSONArray(savedTabs)
+                for (i in 0 until jsonArray.length()) {
+                    val url = jsonArray.getString(i)
+                    if (url.isNotEmpty()) {
+                        addNewTab(url)
+                    }
+                }
+            } catch (e: Exception) { 
+                e.printStackTrace() 
+            }
+        }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
+    private fun createWebView(onTocLoaded: (List<TocItem>) -> Unit): WebView {
+        return WebView(this).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            settings.allowFileAccess = true
+            settings.allowContentAccess = true
+            settings.setSupportZoom(true)
+            settings.builtInZoomControls = true
+            settings.displayZoomControls = false
+
+            // Add interface for TOC
+            addJavascriptInterface(TocJavascriptInterface(onTocLoaded), "AndroidToc")
+
+            webViewClient = object : WebViewClient() {
+                override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                    super.onPageStarted(view, url, favicon)
+                    tabs.find { it.webView == view }?.url?.value = url ?: ""
+                }
+                
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    super.onPageFinished(view, url)
+                    tabs.find { it.webView == view }?.title?.value = view?.title ?: "No Title"
+
+                    // Inject User Scripts
+                    userScripts.forEach { script ->
+                        if (script.content.isNotEmpty()) {
+                            view?.evaluateJavascript(script.content, null)
+                        }
+                    }
+
+                    // Inject TOC Extraction Script
+                    val tocScript = """
+                        (function() {
+                            var headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6, details > summary'));
+                            var toc = [];
+                            var idCounter = 0;
+                            for (var i = 0; i < headings.length; i++) {
+                                var el = headings[i];
+                                if (!el.id) {
+                                    el.id = 'android_toc_' + (idCounter++);
+                                }
+                                var level = 1;
+                                if (el.tagName.match(/^H\d$/)) {
+                                    level = parseInt(el.tagName.substring(1));
+                                } else if (el.tagName === 'SUMMARY') {
+                                    var current = el.parentElement;
+                                    var depth = 0;
+                                    while (current && current !== document.body) {
+                                        if (current.tagName === 'DETAILS') depth++;
+                                        current = current.parentElement;
+                                    }
+                                    level = Math.min(6, depth);
+                                }
+                                toc.push({id: el.id, text: el.innerText.trim(), level: level});
+                            }
+                            if (window.AndroidToc) {
+                                window.AndroidToc.updateToc(JSON.stringify(toc));
+                            }
+                        })();
+                    """.trimIndent()
+                    view?.evaluateJavascript(tocScript, null)
+                }
+            }
+            
+            webChromeClient = WebChromeClient()
+        }
+    }
+    
+    private fun addScript(url: String) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val content = if (url.startsWith("http")) {
+                    java.net.URL(url).readText()
+                } else if (url.startsWith("file://")) {
+                    java.io.File(url.removePrefix("file://")).readText()
+                } else {
+                    ""
+                }
+                
+                if (content.isNotEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        userScripts.add(UserScript(url, content))
+                        Toast.makeText(this@MainActivity, "Script added", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "Failed to read script or empty", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+}
+
+data class BrowserTab(
+    val webView: WebView,
+    val url: MutableState<String>,
+    val title: MutableState<String>,
+    val tocItems: SnapshotStateList<TocItem>,
+    val showToc: MutableState<Boolean> = mutableStateOf(false)
+)
+
+data class UserScript(
+    val url: String,
+    val content: String
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun BrowserScreen(
+    tabs: List<BrowserTab>,
+    activeTabIndex: Int,
+    userScripts: List<UserScript>,
+    onTabSelected: (Int) -> Unit,
+    onNewTab: () -> Unit,
+    onCloseTab: (Int) -> Unit,
+    onAddScript: (String) -> Unit,
+    onRemoveScript: (UserScript) -> Unit,
+    onZoomIn: () -> Unit,
+    onZoomOut: () -> Unit
+) {
+    var showTabList by remember { mutableStateOf(false) }
+    var showScriptList by remember { mutableStateOf(false) }
+    
+    val activeTab = tabs.getOrNull(activeTabIndex)
+    
+    BackHandler(enabled = activeTab?.webView?.canGoBack() == true) {
+        activeTab?.webView?.goBack()
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    if (activeTab != null) {
+                        var text by remember(activeTab.url.value) { mutableStateOf(activeTab.url.value) }
+                        OutlinedTextField(
+                            value = text,
+                            onValueChange = { text = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Go),
+                            keyboardActions = KeyboardActions(onGo = {
+                                var urlToLoad = text
+                                if (!urlToLoad.startsWith("http") && !urlToLoad.startsWith("file") && !urlToLoad.startsWith("content")) {
+                                    urlToLoad = "https://$urlToLoad"
+                                }
+                                activeTab.webView.loadUrl(urlToLoad)
+                            }),
+                            leadingIcon = {
+                                IconButton(onClick = { showScriptList = true }) {
+                                    Icon(Icons.Default.Build, contentDescription = "Inject JS")
+                                }
+                            }
+                        )
+                    }
+                },
+                actions = {
+                    // TOC Toggle
+                    IconButton(onClick = { 
+                        if (activeTab != null) {
+                            activeTab.showToc.value = !activeTab.showToc.value
+                        }
+                    }) {
+                        Icon(
+                            Icons.Default.List, 
+                            contentDescription = "Table of Contents",
+                            tint = if (activeTab?.showToc?.value == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    IconButton(onClick = onZoomOut) {
+                        Text("-", fontWeight = FontWeight.Bold, fontSize = 24.sp)
+                    }
+                    IconButton(onClick = onZoomIn) {
+                        Icon(Icons.Default.Add, contentDescription = "Zoom In")
+                    }
+
+                    IconButton(onClick = { showTabList = true }) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(imageVector = Icons.Default.Menu, contentDescription = "Tabs")
+                            if (tabs.isNotEmpty()) {
+                                Text(
+                                    text = tabs.size.toString(),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
+                                        .padding(2.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                            }
+                        }
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+            if (activeTab != null) {
+                Row(modifier = Modifier.fillMaxSize()) {
+                    // WebView Container
+                    Box(modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()) {
+                        AndroidView(
+                            factory = { context ->
+                                FrameLayout(context).apply { 
+                                    layoutParams = ViewGroup.LayoutParams(
+                                        ViewGroup.LayoutParams.MATCH_PARENT, 
+                                        ViewGroup.LayoutParams.MATCH_PARENT
+                                    )
+                                }
+                            },
+                            update = { container ->
+                                if (container.childCount > 0 && container.getChildAt(0) != activeTab.webView) {
+                                    container.removeAllViews()
+                                }
+                                if (container.childCount == 0) {
+                                    (activeTab.webView.parent as? ViewGroup)?.removeView(activeTab.webView)
+                                    container.addView(activeTab.webView)
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    
+                    // TOC Sidebar
+                    if (activeTab.showToc.value) {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth(0.25f)
+                                .fillMaxHeight(),
+                            tonalElevation = 2.dp,
+                            shadowElevation = 4.dp
+                        ) {
+                            Column {
+                                Text(
+                                    text = "Table of Contents",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.padding(8.dp),
+                                    fontWeight = FontWeight.Bold
+                                )
+                                HorizontalDivider()
+                                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                                    items(activeTab.tocItems) { item ->
+                                        // Calculate Indentation
+                                        val indent = 8.dp * (item.level - 1)
+
+                                        Text(
+                                            text = item.text.ifBlank { item.id },
+                                            style = MaterialTheme.typography.bodySmall,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    val script = "document.getElementById('${item.id}').scrollIntoView({behavior: 'smooth'});"
+                                                    activeTab.webView.evaluateJavascript(script, null)
+                                                }
+                                                .padding(start = 8.dp + indent, top = 8.dp, bottom = 8.dp, end = 8.dp),
+                                            maxLines = 3,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        HorizontalDivider(thickness = 0.5.dp, color = Color.LightGray.copy(alpha = 0.5f))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Button(onClick = onNewTab) {
+                        Text("Open New Tab")
+                    }
+                }
+            }
+        }
+    }
+
+    if (showTabList) {
+        Dialog(onDismissRequest = { showTabList = false }) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(400.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth(), 
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Tabs", style = MaterialTheme.typography.titleLarge)
+                        IconButton(onClick = { 
+                            onNewTab()
+                            showTabList = false 
+                        }) {
+                            Icon(Icons.Default.Add, "New Tab")
+                        }
+                    }
+                    
+                    Spacer(Modifier.height(8.dp))
+                    
+                    LazyColumn {
+                        itemsIndexed(tabs) { index, tab ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                                    .clickable {
+                                        onTabSelected(index)
+                                        showTabList = false
+                                    },
+                            ) {
+                                Row(
+                                    Modifier.padding(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            text = tab.title.value,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            maxLines = 1
+                                        )
+                                        Text(
+                                            text = tab.url.value,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            maxLines = 1
+                                        )
+                                    }
+                                    IconButton(onClick = { onCloseTab(index) }) {
+                                        Icon(Icons.Default.Close, "Close")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Script Injection Dialog
+    if (showScriptList) {
+        var showAddScriptInput by remember { mutableStateOf(false) }
+        var newScriptUrl by remember { mutableStateOf("") }
+        
+        Dialog(onDismissRequest = { showScriptList = false }) {
+             Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(400.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth(), 
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Inject JS", style = MaterialTheme.typography.titleLarge)
+                        if (!showAddScriptInput) {
+                            IconButton(onClick = { showAddScriptInput = true }) {
+                                Icon(Icons.Default.Add, "Add Script")
+                            }
+                        }
+                    }
+                    
+                    Spacer(Modifier.height(8.dp))
+                    
+                    if (showAddScriptInput) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(
+                                value = newScriptUrl,
+                                onValueChange = { newScriptUrl = it },
+                                label = { Text("Script URL") },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true
+                            )
+                            IconButton(onClick = {
+                                if (newScriptUrl.isNotBlank()) {
+                                    onAddScript(newScriptUrl)
+                                    newScriptUrl = ""
+                                    showAddScriptInput = false
+                                }
+                            }) {
+                                Icon(Icons.Default.Add, "Add")
+                            }
+                        }
+                    }
+                    
+                    Spacer(Modifier.height(8.dp))
+                    
+                    LazyColumn {
+                        itemsIndexed(userScripts) { index, script ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                Row(
+                                    Modifier.padding(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            text = script.url,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            maxLines = 2
+                                        )
+                                    }
+                                    IconButton(onClick = { onRemoveScript(script) }) {
+                                        Icon(Icons.Default.Delete, "Delete")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
