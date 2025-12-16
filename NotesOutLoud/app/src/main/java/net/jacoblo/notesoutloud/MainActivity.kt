@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Bundle
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
@@ -28,6 +30,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -35,12 +38,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -66,6 +72,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -73,11 +80,13 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import net.jacoblo.notesoutloud.ui.theme.NotesOutLoudTheme
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Locale
 
 data class TocItem(val id: String, val text: String, val level: Int)
 
@@ -102,7 +111,7 @@ class TocJavascriptInterface(private val onTocLoaded: (List<TocItem>) -> Unit) {
     }
 }
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     
     // Manage tabs at Activity level
     private val tabs = mutableStateListOf<BrowserTab>()
@@ -111,9 +120,21 @@ class MainActivity : ComponentActivity() {
     // Store injected scripts (URL and Content)
     private val userScripts = mutableStateListOf<UserScript>()
 
+    // TextToSpeech Engine
+    private var tts: TextToSpeech? = null
+    private var isTtsReady = false
+    private val isTtsPlaying = mutableStateOf(false)
+    private val isTtsRandom = mutableStateOf(false)
+    private val ttsDelaySeconds = mutableStateOf("2")
+    private var currentParaIndex = 0
+    private var ttsParagraphCount = 0
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Initialize TTS
+        tts = TextToSpeech(this, this)
 
         // Load saved tabs and scripts from persistent storage
         loadSavedState()
@@ -137,8 +158,141 @@ class MainActivity : ComponentActivity() {
                     },
                     onZoomOut = {
                         tabs.getOrNull(activeTabIndex.value)?.webView?.zoomOut()
-                    }
+                    },
+                    // Pass TTS state and callbacks to UI
+                    onTtsPlay = { startTts() },
+                    onTtsStop = { stopTts() },
+                    isTtsPlaying = isTtsPlaying.value,
+                    isTtsRandom = isTtsRandom.value,
+                    onToggleTtsRandom = { isTtsRandom.value = !isTtsRandom.value },
+                    ttsDelay = ttsDelaySeconds.value,
+                    onTtsDelayChange = { ttsDelaySeconds.value = it },
+                    onTocClick = { id -> handleTocClick(id) }
                 )
+            }
+        }
+    }
+
+    override fun onInit(status: Int) {
+        if (status == TextToSpeech.SUCCESS) {
+            val result = tts?.setLanguage(Locale.US)
+            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                Toast.makeText(this, "TTS Language not supported", Toast.LENGTH_SHORT).show()
+            } else {
+                isTtsReady = true
+                tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) {}
+                    override fun onDone(utteranceId: String?) {
+                        // After speaking, wait for delay then play next
+                        lifecycleScope.launch(Dispatchers.Main) {
+                            val delayMs = (ttsDelaySeconds.value.toLongOrNull() ?: 2L) * 1000
+                            delay(delayMs)
+                            if (isTtsPlaying.value) {
+                                playNextParagraph()
+                            }
+                        }
+                    }
+                    override fun onError(utteranceId: String?) {
+                        isTtsPlaying.value = false
+                    }
+                })
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        tts?.stop()
+        tts?.shutdown()
+        super.onDestroy()
+    }
+
+    private fun startTts() {
+        if (!isTtsReady) {
+            Toast.makeText(this, "TTS not ready", Toast.LENGTH_SHORT).show()
+            return
+        }
+        isTtsPlaying.value = true
+        val webView = tabs.getOrNull(activeTabIndex.value)?.webView ?: return
+
+        // Get total paragraph count first
+        webView.evaluateJavascript("window.AndroidTtsHelper.getCount()") { countStr ->
+            ttsParagraphCount = countStr?.toIntOrNull() ?: 0
+            if (ttsParagraphCount > 0) {
+                // If we haven't started anywhere, start at 0
+                if (currentParaIndex >= ttsParagraphCount) currentParaIndex = 0
+                playNextParagraph(speakCurrent = true)
+            } else {
+                Toast.makeText(this, "No paragraphs found", Toast.LENGTH_SHORT).show()
+                isTtsPlaying.value = false
+            }
+        }
+    }
+
+    private fun stopTts() {
+        isTtsPlaying.value = false
+        tts?.stop()
+        val webView = tabs.getOrNull(activeTabIndex.value)?.webView
+        // Remove highlight in JS
+        webView?.evaluateJavascript("window.AndroidTtsHelper.highlight(-1)", null)
+    }
+
+    private fun playNextParagraph(speakCurrent: Boolean = false) {
+        if (!isTtsPlaying.value) return
+
+        if (!speakCurrent) {
+            if (isTtsRandom.value) {
+                currentParaIndex = (0 until ttsParagraphCount).random()
+            } else {
+                currentParaIndex++
+                if (currentParaIndex >= ttsParagraphCount) {
+                    stopTts() // End of document
+                    return
+                }
+            }
+        }
+
+        val webView = tabs.getOrNull(activeTabIndex.value)?.webView ?: return
+        
+        // 1. Highlight the paragraph
+        // 2. Get the text
+        val script = """
+            (function() {
+                window.AndroidTtsHelper.highlight($currentParaIndex);
+                return window.AndroidTtsHelper.getParaText($currentParaIndex);
+            })();
+        """.trimIndent()
+
+        webView.evaluateJavascript(script) { text ->
+            // JSON string result might be quoted "text" or "null"
+            val cleanText = text?.trim()?.removeSurrounding("\"")
+                ?.replace("\\n", " ")
+                ?.replace("\\\"", "\"") ?: ""
+
+            if (cleanText.isNotEmpty() && cleanText != "null") {
+                val params = Bundle()
+                params.putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "TTS_ID")
+                tts?.speak(cleanText, TextToSpeech.QUEUE_FLUSH, params, "TTS_ID")
+            } else {
+                // If empty text, skip to next immediately
+                playNextParagraph()
+            }
+        }
+    }
+
+    private fun handleTocClick(id: String) {
+        val webView = tabs.getOrNull(activeTabIndex.value)?.webView ?: return
+        // Scroll to header
+        webView.evaluateJavascript("document.getElementById('$id').scrollIntoView({behavior: 'smooth'});", null)
+        
+        // Find corresponding paragraph to start TTS
+        webView.evaluateJavascript("window.AndroidTtsHelper.getParaIndexAfter('$id')") { res ->
+            val idx = res?.toIntOrNull() ?: -1
+            if (idx != -1) {
+                currentParaIndex = idx
+            }
+            if (isTtsPlaying.value) {
+                // Start speaking from this section
+                playNextParagraph(speakCurrent = true)
             }
         }
     }
@@ -278,6 +432,48 @@ class MainActivity : ComponentActivity() {
                             view?.evaluateJavascript(script.content, null)
                         }
                     }
+                    
+                    // Inject TTS Helper Logic (Matches content.js logic for collecting/highlighting paragraphs)
+                    val ttsHelperScript = """
+                        window.AndroidTtsHelper = {
+                            paragraphs: [],
+                            init: function() {
+                                // Collect all non-empty paragraphs
+                                this.paragraphs = Array.from(document.querySelectorAll('p'))
+                                    .filter(p => p.innerText.trim().length > 0);
+                            },
+                            getParaText: function(index) {
+                                if(index < 0 || index >= this.paragraphs.length) return null;
+                                return this.paragraphs[index].innerText;
+                            },
+                            highlight: function(index) {
+                                 // Remove existing highlights
+                                 document.querySelectorAll('.ext-tts-highlight').forEach(e => e.classList.remove('ext-tts-highlight'));
+                                 if(index >= 0 && index < this.paragraphs.length) {
+                                     const el = this.paragraphs[index];
+                                     el.classList.add('ext-tts-highlight');
+                                     el.scrollIntoView({behavior: 'smooth', block: 'center'});
+                                 }
+                            },
+                            getParaIndexAfter: function(elementId) {
+                                // Find first paragraph that follows the given element ID
+                                const target = document.getElementById(elementId);
+                                if(!target) return -1;
+                                return this.paragraphs.findIndex(p => 
+                                    (target.compareDocumentPosition(p) & Node.DOCUMENT_POSITION_FOLLOWING)
+                                );
+                            },
+                            getCount: function() { return this.paragraphs.length; }
+                        };
+                        (function(){
+                            // Inject highlight styles
+                            const style = document.createElement('style');
+                            style.textContent = ".ext-tts-highlight { outline: 3px solid #4285F4 !important; background-color: rgba(66, 133, 244, 0.05) !important; transition: all 0.3s ease-in-out; }";
+                            document.head.appendChild(style);
+                            window.AndroidTtsHelper.init();
+                        })();
+                    """.trimIndent()
+                    view?.evaluateJavascript(ttsHelperScript, null)
 
                     // Inject TOC Extraction Script
                     val tocScript = """
@@ -373,7 +569,16 @@ fun BrowserScreen(
     onAddScript: (String) -> Unit,
     onRemoveScript: (UserScript) -> Unit,
     onZoomIn: () -> Unit,
-    onZoomOut: () -> Unit
+    onZoomOut: () -> Unit,
+    // TTS Params
+    onTtsPlay: () -> Unit,
+    onTtsStop: () -> Unit,
+    isTtsPlaying: Boolean,
+    isTtsRandom: Boolean,
+    onToggleTtsRandom: () -> Unit,
+    ttsDelay: String,
+    onTtsDelayChange: (String) -> Unit,
+    onTocClick: (String) -> Unit
 ) {
     var showTabList by remember { mutableStateOf(false) }
     var showScriptList by remember { mutableStateOf(false) }
@@ -412,6 +617,34 @@ fun BrowserScreen(
                     }
                 },
                 actions = {
+                    // TTS Controls (Right of URL Bar)
+                    if (activeTab != null) {
+                        // Delay Input
+                        OutlinedTextField(
+                            value = ttsDelay,
+                            onValueChange = onTtsDelayChange,
+                            modifier = Modifier.width(60.dp),
+                            label = { Text("s", fontSize = 10.sp) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        )
+
+                        // Play/Stop
+                        IconButton(onClick = { if(isTtsPlaying) onTtsStop() else onTtsPlay() }) {
+                             val icon = if(isTtsPlaying) Icons.Default.Close else Icons.Default.PlayArrow
+                             val tint = if(isTtsPlaying) Color.Red else Color.Green
+                             Icon(icon, contentDescription = "Toggle TTS", tint = tint)
+                        }
+
+                        // Random/Sequential
+                        IconButton(onClick = onToggleTtsRandom) {
+                             val tint = if(isTtsRandom) Color(0xFFFBBC05) else MaterialTheme.colorScheme.onSurface
+                             // Reuse Refresh icon as shuffle proxy or use specific shuffle if available, 
+                             // using Refresh for now as standard icon set is limited in imports
+                             Icon(Icons.Default.Refresh, contentDescription = "Shuffle", tint = tint)
+                        }
+                    }
+
                     // TOC Toggle
                     IconButton(onClick = { 
                         if (activeTab != null) {
@@ -509,8 +742,8 @@ fun BrowserScreen(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .clickable {
-                                                    val script = "document.getElementById('${item.id}').scrollIntoView({behavior: 'smooth'});"
-                                                    activeTab.webView.evaluateJavascript(script, null)
+                                                    // Delegate click to main activity
+                                                    onTocClick(item.id)
                                                 }
                                                 .padding(start = 8.dp + indent, top = 8.dp, bottom = 8.dp, end = 8.dp),
                                             maxLines = 3,
