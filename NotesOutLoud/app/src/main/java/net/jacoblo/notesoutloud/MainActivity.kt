@@ -1,10 +1,16 @@
 package net.jacoblo.notesoutloud
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.view.ViewGroup
@@ -78,6 +84,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -136,6 +144,9 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // Check and request storage permissions for file:// access
+        checkAndRequestPermissions()
+
         // Initialize TTS
         tts = TextToSpeech(this, this)
 
@@ -175,6 +186,26 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     isDarkMode = isDarkMode.value,
                     onToggleDarkMode = { toggleDarkMode() }
                 )
+            }
+        }
+    }
+
+    private fun checkAndRequestPermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!Environment.isExternalStorageManager()) {
+                try {
+                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                    intent.addCategory("android.intent.category.DEFAULT")
+                    intent.data = Uri.parse(String.format("package:%s", applicationContext.packageName))
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                    startActivity(intent)
+                }
+            }
+        } else {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE), 101)
             }
         }
     }
@@ -467,6 +498,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             settings.domStorageEnabled = true
             settings.allowFileAccess = true
             settings.allowContentAccess = true
+            settings.allowFileAccessFromFileURLs = true
+            settings.allowUniversalAccessFromFileURLs = true
             settings.setSupportZoom(true)
             settings.builtInZoomControls = true
             settings.displayZoomControls = false
@@ -669,8 +702,10 @@ fun BrowserScreen(
                             keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Go),
                             keyboardActions = KeyboardActions(onGo = {
                                 var urlToLoad = text
-                                if (!urlToLoad.startsWith("http") && !urlToLoad.startsWith("file") && !urlToLoad.startsWith("content")) {
-                                    urlToLoad = "https://$urlToLoad"
+                                if (urlToLoad.startsWith("/")) {
+                                    urlToLoad = "file://\$urlToLoad"
+                                } else if (!urlToLoad.startsWith("http") && !urlToLoad.startsWith("file") && !urlToLoad.startsWith("content")) {
+                                    urlToLoad = "https://\$urlToLoad"
                                 }
                                 activeTab.webView.loadUrl(urlToLoad)
                             }),
