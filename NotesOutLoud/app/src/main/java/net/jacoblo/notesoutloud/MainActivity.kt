@@ -119,6 +119,9 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     
     // Store injected scripts (URL and Content)
     private val userScripts = mutableStateListOf<UserScript>()
+    
+    // Dark Mode state
+    private val isDarkMode = mutableStateOf(false)
 
     // TextToSpeech Engine
     private var tts: TextToSpeech? = null
@@ -167,7 +170,10 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     onToggleTtsRandom = { isTtsRandom.value = !isTtsRandom.value },
                     ttsDelay = ttsDelaySeconds.value,
                     onTtsDelayChange = { ttsDelaySeconds.value = it },
-                    onTocClick = { id -> handleTocClick(id) }
+                    onTocClick = { id -> handleTocClick(id) },
+                    // Dark Mode
+                    isDarkMode = isDarkMode.value,
+                    onToggleDarkMode = { toggleDarkMode() }
                 )
             }
         }
@@ -296,6 +302,51 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             }
         }
     }
+    
+    // Toggle dark mode and apply/remove style in all tabs
+    private fun toggleDarkMode() {
+        isDarkMode.value = !isDarkMode.value
+        tabs.forEach { tab ->
+            applyDarkMode(tab.webView, isDarkMode.value)
+        }
+    }
+
+    // Injects or removes CSS for dark mode
+    private fun applyDarkMode(webView: WebView, enable: Boolean) {
+        val css = """
+            html, body { background:#121212 !important; color:#e0e0e0 !important; }
+            body * { color: inherit; }
+            a { color:#8ab4f8 !important; }
+            pre, code { background:#1e1e1e !important; }
+            input, textarea, select { background:#1e1e1e !important; color:#e0e0e0 !important; border:1px solid #333 !important; }
+            img, video { filter: brightness(0.9) contrast(1.05); }
+            #ext-toc-container { background:rgba(32,32,32,0.92) !important; color:#e0e0e0 !important; border-color:#333 !important; }
+            #ext-toc-container a { color:#e0e0e0 !important; }
+            #ext-toc-container a:hover { background:rgba(255,255,255,0.08) !important; }
+            #ext-toc-container a[style*='font-weight: 700'] { background:rgba(138,180,248,0.25) !important; }
+        """.trimIndent().replace("\n", " ")
+
+        val js = """
+            (function() {
+                var styleId = 'android-dark-mode-style';
+                var style = document.getElementById(styleId);
+                if ($enable) {
+                    if (!style) {
+                        style = document.createElement('style');
+                        style.id = styleId;
+                        style.textContent = `$css`;
+                        document.head.appendChild(style);
+                    }
+                } else {
+                    if (style) {
+                        style.remove();
+                    }
+                }
+            })();
+        """.trimIndent()
+        
+        webView.evaluateJavascript(js, null)
+    }
 
     override fun onStop() {
         super.onStop()
@@ -362,6 +413,9 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             }
             putString("saved_scripts", scriptsJson.toString())
             
+            // Save Dark Mode state
+            putString("is_dark_mode", isDarkMode.value.toString())
+            
             apply()
         }
     }
@@ -396,6 +450,10 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 e.printStackTrace() 
             }
         }
+        
+        // Load Dark Mode state
+        val savedDarkMode = sharedPref.getString("is_dark_mode", "false")
+        isDarkMode.value = savedDarkMode.toBoolean()
     }
 
     @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
@@ -506,6 +564,11 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                         })();
                     """.trimIndent()
                     view?.evaluateJavascript(tocScript, null)
+                    
+                    // Inject Dark Mode if enabled
+                    if (isDarkMode.value) {
+                         applyDarkMode(view!!, true)
+                    }
                 }
             }
             
@@ -578,7 +641,10 @@ fun BrowserScreen(
     onToggleTtsRandom: () -> Unit,
     ttsDelay: String,
     onTtsDelayChange: (String) -> Unit,
-    onTocClick: (String) -> Unit
+    onTocClick: (String) -> Unit,
+    // Dark Mode Params
+    isDarkMode: Boolean,
+    onToggleDarkMode: () -> Unit
 ) {
     var showTabList by remember { mutableStateOf(false) }
     var showScriptList by remember { mutableStateOf(false) }
@@ -628,6 +694,11 @@ fun BrowserScreen(
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                         )
+                        
+                        // Dark Mode Toggle
+                        IconButton(onClick = onToggleDarkMode) {
+                             Text(text = if (isDarkMode) "☀" else "🌙", fontSize = 20.sp)
+                        }
 
                         // Play/Stop
                         IconButton(onClick = { if(isTtsPlaying) onTtsStop() else onTtsPlay() }) {
