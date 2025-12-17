@@ -5,19 +5,32 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-data class Interaction(
-    val type: String, // "click" or "drag"
-    val x: Int,
-    val y: Int,
-    val endX: Int = 0, // For drag
-    val endY: Int = 0, // For drag
+// 1) Separate data classes for Click and Drag
+sealed class Interaction {
+    abstract val delayBefore: Long
+}
+
+data class ClickInteraction(
+    val x: Float,
+    val y: Float,
     val duration: Long,
-    val delayBefore: Long
+    override val delayBefore: Long
+) : Interaction()
+
+// 2) Drag data class with multiple coordinates and delta time
+data class DragPoint(
+    val x: Float,
+    val y: Float,
+    val dt: Long
 )
+
+data class DragInteraction(
+    val points: List<DragPoint>,
+    override val delayBefore: Long
+) : Interaction()
 
 object RecordingManager {
 
-    // Helper variable to hold the currently selected recording file
     var currentSelectedFile: File? = null
 
     private val recordingsDir: File
@@ -34,16 +47,28 @@ object RecordingManager {
         
         val jsonArray = JSONArray()
         events.forEach { event ->
-            val jsonObj = JSONObject().apply {
-                put("type", event.type)
-                put("x", event.x)
-                put("y", event.y)
-                if (event.type == "drag") {
-                    put("endX", event.endX)
-                    put("endY", event.endY)
+            val jsonObj = JSONObject()
+            jsonObj.put("delayBefore", event.delayBefore)
+
+            when (event) {
+                is ClickInteraction -> {
+                    jsonObj.put("type", "click")
+                    jsonObj.put("x", event.x)
+                    jsonObj.put("y", event.y)
+                    jsonObj.put("duration", event.duration)
                 }
-                put("duration", event.duration)
-                put("delayBefore", event.delayBefore)
+                is DragInteraction -> {
+                    jsonObj.put("type", "drag")
+                    val pointsArray = JSONArray()
+                    event.points.forEach { point ->
+                        val pointObj = JSONObject()
+                        pointObj.put("x", point.x)
+                        pointObj.put("y", point.y)
+                        pointObj.put("dt", point.dt)
+                        pointsArray.put(pointObj)
+                    }
+                    jsonObj.put("points", pointsArray)
+                }
             }
             jsonArray.put(jsonObj)
         }
@@ -54,7 +79,7 @@ object RecordingManager {
         }
 
         val file = File(recordingsDir, "$timestamp.json")
-        file.writeText(finalJson.toString(4)) // Indent 4 for readability
+        file.writeText(finalJson.toString(4))
     }
 
     fun getRecordings(): List<File> {
@@ -63,27 +88,55 @@ object RecordingManager {
             ?.toList() ?: emptyList()
     }
     
-    // Reads a JSON file and parses it back into a list of Interaction objects
     fun loadRecording(file: File): List<Interaction> {
         if (!file.exists()) return emptyList()
         
-        val jsonString = file.readText()
-        val jsonObject = JSONObject(jsonString)
-        val eventsArray = jsonObject.getJSONArray("events")
         val events = mutableListOf<Interaction>()
+        try {
+            val jsonString = file.readText()
+            val jsonObject = JSONObject(jsonString)
+            val eventsArray = jsonObject.getJSONArray("events")
 
-        for (i in 0 until eventsArray.length()) {
-            val obj = eventsArray.getJSONObject(i)
-            val type = obj.getString("type")
-            events.add(Interaction(
-                type = type,
-                x = obj.getInt("x"),
-                y = obj.getInt("y"),
-                endX = if (obj.has("endX")) obj.getInt("endX") else 0,
-                endY = if (obj.has("endY")) obj.getInt("endY") else 0,
-                duration = obj.getLong("duration"),
-                delayBefore = obj.getLong("delayBefore")
-            ))
+            for (i in 0 until eventsArray.length()) {
+                val obj = eventsArray.getJSONObject(i)
+                val type = obj.getString("type")
+                val delayBefore = obj.getLong("delayBefore")
+
+                if (type == "click") {
+                    events.add(ClickInteraction(
+                        x = obj.getDouble("x").toFloat(),
+                        y = obj.getDouble("y").toFloat(),
+                        duration = obj.getLong("duration"),
+                        delayBefore = delayBefore
+                    ))
+                } else if (type == "drag") {
+                    val points = mutableListOf<DragPoint>()
+                    if (obj.has("points")) {
+                        val pointsArray = obj.getJSONArray("points")
+                        for (j in 0 until pointsArray.length()) {
+                            val pObj = pointsArray.getJSONObject(j)
+                            points.add(DragPoint(
+                                x = pObj.getDouble("x").toFloat(),
+                                y = pObj.getDouble("y").toFloat(),
+                                dt = pObj.getLong("dt")
+                            ))
+                        }
+                    } else {
+                        // Backward compatibility for old format: start (x,y) -> end (endX, endY)
+                        val startX = obj.getDouble("x").toFloat()
+                        val startY = obj.getDouble("y").toFloat()
+                        val endX = obj.optDouble("endX", 0.0).toFloat()
+                        val endY = obj.optDouble("endY", 0.0).toFloat()
+                        val duration = obj.optLong("duration", 100)
+                        
+                        points.add(DragPoint(startX, startY, 0))
+                        points.add(DragPoint(endX, endY, duration))
+                    }
+                    events.add(DragInteraction(points, delayBefore))
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
         return events
     }

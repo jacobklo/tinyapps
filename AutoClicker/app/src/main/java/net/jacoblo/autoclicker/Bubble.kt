@@ -37,6 +37,10 @@ class Bubble(private val context: Context) {
     private val recordedEvents = mutableListOf<Interaction>()
     private var lastEventTime = 0L
     
+    // New variables for tracking multi-point drag
+    private val currentDragPoints = mutableListOf<DragPoint>()
+    private var lastDragPointTime = 0L
+
     private var recordButtonView: View? = null
     private var recordButtonIcon: ImageView? = null
 
@@ -68,7 +72,7 @@ class Bubble(private val context: Context) {
             closeAreaSize,
             overlayType,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or 
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                     WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         ).apply {
@@ -82,14 +86,14 @@ class Bubble(private val context: Context) {
         // Setup Bubble with buttons
         bubbleView = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            
+
             // Toggle Button: Start/Stop Recording
             // Initially Start Recording (Red)
             recordButtonView = FrameLayout(context).apply {
                 background = ShapeDrawable(OvalShape()).apply {
                     paint.color = Color.RED
                 }
-                
+
                 recordButtonIcon = ImageView(context)
                 recordButtonIcon?.setImageResource(R.drawable.ic_record)
                 recordButtonIcon?.setColorFilter(Color.WHITE)
@@ -116,7 +120,7 @@ class Bubble(private val context: Context) {
                 icon.setColorFilter(Color.WHITE)
                 icon.setPadding(20, 20, 20, 20)
                 addView(icon, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-                
+
                 setOnClickListener {
                     val file = RecordingManager.currentSelectedFile
                     if (file != null && RecorderService.instance != null) {
@@ -129,7 +133,7 @@ class Bubble(private val context: Context) {
                 }
             }
             val paramsPlay = LinearLayout.LayoutParams(bubbleSize, bubbleSize).apply {
-                leftMargin = 10 
+                leftMargin = 10
             }
             addView(playButton, paramsPlay)
 
@@ -191,7 +195,7 @@ class Bubble(private val context: Context) {
                         bubbleParams!!.x = initialX + dx
                         bubbleParams!!.y = initialY + dy
                         windowManager.updateViewLayout(bubbleView, bubbleParams)
-                        
+
                         checkInCloseArea()
                         return true
                     }
@@ -199,13 +203,13 @@ class Bubble(private val context: Context) {
                         hideCloseArea()
                         if (isInCloseArea()) {
                             stopService()
-                        } 
-                        
+                        }
+
                         if (!isDragging) {
                             val location = IntArray(2)
                             v.getLocationOnScreen(location)
                             val x = event.rawX - location[0]
-                            
+
                             val container = v as LinearLayout
                             for (i in 0 until container.childCount) {
                                 val child = container.getChildAt(i)
@@ -221,7 +225,7 @@ class Bubble(private val context: Context) {
                 return false
             }
         })
-        
+
         windowManager.addView(bubbleView, bubbleParams)
     }
 
@@ -238,18 +242,18 @@ class Bubble(private val context: Context) {
 
         isRecording = true
         bubbleView?.invalidate()
-        
+
         // Update to Stop button style (Green)
         (recordButtonView?.background as? ShapeDrawable)?.paint?.color = Color.GREEN
         // Use Stop icon for stopping recording
         recordButtonIcon?.setImageResource(R.drawable.ic_stop)
         recordButtonView?.invalidate()
-        
+
         recordedEvents.clear()
         lastEventTime = System.currentTimeMillis()
 
         setupRecordingOverlay()
-        
+
         // Bring bubble to front by re-adding it
         bubbleView?.let {
             windowManager.removeView(it)
@@ -279,14 +283,14 @@ class Bubble(private val context: Context) {
         removeRecordingOverlay()
 
         val overlayType = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        
+
         recordingParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             overlayType,
             // We want to receive touches, so NO FLAG_NOT_TOUCHABLE
             // We want it full screen, covering everything
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or 
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
             WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
@@ -294,14 +298,14 @@ class Bubble(private val context: Context) {
 
         recordingOverlay = View(context).apply {
             // Invisible but touchable
-            setBackgroundColor(Color.TRANSPARENT) 
-            
+            setBackgroundColor(Color.TRANSPARENT)
+
             setOnTouchListener { _, event ->
                 handleRecordingTouch(event)
                 true // Consume event
             }
         }
-        
+
         windowManager.addView(recordingOverlay, recordingParams)
     }
 
@@ -316,25 +320,38 @@ class Bubble(private val context: Context) {
     private var startY = 0f
     private var touchStartTime = 0L
 
+    // 3) Rewrite to handle multiple coordinates recording
     private fun handleRecordingTouch(event: MotionEvent) {
         val currentTime = System.currentTimeMillis()
-        
+
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
                 startX = event.rawX
                 startY = event.rawY
                 touchStartTime = currentTime
 
+                // Start a new drag path
+                currentDragPoints.clear()
+                currentDragPoints.add(DragPoint(startX, startY, 0))
+                lastDragPointTime = currentTime
+
                 // Change button to WHITE to indicate input detection
                 (recordButtonView?.background as? ShapeDrawable)?.paint?.color = Color.WHITE
                 recordButtonView?.invalidate()
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val x = event.rawX
+                val y = event.rawY
+                val dt = currentTime - lastDragPointTime
+                currentDragPoints.add(DragPoint(x, y, dt))
+                lastDragPointTime = currentTime
             }
             MotionEvent.ACTION_UP -> {
                 val endX = event.rawX
                 val endY = event.rawY
                 val duration = currentTime - touchStartTime
                 val delay = touchStartTime - lastEventTime
-                
+
                 val distance = sqrt((endX - startX).pow(2) + (endY - startY).pow(2))
 
                 // Restore button to GREEN (Recording state)
@@ -361,10 +378,10 @@ class Bubble(private val context: Context) {
                         }
                     }
                 }
-                
+
                 if (distance < 20) {
                     // Click
-                    recordedEvents.add(Interaction("click", startX.toInt(), startY.toInt(), 0, 0, duration, delay))
+                    recordedEvents.add(ClickInteraction(startX, startY, duration, delay))
 
                     val service = RecorderService.instance
                     if (service != null) {
@@ -374,11 +391,18 @@ class Bubble(private val context: Context) {
                     }
                 } else {
                     // Drag
-                    recordedEvents.add(Interaction("drag", startX.toInt(), startY.toInt(), endX.toInt(), endY.toInt(), duration, delay))
+                    // Add last point
+                    val dt = currentTime - lastDragPointTime
+                    if (dt > 0) {
+                         currentDragPoints.add(DragPoint(endX, endY, dt))
+                    }
+
+                    val points = ArrayList(currentDragPoints)
+                    recordedEvents.add(DragInteraction(points, delay))
 
                     val service = RecorderService.instance
                     if (service != null) {
-                        service.performDrag(startX, startY, endX, endY, duration, completionCallback)
+                        service.performDrag(points, completionCallback)
                     } else {
                         completionCallback()
                     }

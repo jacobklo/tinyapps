@@ -42,13 +42,18 @@ class RecorderService : AccessibilityService() {
         serviceScope.launch {
             events.forEach { event ->
                 delay(event.delayBefore)
-                if (event.type == "click") {
-                    performClick(event.x.toFloat(), event.y.toFloat(), event.duration)
-                } else if (event.type == "drag") {
-                    performDrag(event.x.toFloat(), event.y.toFloat(), event.endX.toFloat(), event.endY.toFloat(), event.duration)
+                when (event) {
+                    is ClickInteraction -> {
+                        performClick(event.x, event.y, event.duration)
+                        delay(event.duration)
+                    }
+                    is DragInteraction -> {
+                        // Calculate total duration
+                        val totalDuration = event.points.sumOf { it.dt }
+                        performDrag(event.points)
+                        delay(totalDuration)
+                    }
                 }
-                // Wait for the gesture to finish
-                delay(event.duration)
             }
         }
     }
@@ -58,7 +63,7 @@ class RecorderService : AccessibilityService() {
         path.moveTo(x, y)
         val builder = GestureDescription.Builder()
         builder.addStroke(GestureDescription.StrokeDescription(path, 0, duration.coerceAtLeast(1)))
-        
+
         val dispatched = dispatchGesture(builder.build(), object : GestureResultCallback() {
             override fun onCompleted(gestureDescription: GestureDescription?) {
                 super.onCompleted(gestureDescription)
@@ -76,13 +81,30 @@ class RecorderService : AccessibilityService() {
         }
     }
 
-    fun performDrag(startX: Float, startY: Float, endX: Float, endY: Float, duration: Long, callback: (() -> Unit)? = null) {
+    // 4) Rewrite performDrag to handle multiple coordinates
+    fun performDrag(points: List<DragPoint>, callback: (() -> Unit)? = null) {
+        if (points.isEmpty()) {
+            callback?.invoke()
+            return
+        }
+
         val path = Path()
-        path.moveTo(startX, startY)
-        path.lineTo(endX, endY)
+        // Move to the first point
+        path.moveTo(points[0].x, points[0].y)
+
+        var totalDuration = 0L
+        // Loop through remaining points for lineTo
+        for (i in 1 until points.size) {
+            path.lineTo(points[i].x, points[i].y)
+            totalDuration += points[i].dt
+        }
+
+        // Ensure duration is at least 1ms
+        val duration = totalDuration.coerceAtLeast(1)
+
         val builder = GestureDescription.Builder()
-        builder.addStroke(GestureDescription.StrokeDescription(path, 0, duration.coerceAtLeast(1)))
-        
+        builder.addStroke(GestureDescription.StrokeDescription(path, 0, duration))
+
         val dispatched = dispatchGesture(builder.build(), object : GestureResultCallback() {
             override fun onCompleted(gestureDescription: GestureDescription?) {
                 super.onCompleted(gestureDescription)
@@ -94,7 +116,7 @@ class RecorderService : AccessibilityService() {
                 callback?.invoke()
             }
         }, null)
-        
+
         if (!dispatched) {
             callback?.invoke()
         }
