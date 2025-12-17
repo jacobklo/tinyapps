@@ -43,9 +43,9 @@ class RecorderService : AccessibilityService() {
             events.forEach { event ->
                 delay(event.delayBefore)
                 if (event.type == "click") {
-                    performClickInReplay(event.x.toFloat(), event.y.toFloat(), event.duration)
+                    performClick(event.x.toFloat(), event.y.toFloat(), event.duration)
                 } else if (event.type == "drag") {
-                    performDragInReplay(event.x.toFloat(), event.y.toFloat(), event.endX.toFloat(), event.endY.toFloat(), event.duration)
+                    performDrag(event.x.toFloat(), event.y.toFloat(), event.endX.toFloat(), event.endY.toFloat(), event.duration)
                 }
                 // Wait for the gesture to finish
                 delay(event.duration)
@@ -53,59 +53,50 @@ class RecorderService : AccessibilityService() {
         }
     }
 
-    fun performClick(x: Float, y: Float, duration: Long, onComplete: (() -> Unit)? = null) {
+    fun performClick(x: Float, y: Float, duration: Long, callback: (() -> Unit)? = null) {
         val path = Path()
         path.moveTo(x, y)
         val builder = GestureDescription.Builder()
         builder.addStroke(GestureDescription.StrokeDescription(path, 0, duration.coerceAtLeast(1)))
-
-        // Pass a callback to know when the gesture is finished
-        dispatchGesture(builder.build(), object : GestureResultCallback() {
+        
+        val dispatched = dispatchGesture(builder.build(), object : GestureResultCallback() {
             override fun onCompleted(gestureDescription: GestureDescription?) {
-                onComplete?.invoke()
+                super.onCompleted(gestureDescription)
+                callback?.invoke()
             }
 
             override fun onCancelled(gestureDescription: GestureDescription?) {
-                onComplete?.invoke()
+                super.onCancelled(gestureDescription)
+                callback?.invoke()
             }
         }, null)
+
+        if (!dispatched) {
+            callback?.invoke()
+        }
     }
 
-    // HACK: When recording, performClick need the user gesture -> Record overlay -> and to another app. In replay mode, does not need passthrough on overlay
-    fun performClickInReplay(x: Float, y: Float, duration: Long) {
-        val path = Path()
-        path.moveTo(x, y)
-        val builder = GestureDescription.Builder()
-        builder.addStroke(GestureDescription.StrokeDescription(path, 0, duration.coerceAtLeast(1)))
-        dispatchGesture(builder.build(), null, null)
-    }
-
-    // HACK: When recording, performClick need the user gesture -> Record overlay -> and to another app. In replay mode, does not need passthrough on overlay
-    fun performDragInReplay(startX: Float, startY: Float, endX: Float, endY: Float, duration: Long) {
+    fun performDrag(startX: Float, startY: Float, endX: Float, endY: Float, duration: Long, callback: (() -> Unit)? = null) {
         val path = Path()
         path.moveTo(startX, startY)
         path.lineTo(endX, endY)
         val builder = GestureDescription.Builder()
         builder.addStroke(GestureDescription.StrokeDescription(path, 0, duration.coerceAtLeast(1)))
-        dispatchGesture(builder.build(), null, null)
-    }
-
-    fun performDrag(startX: Float, startY: Float, endX: Float, endY: Float, duration: Long, onComplete: (() -> Unit)? = null) {
-        val path = Path()
-        path.moveTo(startX, startY)
-        path.lineTo(endX, endY)
-        val builder = GestureDescription.Builder()
-        builder.addStroke(GestureDescription.StrokeDescription(path, 0, duration.coerceAtLeast(1)))
-
-        // Pass a callback to know when the gesture is finished
-        dispatchGesture(builder.build(), object : GestureResultCallback() {
+        
+        val dispatched = dispatchGesture(builder.build(), object : GestureResultCallback() {
             override fun onCompleted(gestureDescription: GestureDescription?) {
-                onComplete?.invoke()
+                super.onCompleted(gestureDescription)
+                callback?.invoke()
             }
 
             override fun onCancelled(gestureDescription: GestureDescription?) {
-                onComplete?.invoke()
+                super.onCancelled(gestureDescription)
+                callback?.invoke()
             }
         }, null)
+        
+        if (!dispatched) {
+            callback?.invoke()
+        }
     }
 }

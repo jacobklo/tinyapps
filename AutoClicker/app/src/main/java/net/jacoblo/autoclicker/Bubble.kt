@@ -238,6 +238,8 @@ class Bubble(private val context: Context) {
     }
 
     private fun startRecording() {
+        if (isRecording) return
+
         if (RecorderService.instance == null) {
             Toast.makeText(context, "Please enable Accessibility Service for AutoClicker", Toast.LENGTH_LONG).show()
             val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
@@ -272,13 +274,11 @@ class Bubble(private val context: Context) {
         Toast.makeText(context, "Recording Saved", Toast.LENGTH_SHORT).show()
     }
 
-    @SuppressLint("ClickableViewAccessibility")
     private fun setupRecordingOverlay() {
-        val overlayType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            WindowManager.LayoutParams.TYPE_PHONE
-        }
+        // Remove existing if present (prevents duplicates)
+        removeRecordingOverlay()
+
+        val overlayType = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         
         recordingParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -324,6 +324,9 @@ class Bubble(private val context: Context) {
                 startX = event.rawX
                 startY = event.rawY
                 touchStartTime = currentTime
+
+                // Show toast when gesture starts
+                Toast.makeText(context, "Detect gesture input. Recording...", Toast.LENGTH_SHORT).show()
             }
             MotionEvent.ACTION_UP -> {
                 val endX = event.rawX
@@ -332,54 +335,54 @@ class Bubble(private val context: Context) {
                 val delay = touchStartTime - lastEventTime
                 
                 val distance = sqrt((endX - startX).pow(2) + (endY - startY).pow(2))
+
+                // Show toast when gesture ends and pass-through begins
+                Toast.makeText(context, "Passing gesture to another app...", Toast.LENGTH_SHORT).show()
+
+                // Make overlay non-touchable so the injected gesture can pass through
+                recordingParams?.let { params ->
+                    params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                    windowManager.updateViewLayout(recordingOverlay, params)
+                }
+
+                // HACK: multiple same event occur in very short time. Check if delay is longer than 250ms to add into record.
+                if (delay < 250) {
+                    return
+                }
+
+                // Callback to restore overlay touchability after gesture injection finishes
+                val completionCallback: () -> Unit = {
+                    recordingOverlay?.post {
+                        recordingParams?.let { params ->
+                            params.flags = params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+                            windowManager.updateViewLayout(recordingOverlay, params)
+                        }
+                    }
+                }
                 
                 if (distance < 20) {
                     // Click
                     recordedEvents.add(Interaction("click", startX.toInt(), startY.toInt(), 0, 0, duration, delay))
-                    
+
                     val service = RecorderService.instance
                     if (service != null) {
-                        // Pass the gesture through by temporarily disabling the overlay
-                        setOverlayTouchable(false)
-                        service.performClick(startX, startY, duration) {
-                            setOverlayTouchable(true)
-                        }
+                        service.performClick(startX, startY, duration, completionCallback)
+                    } else {
+                        completionCallback()
                     }
                 } else {
                     // Drag
                     recordedEvents.add(Interaction("drag", startX.toInt(), startY.toInt(), endX.toInt(), endY.toInt(), duration, delay))
-                    
+
                     val service = RecorderService.instance
                     if (service != null) {
-                        // Pass the gesture through by temporarily disabling the overlay
-                        setOverlayTouchable(false)
-                        service.performDrag(startX, startY, endX, endY, duration) {
-                            setOverlayTouchable(true)
-                        }
+                        service.performDrag(startX, startY, endX, endY, duration, completionCallback)
+                    } else {
+                        completionCallback()
                     }
                 }
                 
                 lastEventTime = currentTime
-            }
-        }
-    }
-
-    private fun setOverlayTouchable(touchable: Boolean) {
-        val overlay = recordingOverlay ?: return
-        val params = recordingParams ?: return
-        
-        overlay.post {
-            try {
-                if (touchable) {
-                    // Remove the flag to make it touchable
-                    params.flags = params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
-                } else {
-                    // Add the flag to let touches pass through
-                    params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                }
-                windowManager.updateViewLayout(overlay, params)
-            } catch (e: Exception) {
-                // View might have been removed
             }
         }
     }
