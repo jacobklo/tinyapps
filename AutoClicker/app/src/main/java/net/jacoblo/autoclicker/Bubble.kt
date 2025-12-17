@@ -86,7 +86,7 @@ class Bubble(private val context: Context) {
                 }
                 
                 val icon = ImageView(context)
-                icon.setImageResource(android.R.drawable.ic_media_play)
+                icon.setImageResource(android.R.drawable.ic_btn_speak_now)
                 icon.setColorFilter(Color.WHITE)
                 icon.setPadding(25, 25, 25, 25)
                 addView(icon, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
@@ -117,7 +117,7 @@ class Bubble(private val context: Context) {
             }
             addView(stopButton, paramsStop)
 
-            // Button 3: Play Recorded (Blue) - Placeholder/Existing
+            // Button 3: Play Recorded (Blue)
             val playButton = FrameLayout(context).apply {
                 background = ShapeDrawable(OvalShape()).apply {
                     paint.color = 0xFF2196F3.toInt() // Material Blue
@@ -127,11 +127,38 @@ class Bubble(private val context: Context) {
                 icon.setColorFilter(Color.WHITE)
                 icon.setPadding(20, 20, 20, 20)
                 addView(icon, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+                
+                setOnClickListener {
+                    val file = RecordingManager.currentSelectedFile
+                    if (file != null && RecorderService.instance != null) {
+                        val events = RecordingManager.loadRecording(file)
+                        RecorderService.instance?.playRecording(events)
+                        Toast.makeText(context, "Playing ${file.name}", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "Select a recording first", Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
             val paramsPlay = LinearLayout.LayoutParams(bubbleSize, bubbleSize).apply {
                 leftMargin = 10 
             }
             addView(playButton, paramsPlay)
+
+            // Button 4: for dragging all these buttons
+            val dragButton = FrameLayout(context).apply {
+                background = ShapeDrawable(OvalShape()).apply {
+                    paint.color = 0x000000F3.toInt() // Material Blue
+                }
+                val icon = ImageView(context)
+                icon.setImageResource(android.R.drawable.ic_media_play)
+                icon.setColorFilter(Color.WHITE)
+                icon.setPadding(5, 5, 5, 5)
+                addView(icon, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+            }
+            val paramsDrag = LinearLayout.LayoutParams(bubbleSize, bubbleSize).apply {
+                leftMargin = 10
+            }
+            addView(dragButton, paramsDrag)
         }
 
         bubbleParams = WindowManager.LayoutParams(

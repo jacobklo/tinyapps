@@ -17,6 +17,9 @@ data class Interaction(
 
 object RecordingManager {
 
+    // Helper variable to hold the currently selected recording file
+    var currentSelectedFile: File? = null
+
     private val recordingsDir: File
         get() {
             val dir = File(Environment.getExternalStorageDirectory(), "Recordings")
@@ -59,15 +62,47 @@ object RecordingManager {
             ?.sortedByDescending { it.lastModified() }
             ?.toList() ?: emptyList()
     }
+    
+    // Reads a JSON file and parses it back into a list of Interaction objects
+    fun loadRecording(file: File): List<Interaction> {
+        if (!file.exists()) return emptyList()
+        
+        val jsonString = file.readText()
+        val jsonObject = JSONObject(jsonString)
+        val eventsArray = jsonObject.getJSONArray("events")
+        val events = mutableListOf<Interaction>()
+
+        for (i in 0 until eventsArray.length()) {
+            val obj = eventsArray.getJSONObject(i)
+            val type = obj.getString("type")
+            events.add(Interaction(
+                type = type,
+                x = obj.getInt("x"),
+                y = obj.getInt("y"),
+                endX = if (obj.has("endX")) obj.getInt("endX") else 0,
+                endY = if (obj.has("endY")) obj.getInt("endY") else 0,
+                duration = obj.getLong("duration"),
+                delayBefore = obj.getLong("delayBefore")
+            ))
+        }
+        return events
+    }
 
     fun renameRecording(file: File, newName: String): Boolean {
         val nameWithExt = if (newName.endsWith(".json")) newName else "$newName.json"
         val newFile = File(recordingsDir, nameWithExt)
         if (newFile.exists()) return false
-        return file.renameTo(newFile)
+        val success = file.renameTo(newFile)
+        if (success && currentSelectedFile == file) {
+            currentSelectedFile = newFile
+        }
+        return success
     }
 
     fun deleteRecording(file: File): Boolean {
+        if (currentSelectedFile == file) {
+            currentSelectedFile = null
+        }
         return file.delete()
     }
 }

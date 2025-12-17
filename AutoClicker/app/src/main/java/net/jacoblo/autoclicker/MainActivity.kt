@@ -10,6 +10,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -118,6 +119,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun RecordingsListScreen(modifier: Modifier = Modifier) {
     var recordings by remember { mutableStateOf(RecordingManager.getRecordings()) }
+    var selectedFile by remember { mutableStateOf(RecordingManager.currentSelectedFile) }
     var fileToRename by remember { mutableStateOf<File?>(null) }
 
     Column(modifier = modifier.fillMaxSize()) {
@@ -133,10 +135,18 @@ fun RecordingsListScreen(modifier: Modifier = Modifier) {
             items(recordings) { file ->
                 RecordingItem(
                     file = file,
+                    isSelected = (file == selectedFile),
+                    onSelect = {
+                        selectedFile = file
+                        RecordingManager.currentSelectedFile = file
+                    },
                     onRename = { fileToRename = file },
                     onDelete = {
                         RecordingManager.deleteRecording(file)
                         recordings = RecordingManager.getRecordings()
+                        if (selectedFile == file) {
+                            selectedFile = null
+                        }
                     }
                 )
                 HorizontalDivider()
@@ -151,6 +161,11 @@ fun RecordingsListScreen(modifier: Modifier = Modifier) {
             onConfirm = { newName ->
                 RecordingManager.renameRecording(fileToRename!!, newName)
                 recordings = RecordingManager.getRecordings()
+                // Update selectedFile if the renamed file was selected
+                // (RecordingManager handles updating its internal reference, but we need to update UI state if needed)
+                if (selectedFile == fileToRename) {
+                     selectedFile = RecordingManager.currentSelectedFile
+                }
                 fileToRename = null
             }
         )
@@ -160,15 +175,23 @@ fun RecordingsListScreen(modifier: Modifier = Modifier) {
 @Composable
 fun RecordingItem(
     file: File,
+    isSelected: Boolean,
+    onSelect: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable { onSelect() }
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        RadioButton(
+            selected = isSelected,
+            onClick = onSelect
+        )
+        Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = file.nameWithoutExtension,
             modifier = Modifier.weight(1f),
