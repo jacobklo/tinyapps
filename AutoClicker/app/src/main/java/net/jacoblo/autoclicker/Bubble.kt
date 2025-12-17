@@ -27,6 +27,7 @@ class Bubble(private val context: Context) {
     private var closeAreaView: View? = null
     private var bubbleParams: WindowManager.LayoutParams? = null
     private var closeAreaParams: WindowManager.LayoutParams? = null
+    private var recordingParams: WindowManager.LayoutParams? = null
     
     private val bubbleSize = 100
     private val closeAreaSize = 100
@@ -279,7 +280,7 @@ class Bubble(private val context: Context) {
             WindowManager.LayoutParams.TYPE_PHONE
         }
         
-        val params = WindowManager.LayoutParams(
+        recordingParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             overlayType,
@@ -301,7 +302,7 @@ class Bubble(private val context: Context) {
             }
         }
         
-        windowManager.addView(recordingOverlay, params)
+        windowManager.addView(recordingOverlay, recordingParams)
     }
 
     private fun removeRecordingOverlay() {
@@ -335,14 +336,50 @@ class Bubble(private val context: Context) {
                 if (distance < 20) {
                     // Click
                     recordedEvents.add(Interaction("click", startX.toInt(), startY.toInt(), 0, 0, duration, delay))
-                    //RecorderService.instance?.performClick(startX, startY, duration)
+                    
+                    val service = RecorderService.instance
+                    if (service != null) {
+                        // Pass the gesture through by temporarily disabling the overlay
+                        setOverlayTouchable(false)
+                        service.performClick(startX, startY, duration) {
+                            setOverlayTouchable(true)
+                        }
+                    }
                 } else {
                     // Drag
                     recordedEvents.add(Interaction("drag", startX.toInt(), startY.toInt(), endX.toInt(), endY.toInt(), duration, delay))
-                    //RecorderService.instance?.performDrag(startX, startY, endX, endY, duration)
+                    
+                    val service = RecorderService.instance
+                    if (service != null) {
+                        // Pass the gesture through by temporarily disabling the overlay
+                        setOverlayTouchable(false)
+                        service.performDrag(startX, startY, endX, endY, duration) {
+                            setOverlayTouchable(true)
+                        }
+                    }
                 }
                 
                 lastEventTime = currentTime
+            }
+        }
+    }
+
+    private fun setOverlayTouchable(touchable: Boolean) {
+        val overlay = recordingOverlay ?: return
+        val params = recordingParams ?: return
+        
+        overlay.post {
+            try {
+                if (touchable) {
+                    // Remove the flag to make it touchable
+                    params.flags = params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+                } else {
+                    // Add the flag to let touches pass through
+                    params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                }
+                windowManager.updateViewLayout(overlay, params)
+            } catch (e: Exception) {
+                // View might have been removed
             }
         }
     }
