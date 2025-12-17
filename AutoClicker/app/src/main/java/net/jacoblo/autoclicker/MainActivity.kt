@@ -2,7 +2,9 @@ package net.jacoblo.autoclicker
 
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -19,13 +21,17 @@ import net.jacoblo.autoclicker.ui.theme.AutoClickerTheme
 
 class MainActivity : ComponentActivity() {
     
-    // Modern way to handle permission result
     private val overlayPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
-        if (Settings.canDrawOverlays(this)) {
-            startBubbleService()
-        }
+        checkPermissions()
+    }
+
+    // Register a result launcher for the storage permission intent
+    private val storagePermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        checkPermissions()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -43,28 +49,60 @@ class MainActivity : ComponentActivity() {
             }
         }
         
-        checkOverlayPermission()
+        checkPermissions()
     }
 
     override fun onResume() {
         super.onResume()
-        // Ensure the service is running every time the activity becomes active
-        if (Settings.canDrawOverlays(this)) {
+        if (arePermissionsGranted()) {
             startBubbleService()
         }
     }
 
-    private fun checkOverlayPermission() {
+    private fun checkPermissions() {
         if (!Settings.canDrawOverlays(this)) {
-            // Request permission
             val intent = Intent(
                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                 Uri.parse("package:$packageName")
             )
             overlayPermissionLauncher.launch(intent)
-        } else {
-            startBubbleService()
+            return
         }
+
+        // Check for storage permission on Android 11+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!Environment.isExternalStorageManager()) {
+                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                intent.data = Uri.parse("package:$packageName")
+                storagePermissionLauncher.launch(intent)
+                return
+            }
+        }
+        
+        if (!isAccessibilityServiceEnabled()) {
+            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            startActivity(intent)
+            return
+        }
+
+        startBubbleService()
+    }
+    
+    private fun arePermissionsGranted(): Boolean {
+        val overlay = Settings.canDrawOverlays(this)
+        val accessibility = isAccessibilityServiceEnabled()
+        // Verify storage permission status
+        val storage = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else {
+            true
+        }
+        return overlay && accessibility && storage
+    }
+
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val prefString = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+        return prefString?.contains("$packageName/${RecorderService::class.java.name}") == true
     }
 
     private fun startBubbleService() {
