@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -44,23 +45,42 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         
         enableEdgeToEdge()
-        setContent {
-            AutoClickerTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    RecordingsListScreen(
-                        modifier = Modifier.padding(innerPadding)
-                    )
-                }
-            }
-        }
-        
         checkPermissions()
     }
 
+    @OptIn(ExperimentalMaterial3Api::class)
     override fun onResume() {
         super.onResume()
         if (arePermissionsGranted()) {
             startBubbleService()
+
+            setContent {
+                AutoClickerTheme {
+                    // Trigger recreation of the list screen
+                    var refreshKey by remember { mutableIntStateOf(0) }
+
+                    Scaffold(
+                        modifier = Modifier.fillMaxSize(),
+                        topBar = {
+                            TopAppBar(
+                                title = { Text("Auto Clicker") },
+                                actions = {
+                                    IconButton(onClick = { refreshKey++ }) {
+                                        Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                                    }
+                                }
+                            )
+                        }
+                    ) { innerPadding ->
+                        // Force recreation when refreshKey changes
+                        key(refreshKey) {
+                            RecordingsListScreen(
+                                modifier = Modifier.padding(innerPadding)
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 
