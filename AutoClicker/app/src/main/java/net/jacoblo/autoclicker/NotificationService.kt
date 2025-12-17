@@ -72,8 +72,8 @@ class NotificationService : Service() {
         return builder
             .setContentTitle("AutoClicker Bubble")
             .setContentText(content)
-            // Fixed: Use 'android.R.drawable' for system icons or local 'R.mipmap.ic_launcher'
-            .setSmallIcon(android.R.drawable.ic_menu_recent_history)
+            // Fixed: Use modern Material icon
+            .setSmallIcon(R.drawable.ic_stat_bubble)
             .setOnlyAlertOnce(true)
             .setOngoing(true)
             .build()

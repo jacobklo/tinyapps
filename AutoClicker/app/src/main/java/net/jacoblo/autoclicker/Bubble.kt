@@ -36,6 +36,9 @@ class Bubble(private val context: Context) {
     private var recordingOverlay: View? = null
     private val recordedEvents = mutableListOf<Interaction>()
     private var lastEventTime = 0L
+    
+    private var recordButtonView: View? = null
+    private var recordButtonIcon: ImageView? = null
 
     @SuppressLint("ClickableViewAccessibility")
     fun show() {
@@ -49,7 +52,7 @@ class Bubble(private val context: Context) {
             }
             // Add an X icon
             val icon = ImageView(context)
-            icon.setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
+            icon.setImageResource(R.drawable.ic_close)
             icon.setColorFilter(Color.WHITE)
             addView(icon, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
         }
@@ -80,43 +83,28 @@ class Bubble(private val context: Context) {
         bubbleView = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             
-            // Button 1: Start Recording (Red)
-            val startButton = FrameLayout(context).apply {
+            // Toggle Button: Start/Stop Recording
+            // Initially Start Recording (Red)
+            recordButtonView = FrameLayout(context).apply {
                 background = ShapeDrawable(OvalShape()).apply {
                     paint.color = Color.RED
                 }
                 
-                val icon = ImageView(context)
-                icon.setImageResource(android.R.drawable.ic_btn_speak_now)
-                icon.setColorFilter(Color.WHITE)
-                icon.setPadding(25, 25, 25, 25)
-                addView(icon, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+                recordButtonIcon = ImageView(context)
+                recordButtonIcon?.setImageResource(R.drawable.ic_record)
+                recordButtonIcon?.setColorFilter(Color.WHITE)
+                recordButtonIcon?.setPadding(25, 25, 25, 25)
+                addView(recordButtonIcon, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
 
                 setOnClickListener {
-                    startRecording()
+                    if (isRecording) {
+                        stopRecording()
+                    } else {
+                        startRecording()
+                    }
                 }
             }
-            addView(startButton, LinearLayout.LayoutParams(bubbleSize, bubbleSize))
-
-            // Button 2: Stop Recording (Green)
-            val stopButton = FrameLayout(context).apply {
-                background = ShapeDrawable(OvalShape()).apply {
-                    paint.color = Color.GREEN
-                }
-                val icon = ImageView(context)
-                icon.setImageResource(android.R.drawable.ic_media_pause)
-                icon.setColorFilter(Color.WHITE)
-                icon.setPadding(25, 25, 25, 25)
-                addView(icon, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-                
-                setOnClickListener {
-                    stopRecording()
-                }
-            }
-            val paramsStop = LinearLayout.LayoutParams(bubbleSize, bubbleSize).apply {
-                leftMargin = 10 
-            }
-            addView(stopButton, paramsStop)
+            addView(recordButtonView, LinearLayout.LayoutParams(bubbleSize, bubbleSize))
 
             // Button 3: Play Recorded (Blue)
             val playButton = FrameLayout(context).apply {
@@ -124,7 +112,7 @@ class Bubble(private val context: Context) {
                     paint.color = 0xFF2196F3.toInt() // Material Blue
                 }
                 val icon = ImageView(context)
-                icon.setImageResource(android.R.drawable.ic_media_play)
+                icon.setImageResource(R.drawable.ic_play)
                 icon.setColorFilter(Color.WHITE)
                 icon.setPadding(20, 20, 20, 20)
                 addView(icon, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
@@ -151,7 +139,7 @@ class Bubble(private val context: Context) {
                     paint.color = 0x000000F3.toInt() // Material Blue
                 }
                 val icon = ImageView(context)
-                icon.setImageResource(android.R.drawable.ic_media_play)
+                icon.setImageResource(R.drawable.ic_drag)
                 icon.setColorFilter(Color.WHITE)
                 icon.setPadding(5, 5, 5, 5)
                 addView(icon, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
@@ -251,6 +239,12 @@ class Bubble(private val context: Context) {
         isRecording = true
         bubbleView?.invalidate()
         
+        // Update to Stop button style (Green)
+        (recordButtonView?.background as? ShapeDrawable)?.paint?.color = Color.GREEN
+        // Use Stop icon for stopping recording
+        recordButtonIcon?.setImageResource(R.drawable.ic_stop)
+        recordButtonView?.invalidate()
+        
         recordedEvents.clear()
         lastEventTime = System.currentTimeMillis()
 
@@ -268,6 +262,12 @@ class Bubble(private val context: Context) {
     private fun stopRecording() {
         isRecording = false
         bubbleView?.invalidate()
+
+        // Update to Start button style (Red)
+        (recordButtonView?.background as? ShapeDrawable)?.paint?.color = Color.RED
+        // Use Record icon for starting recording
+        recordButtonIcon?.setImageResource(R.drawable.ic_record)
+        recordButtonView?.invalidate()
 
         removeRecordingOverlay()
         RecordingManager.saveRecording(recordedEvents)
@@ -325,8 +325,9 @@ class Bubble(private val context: Context) {
                 startY = event.rawY
                 touchStartTime = currentTime
 
-                // Show toast when gesture starts
-                Toast.makeText(context, "Detect gesture input. Recording...", Toast.LENGTH_SHORT).show()
+                // Change button to WHITE to indicate input detection
+                (recordButtonView?.background as? ShapeDrawable)?.paint?.color = Color.WHITE
+                recordButtonView?.invalidate()
             }
             MotionEvent.ACTION_UP -> {
                 val endX = event.rawX
@@ -336,8 +337,9 @@ class Bubble(private val context: Context) {
                 
                 val distance = sqrt((endX - startX).pow(2) + (endY - startY).pow(2))
 
-                // Show toast when gesture ends and pass-through begins
-                Toast.makeText(context, "Passing gesture to another app...", Toast.LENGTH_SHORT).show()
+                // Restore button to GREEN (Recording state)
+                (recordButtonView?.background as? ShapeDrawable)?.paint?.color = Color.GREEN
+                recordButtonView?.invalidate()
 
                 // Make overlay non-touchable so the injected gesture can pass through
                 recordingParams?.let { params ->
