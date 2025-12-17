@@ -10,14 +10,19 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
 import net.jacoblo.autoclicker.ui.theme.AutoClickerTheme
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     
@@ -41,8 +46,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             AutoClickerTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "Android",
+                    RecordingsListScreen(
                         modifier = Modifier.padding(innerPadding)
                     )
                 }
@@ -112,17 +116,104 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
+fun RecordingsListScreen(modifier: Modifier = Modifier) {
+    var recordings by remember { mutableStateOf(RecordingManager.getRecordings()) }
+    var fileToRename by remember { mutableStateOf<File?>(null) }
+
+    Column(modifier = modifier.fillMaxSize()) {
+        Text(
+            text = "Recordings",
+            style = MaterialTheme.typography.headlineMedium,
+            modifier = Modifier.padding(16.dp)
+        )
+
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            items(recordings) { file ->
+                RecordingItem(
+                    file = file,
+                    onRename = { fileToRename = file },
+                    onDelete = {
+                        RecordingManager.deleteRecording(file)
+                        recordings = RecordingManager.getRecordings()
+                    }
+                )
+                HorizontalDivider()
+            }
+        }
+    }
+
+    if (fileToRename != null) {
+        RenameDialog(
+            file = fileToRename!!,
+            onDismiss = { fileToRename = null },
+            onConfirm = { newName ->
+                RecordingManager.renameRecording(fileToRename!!, newName)
+                recordings = RecordingManager.getRecordings()
+                fileToRename = null
+            }
+        )
+    }
 }
 
-@Preview(showBackground = true)
 @Composable
-fun GreetingPreview() {
-    AutoClickerTheme {
-        Greeting("Android")
+fun RecordingItem(
+    file: File,
+    onRename: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = file.nameWithoutExtension,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyLarge
+        )
+        IconButton(onClick = onRename) {
+            Icon(Icons.Default.Edit, contentDescription = "Rename")
+        }
+        IconButton(onClick = onDelete) {
+            Icon(Icons.Default.Delete, contentDescription = "Delete")
+        }
     }
+}
+
+@Composable
+fun RenameDialog(
+    file: File,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var text by remember { mutableStateOf(file.nameWithoutExtension) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename Recording") },
+        text = {
+            TextField(
+                value = text,
+                onValueChange = { text = it },
+                label = { Text("Name") },
+                singleLine = true
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(text) },
+                enabled = text.isNotBlank()
+            ) {
+                Text("Rename")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }

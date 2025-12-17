@@ -17,6 +17,15 @@ data class Interaction(
 
 object RecordingManager {
 
+    private val recordingsDir: File
+        get() {
+            val dir = File(Environment.getExternalStorageDirectory(), "Recordings")
+            if (!dir.exists()) {
+                dir.mkdirs()
+            }
+            return dir
+        }
+
     fun saveRecording(events: List<Interaction>) {
         val timestamp = System.currentTimeMillis()
         
@@ -41,12 +50,24 @@ object RecordingManager {
             put("events", jsonArray)
         }
 
-        // Use Environment.getExternalStorageDirectory() for correct storage path
-        val dir = File(Environment.getExternalStorageDirectory(), "Recordings")
-        if (!dir.exists()) {
-            dir.mkdirs()
-        }
-        val file = File(dir, "$timestamp.json")
+        val file = File(recordingsDir, "$timestamp.json")
         file.writeText(finalJson.toString(4)) // Indent 4 for readability
+    }
+
+    fun getRecordings(): List<File> {
+        return recordingsDir.listFiles { file -> file.extension == "json" }
+            ?.sortedByDescending { it.lastModified() }
+            ?.toList() ?: emptyList()
+    }
+
+    fun renameRecording(file: File, newName: String): Boolean {
+        val nameWithExt = if (newName.endsWith(".json")) newName else "$newName.json"
+        val newFile = File(recordingsDir, nameWithExt)
+        if (newFile.exists()) return false
+        return file.renameTo(newFile)
+    }
+
+    fun deleteRecording(file: File): Boolean {
+        return file.delete()
     }
 }
