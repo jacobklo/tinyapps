@@ -8,13 +8,15 @@ import java.io.File
 // 1) Separate data classes for Click and Drag
 sealed class Interaction {
     abstract val delayBefore: Long
+    abstract val name: String
 }
 
 data class ClickInteraction(
     val x: Float,
     val y: Float,
     val duration: Long,
-    override val delayBefore: Long
+    override val delayBefore: Long,
+    override val name: String = ""
 ) : Interaction()
 
 // 2) Drag data class with multiple coordinates and delta time
@@ -26,24 +28,28 @@ data class DragPoint(
 
 data class DragInteraction(
     val points: List<DragPoint>,
-    override val delayBefore: Long
+    override val delayBefore: Long,
+    override val name: String = ""
 ) : Interaction()
 
 // New ForLoop interaction
 data class ForLoopInteraction(
     val repeatCount: Int,
     val interactions: List<Interaction>,
-    override val delayBefore: Long
+    override val delayBefore: Long,
+    override val name: String = ""
 ) : Interaction()
 
 // Editor helper types
 data class LoopStartInteraction(
     val repeatCount: Int,
-    override val delayBefore: Long = 0
+    override val delayBefore: Long = 0,
+    override val name: String = ""
 ) : Interaction()
 
 data class LoopEndInteraction(
-    override val delayBefore: Long = 0
+    override val delayBefore: Long = 0,
+    override val name: String = ""
 ) : Interaction()
 
 object RecordingManager {
@@ -84,6 +90,7 @@ object RecordingManager {
     private fun eventToJson(event: Interaction): JSONObject? {
         val jsonObj = JSONObject()
         jsonObj.put("delayBefore", event.delayBefore)
+        jsonObj.put("name", event.name)
 
         when (event) {
             is ClickInteraction -> {
@@ -146,6 +153,7 @@ object RecordingManager {
     private fun parseEvent(obj: JSONObject): Interaction? {
         val type = obj.optString("type")
         val delayBefore = obj.optLong("delayBefore", 0L)
+        val name = obj.optString("name", "")
 
         return when (type) {
             "click" -> {
@@ -153,7 +161,8 @@ object RecordingManager {
                     x = obj.getDouble("x").toFloat(),
                     y = obj.getDouble("y").toFloat(),
                     duration = obj.getLong("duration"),
-                    delayBefore = delayBefore
+                    delayBefore = delayBefore,
+                    name = name
                 )
             }
             "drag" -> {
@@ -179,7 +188,7 @@ object RecordingManager {
                     points.add(DragPoint(startX, startY, 0))
                     points.add(DragPoint(endX, endY, duration))
                 }
-                DragInteraction(points, delayBefore)
+                DragInteraction(points, delayBefore, name)
             }
             "loop" -> {
                 val count = obj.getInt("count")
@@ -189,7 +198,7 @@ object RecordingManager {
                     val childObj = eventsArray.getJSONObject(i)
                     parseEvent(childObj)?.let { children.add(it) }
                 }
-                ForLoopInteraction(count, children, delayBefore)
+                ForLoopInteraction(count, children, delayBefore, name)
             }
             else -> null
         }

@@ -135,63 +135,96 @@ fun InteractionRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp),
+            .padding(8.dp), // Reduced padding
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Move Up/Down Controls
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(end = 16.dp)
+            modifier = Modifier.padding(end = 8.dp)
         ) {
             IconButton(
                 onClick = onMoveUp,
-                modifier = Modifier.size(32.dp)
+                modifier = Modifier.size(24.dp)
             ) {
                 Icon(Icons.Default.ArrowUpward, contentDescription = "Move Up")
             }
+            Spacer(modifier = Modifier.height(4.dp))
             IconButton(
                 onClick = onMoveDown,
-                modifier = Modifier.size(32.dp)
+                modifier = Modifier.size(24.dp)
             ) {
                 Icon(Icons.Default.ArrowDownward, contentDescription = "Move Down")
             }
         }
         
-        Column(modifier = Modifier.weight(1f)) {
-            when (interaction) {
-                is ClickInteraction -> {
-                    Text("Click", style = MaterialTheme.typography.titleMedium)
-                    Text("Start: (${interaction.x.toInt()}, ${interaction.y.toInt()})")
-                }
-                is DragInteraction -> {
-                    Text("Drag", style = MaterialTheme.typography.titleMedium)
-                    if (interaction.points.isNotEmpty()) {
-                        val start = interaction.points.first()
-                        Text("Start: (${start.x.toInt()}, ${start.y.toInt()})")
-                    } else {
-                        Text("Start: (0, 0)")
+        // Main Content Area - Inline
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Type and Info
+            Column(modifier = Modifier.widthIn(max = 100.dp)) {
+                when (interaction) {
+                    is ClickInteraction -> {
+                        Text("Click", style = MaterialTheme.typography.labelLarge)
+                        Text("(${interaction.x.toInt()}, ${interaction.y.toInt()})", style = MaterialTheme.typography.bodySmall)
                     }
-                }
-                is LoopStartInteraction -> {
-                    Text("Start For Loop", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-                    OutlinedTextField(
-                        value = interaction.repeatCount.toString(),
-                        onValueChange = {
-                            val count = it.toIntOrNull() ?: 0
-                            onUpdate(interaction.copy(repeatCount = count))
-                        },
-                        label = { Text("Loops") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.width(100.dp)
-                    )
-                }
-                is LoopEndInteraction -> {
-                    Text("End For Loop", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-                }
-                else -> {
-                    Text("Unknown Interaction")
+                    is DragInteraction -> {
+                        Text("Drag", style = MaterialTheme.typography.labelLarge)
+                        if (interaction.points.isNotEmpty()) {
+                            val start = interaction.points.first()
+                            Text("(${start.x.toInt()}, ${start.y.toInt()})", style = MaterialTheme.typography.bodySmall)
+                        } else {
+                            Text("(0,0)", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    is LoopStartInteraction -> {
+                        Text("Start Loop", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    }
+                    is LoopEndInteraction -> {
+                        Text("End Loop", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    }
+                    else -> {}
                 }
             }
+
+            // Loop Count Field (Only for LoopStart)
+            if (interaction is LoopStartInteraction) {
+                OutlinedTextField(
+                    value = interaction.repeatCount.toString(),
+                    onValueChange = {
+                        val count = it.toIntOrNull() ?: 0
+                        onUpdate(interaction.copy(repeatCount = count))
+                    },
+                    label = { Text("#") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.width(60.dp),
+                    singleLine = true
+                )
+            }
+
+            // Name Field (For all except LoopEnd maybe? User said "each row", but naming End Loop is redundant)
+            // But strict requirement: "Create a text field for each row"
+            // I'll add it for all.
+            OutlinedTextField(
+                value = interaction.name,
+                onValueChange = { newName ->
+                    val updated = when (interaction) {
+                        is ClickInteraction -> interaction.copy(name = newName)
+                        is DragInteraction -> interaction.copy(name = newName)
+                        is LoopStartInteraction -> interaction.copy(name = newName)
+                        is LoopEndInteraction -> interaction.copy(name = newName)
+                        // Should not happen as ForLoopInteraction is flattened
+                        is ForLoopInteraction -> interaction.copy(name = newName)
+                    }
+                    onUpdate(updated)
+                },
+                label = { Text("Name") },
+                modifier = Modifier.weight(1f),
+                singleLine = true
+            )
         }
         
         IconButton(onClick = onDelete) {
@@ -206,7 +239,7 @@ fun flatten(interactions: List<Interaction>): List<Interaction> {
     val flatList = mutableListOf<Interaction>()
     interactions.forEach { interaction ->
         if (interaction is ForLoopInteraction) {
-            flatList.add(LoopStartInteraction(interaction.repeatCount, interaction.delayBefore))
+            flatList.add(LoopStartInteraction(interaction.repeatCount, interaction.delayBefore, interaction.name))
             flatList.addAll(flatten(interaction.interactions))
             flatList.add(LoopEndInteraction(0))
         } else {
@@ -223,7 +256,7 @@ fun buildHierarchy(flatInteractions: List<Interaction>): List<Interaction> {
         val item = flatInteractions[i]
         if (item is LoopStartInteraction) {
             val (children, nextIndex) = parseBlock(flatInteractions, i + 1)
-            result.add(ForLoopInteraction(item.repeatCount, children, item.delayBefore))
+            result.add(ForLoopInteraction(item.repeatCount, children, item.delayBefore, item.name))
             i = nextIndex
         } else if (item is LoopEndInteraction) {
             // Unmatched End - ignore
@@ -245,7 +278,7 @@ fun parseBlock(flatInteractions: List<Interaction>, startIndex: Int): Pair<List<
             return children to (i + 1)
         } else if (item is LoopStartInteraction) {
             val (subChildren, nextIndex) = parseBlock(flatInteractions, i + 1)
-            children.add(ForLoopInteraction(item.repeatCount, subChildren, item.delayBefore))
+            children.add(ForLoopInteraction(item.repeatCount, subChildren, item.delayBefore, item.name))
             i = nextIndex
         } else {
             children.add(item)
