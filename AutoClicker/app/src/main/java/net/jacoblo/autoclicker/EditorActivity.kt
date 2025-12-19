@@ -7,6 +7,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDownward
@@ -17,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import net.jacoblo.autoclicker.ui.theme.AutoClickerTheme
 import java.io.File
@@ -50,7 +52,11 @@ class EditorActivity : ComponentActivity() {
 @Composable
 fun EditorScreen(file: File, onBack: () -> Unit) {
     // Load initial state
-    val initialInteractions = remember { RecordingManager.loadRecording(file) }
+    // We flatten the hierarchical structure for editing
+    val initialInteractions = remember { 
+        val loaded = RecordingManager.loadRecording(file)
+        flatten(loaded)
+    }
     val interactions = remember { mutableStateListOf<Interaction>().apply { addAll(initialInteractions) } }
 
     Scaffold(
@@ -63,8 +69,20 @@ fun EditorScreen(file: File, onBack: () -> Unit) {
                     }
                 },
                 actions = {
+                    TextButton(onClick = {
+                        interactions.add(LoopStartInteraction(repeatCount = 1))
+                    }) {
+                        Text("Start For")
+                    }
+                    TextButton(onClick = {
+                        interactions.add(LoopEndInteraction())
+                    }) {
+                        Text("End For")
+                    }
                     IconButton(onClick = {
-                        RecordingManager.saveRecordingToFile(file, interactions)
+                        // Reconstruct hierarchy before saving
+                        val hierarchy = buildHierarchy(interactions)
+                        RecordingManager.saveRecordingToFile(file, hierarchy)
                         onBack()
                     }) {
                         Icon(Icons.Default.Save, contentDescription = "Save")
@@ -81,6 +99,9 @@ fun EditorScreen(file: File, onBack: () -> Unit) {
             itemsIndexed(interactions) { index, interaction ->
                 InteractionRow(
                     interaction = interaction,
+                    onUpdate = { updated ->
+                        interactions[index] = updated
+                    },
                     onDelete = { interactions.removeAt(index) },
                     onMoveUp = {
                         if (index > 0) {
@@ -106,6 +127,7 @@ fun EditorScreen(file: File, onBack: () -> Unit) {
 @Composable
 fun InteractionRow(
     interaction: Interaction,
+    onUpdate: (Interaction) -> Unit,
     onDelete: () -> Unit,
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit
@@ -150,6 +172,25 @@ fun InteractionRow(
                         Text("Start: (0, 0)")
                     }
                 }
+                is LoopStartInteraction -> {
+                    Text("Start For Loop", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                    OutlinedTextField(
+                        value = interaction.repeatCount.toString(),
+                        onValueChange = {
+                            val count = it.toIntOrNull() ?: 0
+                            onUpdate(interaction.copy(repeatCount = count))
+                        },
+                        label = { Text("Loops") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.width(100.dp)
+                    )
+                }
+                is LoopEndInteraction -> {
+                    Text("End For Loop", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                }
+                else -> {
+                    Text("Unknown Interaction")
+                }
             }
         }
         
@@ -157,4 +198,59 @@ fun InteractionRow(
             Icon(Icons.Default.Delete, contentDescription = "Delete")
         }
     }
+}
+
+// Helper functions for Flattening / Unflattening
+
+fun flatten(interactions: List<Interaction>): List<Interaction> {
+    val flatList = mutableListOf<Interaction>()
+    interactions.forEach { interaction ->
+        if (interaction is ForLoopInteraction) {
+            flatList.add(LoopStartInteraction(interaction.repeatCount, interaction.delayBefore))
+            flatList.addAll(flatten(interaction.interactions))
+            flatList.add(LoopEndInteraction(0))
+        } else {
+            flatList.add(interaction)
+        }
+    }
+    return flatList
+}
+
+fun buildHierarchy(flatInteractions: List<Interaction>): List<Interaction> {
+    val result = mutableListOf<Interaction>()
+    var i = 0
+    while (i < flatInteractions.size) {
+        val item = flatInteractions[i]
+        if (item is LoopStartInteraction) {
+            val (children, nextIndex) = parseBlock(flatInteractions, i + 1)
+            result.add(ForLoopInteraction(item.repeatCount, children, item.delayBefore))
+            i = nextIndex
+        } else if (item is LoopEndInteraction) {
+            // Unmatched End - ignore
+            i++
+        } else {
+            result.add(item)
+            i++
+        }
+    }
+    return result
+}
+
+fun parseBlock(flatInteractions: List<Interaction>, startIndex: Int): Pair<List<Interaction>, Int> {
+    val children = mutableListOf<Interaction>()
+    var i = startIndex
+    while (i < flatInteractions.size) {
+        val item = flatInteractions[i]
+        if (item is LoopEndInteraction) {
+            return children to (i + 1)
+        } else if (item is LoopStartInteraction) {
+            val (subChildren, nextIndex) = parseBlock(flatInteractions, i + 1)
+            children.add(ForLoopInteraction(item.repeatCount, subChildren, item.delayBefore))
+            i = nextIndex
+        } else {
+            children.add(item)
+            i++
+        }
+    }
+    return children to i // End of list reached without End tag
 }

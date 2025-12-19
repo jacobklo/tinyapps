@@ -40,19 +40,31 @@ class RecorderService : AccessibilityService() {
 
     fun playRecording(events: List<Interaction>) {
         serviceScope.launch {
-            events.forEach { event ->
-                delay(event.delayBefore)
-                when (event) {
-                    is ClickInteraction -> {
-                        performClick(event.x, event.y, event.duration)
-                        delay(event.duration)
+            executeEvents(events)
+        }
+    }
+
+    private suspend fun executeEvents(events: List<Interaction>) {
+        events.forEach { event ->
+            delay(event.delayBefore)
+            when (event) {
+                is ClickInteraction -> {
+                    performClick(event.x, event.y, event.duration)
+                    delay(event.duration)
+                }
+                is DragInteraction -> {
+                    // Calculate total duration
+                    val totalDuration = event.points.sumOf { it.dt }
+                    performDrag(event.points)
+                    delay(totalDuration)
+                }
+                is ForLoopInteraction -> {
+                    repeat(event.repeatCount) {
+                        executeEvents(event.interactions)
                     }
-                    is DragInteraction -> {
-                        // Calculate total duration
-                        val totalDuration = event.points.sumOf { it.dt }
-                        performDrag(event.points)
-                        delay(totalDuration)
-                    }
+                }
+                else -> {
+                    // Ignore unknown or editor-only interactions
                 }
             }
         }

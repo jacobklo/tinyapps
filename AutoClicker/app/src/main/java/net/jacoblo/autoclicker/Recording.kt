@@ -29,6 +29,23 @@ data class DragInteraction(
     override val delayBefore: Long
 ) : Interaction()
 
+// New ForLoop interaction
+data class ForLoopInteraction(
+    val repeatCount: Int,
+    val interactions: List<Interaction>,
+    override val delayBefore: Long
+) : Interaction()
+
+// Editor helper types
+data class LoopStartInteraction(
+    val repeatCount: Int,
+    override val delayBefore: Long = 0
+) : Interaction()
+
+data class LoopEndInteraction(
+    override val delayBefore: Long = 0
+) : Interaction()
+
 object RecordingManager {
 
     var currentSelectedFile: File? = null
@@ -53,30 +70,7 @@ object RecordingManager {
         
         val jsonArray = JSONArray()
         events.forEach { event ->
-            val jsonObj = JSONObject()
-            jsonObj.put("delayBefore", event.delayBefore)
-
-            when (event) {
-                is ClickInteraction -> {
-                    jsonObj.put("type", "click")
-                    jsonObj.put("x", event.x)
-                    jsonObj.put("y", event.y)
-                    jsonObj.put("duration", event.duration)
-                }
-                is DragInteraction -> {
-                    jsonObj.put("type", "drag")
-                    val pointsArray = JSONArray()
-                    event.points.forEach { point ->
-                        val pointObj = JSONObject()
-                        pointObj.put("x", point.x)
-                        pointObj.put("y", point.y)
-                        pointObj.put("dt", point.dt)
-                        pointsArray.put(pointObj)
-                    }
-                    jsonObj.put("points", pointsArray)
-                }
-            }
-            jsonArray.put(jsonObj)
+            eventToJson(event)?.let { jsonArray.put(it) }
         }
 
         val finalJson = JSONObject().apply {
@@ -85,6 +79,43 @@ object RecordingManager {
         }
 
         file.writeText(finalJson.toString(4))
+    }
+
+    private fun eventToJson(event: Interaction): JSONObject? {
+        val jsonObj = JSONObject()
+        jsonObj.put("delayBefore", event.delayBefore)
+
+        when (event) {
+            is ClickInteraction -> {
+                jsonObj.put("type", "click")
+                jsonObj.put("x", event.x)
+                jsonObj.put("y", event.y)
+                jsonObj.put("duration", event.duration)
+            }
+            is DragInteraction -> {
+                jsonObj.put("type", "drag")
+                val pointsArray = JSONArray()
+                event.points.forEach { point ->
+                    val pointObj = JSONObject()
+                    pointObj.put("x", point.x)
+                    pointObj.put("y", point.y)
+                    pointObj.put("dt", point.dt)
+                    pointsArray.put(pointObj)
+                }
+                jsonObj.put("points", pointsArray)
+            }
+            is ForLoopInteraction -> {
+                jsonObj.put("type", "loop")
+                jsonObj.put("count", event.repeatCount)
+                val eventsArray = JSONArray()
+                event.interactions.forEach { child ->
+                    eventToJson(child)?.let { eventsArray.put(it) }
+                }
+                jsonObj.put("events", eventsArray)
+            }
+            else -> return null // Skip editor-only types
+        }
+        return jsonObj
     }
 
     fun getRecordings(): List<File> {
@@ -104,46 +135,64 @@ object RecordingManager {
 
             for (i in 0 until eventsArray.length()) {
                 val obj = eventsArray.getJSONObject(i)
-                val type = obj.getString("type")
-                val delayBefore = obj.getLong("delayBefore")
-
-                if (type == "click") {
-                    events.add(ClickInteraction(
-                        x = obj.getDouble("x").toFloat(),
-                        y = obj.getDouble("y").toFloat(),
-                        duration = obj.getLong("duration"),
-                        delayBefore = delayBefore
-                    ))
-                } else if (type == "drag") {
-                    val points = mutableListOf<DragPoint>()
-                    if (obj.has("points")) {
-                        val pointsArray = obj.getJSONArray("points")
-                        for (j in 0 until pointsArray.length()) {
-                            val pObj = pointsArray.getJSONObject(j)
-                            points.add(DragPoint(
-                                x = pObj.getDouble("x").toFloat(),
-                                y = pObj.getDouble("y").toFloat(),
-                                dt = pObj.getLong("dt")
-                            ))
-                        }
-                    } else {
-                        // Backward compatibility for old format: start (x,y) -> end (endX, endY)
-                        val startX = obj.getDouble("x").toFloat()
-                        val startY = obj.getDouble("y").toFloat()
-                        val endX = obj.optDouble("endX", 0.0).toFloat()
-                        val endY = obj.optDouble("endY", 0.0).toFloat()
-                        val duration = obj.optLong("duration", 100)
-                        
-                        points.add(DragPoint(startX, startY, 0))
-                        points.add(DragPoint(endX, endY, duration))
-                    }
-                    events.add(DragInteraction(points, delayBefore))
-                }
+                parseEvent(obj)?.let { events.add(it) }
             }
         } catch (e: Exception) {
             e.printStackTrace()
         }
         return events
+    }
+
+    private fun parseEvent(obj: JSONObject): Interaction? {
+        val type = obj.optString("type")
+        val delayBefore = obj.optLong("delayBefore", 0L)
+
+        return when (type) {
+            "click" -> {
+                ClickInteraction(
+                    x = obj.getDouble("x").toFloat(),
+                    y = obj.getDouble("y").toFloat(),
+                    duration = obj.getLong("duration"),
+                    delayBefore = delayBefore
+                )
+            }
+            "drag" -> {
+                val points = mutableListOf<DragPoint>()
+                if (obj.has("points")) {
+                    val pointsArray = obj.getJSONArray("points")
+                    for (j in 0 until pointsArray.length()) {
+                        val pObj = pointsArray.getJSONObject(j)
+                        points.add(DragPoint(
+                            x = pObj.getDouble("x").toFloat(),
+                            y = pObj.getDouble("y").toFloat(),
+                            dt = pObj.getLong("dt")
+                        ))
+                    }
+                } else {
+                    // Backward compatibility for old format: start (x,y) -> end (endX, endY)
+                    val startX = obj.getDouble("x").toFloat()
+                    val startY = obj.getDouble("y").toFloat()
+                    val endX = obj.optDouble("endX", 0.0).toFloat()
+                    val endY = obj.optDouble("endY", 0.0).toFloat()
+                    val duration = obj.optLong("duration", 100)
+                    
+                    points.add(DragPoint(startX, startY, 0))
+                    points.add(DragPoint(endX, endY, duration))
+                }
+                DragInteraction(points, delayBefore)
+            }
+            "loop" -> {
+                val count = obj.getInt("count")
+                val eventsArray = obj.getJSONArray("events")
+                val children = mutableListOf<Interaction>()
+                for (i in 0 until eventsArray.length()) {
+                    val childObj = eventsArray.getJSONObject(i)
+                    parseEvent(childObj)?.let { children.add(it) }
+                }
+                ForLoopInteraction(count, children, delayBefore)
+            }
+            else -> null
+        }
     }
 
     fun renameRecording(file: File, newName: String): Boolean {
