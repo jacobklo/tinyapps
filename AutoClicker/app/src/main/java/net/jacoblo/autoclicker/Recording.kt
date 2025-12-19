@@ -15,6 +15,7 @@ data class ClickInteraction(
     val x: Float,
     val y: Float,
     val duration: Long,
+    val randomFactor: Int = 0, // Added randomFactor
     override val delayBefore: Long,
     override val name: String = ""
 ) : Interaction()
@@ -28,6 +29,8 @@ data class DragPoint(
 
 data class DragInteraction(
     val points: List<DragPoint>,
+    val randomFactorStart: Int = 0, // Added randomFactorStart
+    val randomFactorHighest: Int = 0, // Added randomFactorHighest
     override val delayBefore: Long,
     override val name: String = ""
 ) : Interaction()
@@ -98,6 +101,7 @@ object RecordingManager {
                 jsonObj.put("x", event.x)
                 jsonObj.put("y", event.y)
                 jsonObj.put("duration", event.duration)
+                jsonObj.put("randomFactor", event.randomFactor) // Save randomFactor
             }
             is DragInteraction -> {
                 jsonObj.put("type", "drag")
@@ -110,6 +114,8 @@ object RecordingManager {
                     pointsArray.put(pointObj)
                 }
                 jsonObj.put("points", pointsArray)
+                jsonObj.put("randomFactorStart", event.randomFactorStart) // Save randomFactorStart
+                jsonObj.put("randomFactorHighest", event.randomFactorHighest) // Save randomFactorHighest
             }
             is ForLoopInteraction -> {
                 jsonObj.put("type", "loop")
@@ -161,6 +167,7 @@ object RecordingManager {
                     x = obj.getDouble("x").toFloat(),
                     y = obj.getDouble("y").toFloat(),
                     duration = obj.getLong("duration"),
+                    randomFactor = obj.optInt("randomFactor", 0), // Load randomFactor
                     delayBefore = delayBefore,
                     name = name
                 )
@@ -188,7 +195,13 @@ object RecordingManager {
                     points.add(DragPoint(startX, startY, 0))
                     points.add(DragPoint(endX, endY, duration))
                 }
-                DragInteraction(points, delayBefore, name)
+                DragInteraction(
+                    points = points,
+                    randomFactorStart = obj.optInt("randomFactorStart", 0), // Load randomFactorStart
+                    randomFactorHighest = obj.optInt("randomFactorHighest", 0), // Load randomFactorHighest
+                    delayBefore = delayBefore,
+                    name = name
+                )
             }
             "loop" -> {
                 val count = obj.getInt("count")

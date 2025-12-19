@@ -381,11 +381,11 @@ class Bubble(private val context: Context) {
 
                 if (distance < 20) {
                     // Click
-                    recordedEvents.add(ClickInteraction(startX, startY, duration, delay))
+                    recordedEvents.add(ClickInteraction(startX, startY, duration, 0, delay))
 
                     val service = RecorderService.instance
                     if (service != null) {
-                        service.performClick(startX, startY, duration, completionCallback)
+                        service.performClick(startX, startY, duration, 0, completionCallback)
                     } else {
                         completionCallback()
                     }
@@ -398,11 +398,11 @@ class Bubble(private val context: Context) {
                     }
 
                     val points = ArrayList(currentDragPoints)
-                    recordedEvents.add(DragInteraction(points, delay))
+                    recordedEvents.add(DragInteraction(points, 0,0,delay))
 
                     val service = RecorderService.instance
                     if (service != null) {
-                        service.performDrag(points, completionCallback)
+                        service.performDrag(points, 0,0,completionCallback)
                     } else {
                         completionCallback()
                     }

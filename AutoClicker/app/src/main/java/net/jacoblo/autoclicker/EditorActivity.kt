@@ -205,6 +205,48 @@ fun InteractionRow(
                 )
             }
 
+            // Random Factor Fields
+            when (interaction) {
+                is ClickInteraction -> {
+                    OutlinedTextField(
+                        value = interaction.randomFactor.toString(),
+                        onValueChange = {
+                            val r = it.toIntOrNull() ?: 0
+                            onUpdate(interaction.copy(randomFactor = r))
+                        },
+                        label = { Text("Rand") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.width(80.dp),
+                        singleLine = true
+                    )
+                }
+                is DragInteraction -> {
+                    OutlinedTextField(
+                        value = interaction.randomFactorStart.toString(),
+                        onValueChange = {
+                            val r = it.toIntOrNull() ?: 0
+                            onUpdate(interaction.copy(randomFactorStart = r))
+                        },
+                        label = { Text("R.Start") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.width(80.dp),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = interaction.randomFactorHighest.toString(),
+                        onValueChange = {
+                            val r = it.toIntOrNull() ?: 0
+                            onUpdate(interaction.copy(randomFactorHighest = r))
+                        },
+                        label = { Text("R.High") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.width(80.dp),
+                        singleLine = true
+                    )
+                }
+                else -> {}
+            }
+
             // Name Field (For all except LoopEnd maybe? User said "each row", but naming End Loop is redundant)
             // But strict requirement: "Create a text field for each row"
             // I'll add it for all.
@@ -222,7 +264,7 @@ fun InteractionRow(
                     onUpdate(updated)
                 },
                 label = { Text("Name") },
-                modifier = Modifier.width(250.dp),
+                modifier = Modifier.width(200.dp), // Reduced width to fit everything
                 singleLine = true
             )
         }
