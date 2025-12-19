@@ -30,6 +30,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        
+        <activity
+            android:name=".EditorActivity"
+            android:exported="false"
+            android:theme="@style/Theme.AutoClicker" />
 
         <service
             android:name=".NotificationService"

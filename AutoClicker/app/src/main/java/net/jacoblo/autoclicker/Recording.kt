@@ -44,6 +44,12 @@ object RecordingManager {
 
     fun saveRecording(events: List<Interaction>) {
         val timestamp = System.currentTimeMillis()
+        val file = File(recordingsDir, "$timestamp.json")
+        saveRecordingToFile(file, events)
+    }
+
+    fun saveRecordingToFile(file: File, events: List<Interaction>) {
+        val timestamp = System.currentTimeMillis() // Or preserve original timestamp if needed, but updating it is fine for modification time
         
         val jsonArray = JSONArray()
         events.forEach { event ->
@@ -78,7 +84,6 @@ object RecordingManager {
             put("events", jsonArray)
         }
 
-        val file = File(recordingsDir, "$timestamp.json")
         file.writeText(finalJson.toString(4))
     }
 

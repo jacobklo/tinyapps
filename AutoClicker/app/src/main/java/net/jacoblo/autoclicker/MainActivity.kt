@@ -22,6 +22,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import net.jacoblo.autoclicker.ui.theme.AutoClickerTheme
 import java.io.File
@@ -138,6 +139,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun RecordingsListScreen(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
     var recordings by remember { mutableStateOf(RecordingManager.getRecordings()) }
     var selectedFile by remember { mutableStateOf(RecordingManager.currentSelectedFile) }
     var fileToRename by remember { mutableStateOf<File?>(null) }
@@ -159,6 +161,12 @@ fun RecordingsListScreen(modifier: Modifier = Modifier) {
                     onSelect = {
                         selectedFile = file
                         RecordingManager.currentSelectedFile = file
+                    },
+                    onClick = {
+                         val intent = Intent(context, EditorActivity::class.java).apply {
+                             putExtra("FILE_PATH", file.absolutePath)
+                         }
+                         context.startActivity(intent)
                     },
                     onRename = { fileToRename = file },
                     onDelete = {
@@ -197,13 +205,14 @@ fun RecordingItem(
     file: File,
     isSelected: Boolean,
     onSelect: () -> Unit,
+    onClick: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onSelect() }
+            .clickable { onClick() }
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
