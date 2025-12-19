@@ -169,15 +169,15 @@ fun InteractionRow(
                 when (interaction) {
                     is ClickInteraction -> {
                         Text("Click", style = MaterialTheme.typography.labelLarge)
-                        Text("(${interaction.x.toInt()}, ${interaction.y.toInt()})", style = MaterialTheme.typography.bodySmall)
+                        Text("(${interaction.x.toInt()}, ${interaction.y.toInt()})", style = MaterialTheme.typography.bodyLarge)
                     }
                     is DragInteraction -> {
                         Text("Drag", style = MaterialTheme.typography.labelLarge)
                         if (interaction.points.isNotEmpty()) {
                             val start = interaction.points.first()
-                            Text("(${start.x.toInt()}, ${start.y.toInt()})", style = MaterialTheme.typography.bodySmall)
+                            Text("(${start.x.toInt()}, ${start.y.toInt()})", style = MaterialTheme.typography.bodyLarge)
                         } else {
-                            Text("(0,0)", style = MaterialTheme.typography.bodySmall)
+                            Text("(0,0)", style = MaterialTheme.typography.bodyLarge)
                         }
                     }
                     is LoopStartInteraction -> {
@@ -222,7 +222,7 @@ fun InteractionRow(
                     onUpdate(updated)
                 },
                 label = { Text("Name") },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.width(250.dp),
                 singleLine = true
             )
         }
