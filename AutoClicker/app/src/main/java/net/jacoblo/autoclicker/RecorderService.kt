@@ -100,37 +100,64 @@ class RecorderService : AccessibilityService() {
             return
         }
 
-        val path = Path()
-        // Move to the first point
-        path.moveTo(points[0].x, points[0].y)
-
-        var totalDuration = 0L
-        // Loop through remaining points for lineTo
-        for (i in 1 until points.size) {
-            path.lineTo(points[i].x, points[i].y)
-            totalDuration += points[i].dt
-        }
-
-        // Ensure duration is at least 1ms
-        val duration = totalDuration.coerceAtLeast(1)
-
-        val builder = GestureDescription.Builder()
-        builder.addStroke(GestureDescription.StrokeDescription(path, 0, duration))
-
-        val dispatched = dispatchGesture(builder.build(), object : GestureResultCallback() {
-            override fun onCompleted(gestureDescription: GestureDescription?) {
-                super.onCompleted(gestureDescription)
+        // Recursive helper to dispatch strokes in batches of 10 (max limit)
+        // This ensures we respect individual point timings (dt)
+        fun dispatchBatches(startIndex: Int) {
+            // If we processed all segments, finish
+            if (startIndex >= points.size - 1) {
                 callback?.invoke()
+                return
             }
 
-            override fun onCancelled(gestureDescription: GestureDescription?) {
-                super.onCancelled(gestureDescription)
+            val builder = GestureDescription.Builder()
+            var startTime = 0L
+            var addedStrokes = 0
+            var i = startIndex
+
+            // Add strokes until we hit the batch limit or end of points
+            while (i < points.size - 1 && addedStrokes < 10) {
+                val start = points[i]
+                val end = points[i + 1]
+                val duration = end.dt.coerceAtLeast(1)
+
+                val path = Path()
+                path.moveTo(start.x, start.y)
+                path.lineTo(end.x, end.y)
+
+                // Continue the gesture unless it's the very last segment
+                val isLastOverall = (i == points.size - 2)
+                val willContinue = !isLastOverall
+
+                // StrokeDescription with continuation requires API 26+
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    builder.addStroke(GestureDescription.StrokeDescription(path, startTime, duration, willContinue))
+                } else {
+                    builder.addStroke(GestureDescription.StrokeDescription(path, startTime, duration))
+                }
+
+                startTime += duration
+                addedStrokes++
+                i++
+            }
+
+            val dispatched = dispatchGesture(builder.build(), object : GestureResultCallback() {
+                override fun onCompleted(gestureDescription: GestureDescription?) {
+                    super.onCompleted(gestureDescription)
+                    // Dispatch the next batch
+                    dispatchBatches(i)
+                }
+
+                override fun onCancelled(gestureDescription: GestureDescription?) {
+                    super.onCancelled(gestureDescription)
+                    callback?.invoke()
+                }
+            }, null)
+
+            if (!dispatched) {
                 callback?.invoke()
             }
-        }, null)
-
-        if (!dispatched) {
-            callback?.invoke()
         }
+
+        dispatchBatches(0)
     }
 }
