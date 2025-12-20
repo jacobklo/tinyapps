@@ -46,6 +46,13 @@ data class ForLoopInteraction(
     override val name: String = ""
 ) : Interaction()
 
+// Random Select interaction
+data class RandomSelectInteraction(
+    val interactions: List<Interaction>,
+    override val delayBefore: Long,
+    override val name: String = ""
+) : Interaction()
+
 // Editor helper types
 data class LoopStartInteraction(
     val repeatCount: Int,
@@ -54,6 +61,16 @@ data class LoopStartInteraction(
 ) : Interaction()
 
 data class LoopEndInteraction(
+    override val delayBefore: Long = 0,
+    override val name: String = ""
+) : Interaction()
+
+data class RandomSelectStartInteraction(
+    override val delayBefore: Long = 0,
+    override val name: String = ""
+) : Interaction()
+
+data class RandomSelectEndInteraction(
     override val delayBefore: Long = 0,
     override val name: String = ""
 ) : Interaction()
@@ -124,6 +141,14 @@ object RecordingManager {
             is ForLoopInteraction -> {
                 jsonObj.put("type", "loop")
                 jsonObj.put("count", event.repeatCount)
+                val eventsArray = JSONArray()
+                event.interactions.forEach { child ->
+                    eventToJson(child)?.let { eventsArray.put(it) }
+                }
+                jsonObj.put("events", eventsArray)
+            }
+            is RandomSelectInteraction -> {
+                jsonObj.put("type", "random_select")
                 val eventsArray = JSONArray()
                 event.interactions.forEach { child ->
                     eventToJson(child)?.let { eventsArray.put(it) }
@@ -218,6 +243,15 @@ object RecordingManager {
                     parseEvent(childObj)?.let { children.add(it) }
                 }
                 ForLoopInteraction(count, children, delayBefore, name)
+            }
+            "random_select" -> {
+                val eventsArray = obj.getJSONArray("events")
+                val children = mutableListOf<Interaction>()
+                for (i in 0 until eventsArray.length()) {
+                    val childObj = eventsArray.getJSONObject(i)
+                    parseEvent(childObj)?.let { children.add(it) }
+                }
+                RandomSelectInteraction(children, delayBefore, name)
             }
             else -> null
         }

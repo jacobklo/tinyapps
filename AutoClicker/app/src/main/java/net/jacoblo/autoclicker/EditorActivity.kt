@@ -82,6 +82,16 @@ fun EditorScreen(file: File, onBack: () -> Unit) {
                     }) {
                         Text("End For")
                     }
+                    TextButton(onClick = {
+                        interactions.add(RandomSelectStartInteraction())
+                    }) {
+                        Text("Start Rand")
+                    }
+                    TextButton(onClick = {
+                        interactions.add(RandomSelectEndInteraction())
+                    }) {
+                        Text("End Rand")
+                    }
                     IconButton(onClick = {
                         // Reconstruct hierarchy before saving
                         val hierarchy = buildHierarchy(interactions)
@@ -202,6 +212,12 @@ fun InteractionRow(
                     is LoopEndInteraction -> {
                         Text("End Loop", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                     }
+                    is RandomSelectStartInteraction -> {
+                        Text("Start Rand", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
+                    }
+                    is RandomSelectEndInteraction -> {
+                        Text("End Rand", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
+                    }
                     else -> {}
                 }
             }
@@ -272,8 +288,11 @@ fun InteractionRow(
                         is DragInteraction -> interaction.copy(name = newName)
                         is LoopStartInteraction -> interaction.copy(name = newName)
                         is LoopEndInteraction -> interaction.copy(name = newName)
-                        // Should not happen as ForLoopInteraction is flattened
+                        is RandomSelectStartInteraction -> interaction.copy(name = newName)
+                        is RandomSelectEndInteraction -> interaction.copy(name = newName)
+                        // Should not happen as nested types are flattened
                         is ForLoopInteraction -> interaction.copy(name = newName)
+                        is RandomSelectInteraction -> interaction.copy(name = newName)
                     }
                     onUpdate(updated)
                 },
@@ -298,6 +317,10 @@ fun flatten(interactions: List<Interaction>): List<Interaction> {
             flatList.add(LoopStartInteraction(interaction.repeatCount, interaction.delayBefore, interaction.name))
             flatList.addAll(flatten(interaction.interactions))
             flatList.add(LoopEndInteraction(0))
+        } else if (interaction is RandomSelectInteraction) {
+            flatList.add(RandomSelectStartInteraction(interaction.delayBefore, interaction.name))
+            flatList.addAll(flatten(interaction.interactions))
+            flatList.add(RandomSelectEndInteraction(0))
         } else {
             flatList.add(interaction)
         }
@@ -314,7 +337,11 @@ fun buildHierarchy(flatInteractions: List<Interaction>): List<Interaction> {
             val (children, nextIndex) = parseBlock(flatInteractions, i + 1)
             result.add(ForLoopInteraction(item.repeatCount, children, item.delayBefore, item.name))
             i = nextIndex
-        } else if (item is LoopEndInteraction) {
+        } else if (item is RandomSelectStartInteraction) {
+            val (children, nextIndex) = parseBlock(flatInteractions, i + 1)
+            result.add(RandomSelectInteraction(children, item.delayBefore, item.name))
+            i = nextIndex
+        } else if (item is LoopEndInteraction || item is RandomSelectEndInteraction) {
             // Unmatched End - ignore
             i++
         } else {
@@ -330,11 +357,15 @@ fun parseBlock(flatInteractions: List<Interaction>, startIndex: Int): Pair<List<
     var i = startIndex
     while (i < flatInteractions.size) {
         val item = flatInteractions[i]
-        if (item is LoopEndInteraction) {
+        if (item is LoopEndInteraction || item is RandomSelectEndInteraction) {
             return children to (i + 1)
         } else if (item is LoopStartInteraction) {
             val (subChildren, nextIndex) = parseBlock(flatInteractions, i + 1)
             children.add(ForLoopInteraction(item.repeatCount, subChildren, item.delayBefore, item.name))
+            i = nextIndex
+        } else if (item is RandomSelectStartInteraction) {
+            val (subChildren, nextIndex) = parseBlock(flatInteractions, i + 1)
+            children.add(RandomSelectInteraction(subChildren, item.delayBefore, item.name))
             i = nextIndex
         } else {
             children.add(item)

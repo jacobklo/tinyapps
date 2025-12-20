@@ -70,6 +70,13 @@ class RecorderService : AccessibilityService() {
                         executeEvents(event.interactions, globalRandom)
                     }
                 }
+                is RandomSelectInteraction -> {
+                    if (event.interactions.isNotEmpty()) {
+                        // Pick one random child to execute
+                        val randomChild = event.interactions.random()
+                        executeEvents(listOf(randomChild), globalRandom)
+                    }
+                }
                 else -> {
                     // Ignore unknown or editor-only interactions
                 }
