@@ -5,6 +5,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
+// Data holder for recording and its metadata
+data class RecordingData(val events: List<Interaction>, val globalRandom: Int = 0)
+
 // 1) Separate data classes for Click and Drag
 sealed class Interaction {
     abstract val delayBefore: Long
@@ -68,15 +71,15 @@ object RecordingManager {
             return dir
         }
 
-    fun saveRecording(events: List<Interaction>) {
+    fun saveRecording(events: List<Interaction>, globalRandom: Int = 0) {
         val timestamp = System.currentTimeMillis()
         val file = File(recordingsDir, "$timestamp.json")
-        saveRecordingToFile(file, events)
+        saveRecordingToFile(file, events, globalRandom)
     }
 
-    fun saveRecordingToFile(file: File, events: List<Interaction>) {
+    fun saveRecordingToFile(file: File, events: List<Interaction>, globalRandom: Int = 0) {
         val timestamp = System.currentTimeMillis() // Or preserve original timestamp if needed, but updating it is fine for modification time
-        
+
         val jsonArray = JSONArray()
         events.forEach { event ->
             eventToJson(event)?.let { jsonArray.put(it) }
@@ -84,6 +87,7 @@ object RecordingManager {
 
         val finalJson = JSONObject().apply {
             put("timestamp", timestamp)
+            put("globalRandom", globalRandom)
             put("events", jsonArray)
         }
 
@@ -136,14 +140,16 @@ object RecordingManager {
             ?.sortedByDescending { it.lastModified() }
             ?.toList() ?: emptyList()
     }
-    
-    fun loadRecording(file: File): List<Interaction> {
-        if (!file.exists()) return emptyList()
-        
+
+    fun loadRecording(file: File): RecordingData {
+        if (!file.exists()) return RecordingData(emptyList())
+
         val events = mutableListOf<Interaction>()
+        var globalRandom = 0
         try {
             val jsonString = file.readText()
             val jsonObject = JSONObject(jsonString)
+            globalRandom = jsonObject.optInt("globalRandom", 0)
             val eventsArray = jsonObject.getJSONArray("events")
 
             for (i in 0 until eventsArray.length()) {
@@ -153,7 +159,7 @@ object RecordingManager {
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        return events
+        return RecordingData(events, globalRandom)
     }
 
     private fun parseEvent(obj: JSONObject): Interaction? {
@@ -191,7 +197,7 @@ object RecordingManager {
                     val endX = obj.optDouble("endX", 0.0).toFloat()
                     val endY = obj.optDouble("endY", 0.0).toFloat()
                     val duration = obj.optLong("duration", 100)
-                    
+
                     points.add(DragPoint(startX, startY, 0))
                     points.add(DragPoint(endX, endY, duration))
                 }

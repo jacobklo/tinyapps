@@ -28,7 +28,7 @@ class Bubble(private val context: Context) {
     private var bubbleParams: WindowManager.LayoutParams? = null
     private var closeAreaParams: WindowManager.LayoutParams? = null
     private var recordingParams: WindowManager.LayoutParams? = null
-    
+
     private val bubbleSize = 100
     private val closeAreaSize = 100
 
@@ -36,7 +36,7 @@ class Bubble(private val context: Context) {
     private var recordingOverlay: View? = null
     private val recordedEvents = mutableListOf<Interaction>()
     private var lastEventTime = 0L
-    
+
     // New variables for tracking multi-point drag
     private val currentDragPoints = mutableListOf<DragPoint>()
     private var lastDragPointTime = 0L
@@ -124,8 +124,8 @@ class Bubble(private val context: Context) {
                 setOnClickListener {
                     val file = RecordingManager.currentSelectedFile
                     if (file != null && RecorderService.instance != null) {
-                        val events = RecordingManager.loadRecording(file)
-                        RecorderService.instance?.playRecording(events)
+                        val data = RecordingManager.loadRecording(file)
+                        RecorderService.instance?.playRecording(data.events, data.globalRandom)
                         Toast.makeText(context, "Playing ${file.name}", Toast.LENGTH_SHORT).show()
                     } else {
                         Toast.makeText(context, "Select a recording first", Toast.LENGTH_SHORT).show()
@@ -291,8 +291,8 @@ class Bubble(private val context: Context) {
             // We want to receive touches, so NO FLAG_NOT_TOUCHABLE
             // We want it full screen, covering everything
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         )
 
@@ -394,7 +394,7 @@ class Bubble(private val context: Context) {
                     // Add last point
                     val dt = currentTime - lastDragPointTime
                     if (dt > 0) {
-                         currentDragPoints.add(DragPoint(endX, endY, dt))
+                        currentDragPoints.add(DragPoint(endX, endY, dt))
                     }
 
                     val points = ArrayList(currentDragPoints)
@@ -407,32 +407,32 @@ class Bubble(private val context: Context) {
                         completionCallback()
                     }
                 }
-                
+
                 lastEventTime = currentTime
             }
         }
     }
-    
+
     private fun showCloseArea() {
-         val bg = closeAreaView?.background as? ShapeDrawable
-         bg?.paint?.alpha = 150
-         closeAreaView?.invalidate()
+        val bg = closeAreaView?.background as? ShapeDrawable
+        bg?.paint?.alpha = 150
+        closeAreaView?.invalidate()
     }
-    
+
     private fun hideCloseArea() {
-         val bg = closeAreaView?.background as? ShapeDrawable
-         bg?.paint?.alpha = 0
-         closeAreaView?.invalidate()
+        val bg = closeAreaView?.background as? ShapeDrawable
+        bg?.paint?.alpha = 0
+        closeAreaView?.invalidate()
     }
 
     private fun checkInCloseArea() {
         val bg = closeAreaView?.background as? ShapeDrawable
         if (isInCloseArea()) {
-             bg?.paint?.color = Color.RED
-             bg?.paint?.alpha = 255
+            bg?.paint?.color = Color.RED
+            bg?.paint?.alpha = 255
         } else {
-             bg?.paint?.color = Color.GRAY
-             bg?.paint?.alpha = 150
+            bg?.paint?.color = Color.GRAY
+            bg?.paint?.alpha = 150
         }
         closeAreaView?.invalidate()
     }
@@ -443,16 +443,16 @@ class Bubble(private val context: Context) {
         val currentWidth = bubbleView?.width ?: bubbleSize
         val bubbleCenterX = bubbleParams!!.x + currentWidth / 2
         val bubbleCenterY = bubbleParams!!.y + bubbleSize / 2
-        
+
         val displayMetrics = context.resources.displayMetrics
         val screenWidth = displayMetrics.widthPixels
         val screenHeight = displayMetrics.heightPixels
-        
+
         val closeCenterX = screenWidth / 2
         val closeCenterY = screenHeight - (closeAreaParams!!.y + closeAreaSize / 2)
 
         val distance = sqrt(((bubbleCenterX - closeCenterX).toDouble().pow(2.0) + (bubbleCenterY - closeCenterY).toDouble().pow(2.0)))
-        
+
         return distance < closeAreaSize
     }
 
@@ -478,6 +478,6 @@ class Bubble(private val context: Context) {
         } catch (e: IllegalArgumentException) {
         }
     }
-    
+
     private fun abs(value: Int) = if (value < 0) -value else value
 }

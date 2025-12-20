@@ -40,15 +40,18 @@ class RecorderService : AccessibilityService() {
         serviceScope.cancel()
     }
 
-    fun playRecording(events: List<Interaction>) {
+    fun playRecording(events: List<Interaction>, globalRandom: Int = 0) {
         serviceScope.launch {
-            executeEvents(events)
+            executeEvents(events, globalRandom)
         }
     }
 
-    private suspend fun executeEvents(events: List<Interaction>) {
+    private suspend fun executeEvents(events: List<Interaction>, globalRandom: Int) {
         events.forEach { event ->
-            delay(event.delayBefore)
+            // Add global random to delayBefore
+            val randDelay = if (globalRandom > 0) Random.nextInt(0, globalRandom + 1) else 0
+            delay(event.delayBefore + randDelay)
+
             when (event) {
                 is ClickInteraction -> {
                     // Pass randomFactor to performClick
@@ -64,7 +67,7 @@ class RecorderService : AccessibilityService() {
                 }
                 is ForLoopInteraction -> {
                     repeat(event.repeatCount) {
-                        executeEvents(event.interactions)
+                        executeEvents(event.interactions, globalRandom)
                     }
                 }
                 else -> {
@@ -78,7 +81,7 @@ class RecorderService : AccessibilityService() {
         // Apply randomness
         val dx = if (randomFactor > 0) Random.nextInt(-randomFactor, randomFactor + 1) else 0
         val dy = if (randomFactor > 0) Random.nextInt(-randomFactor, randomFactor + 1) else 0
-        
+
         val finalX = x + dx
         val finalY = y + dy
 

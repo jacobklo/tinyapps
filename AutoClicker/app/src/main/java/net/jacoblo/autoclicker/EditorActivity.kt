@@ -27,7 +27,7 @@ class EditorActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        
+
         val filePath = intent.getStringExtra("FILE_PATH")
         val file = if (filePath != null) File(filePath) else null
 
@@ -52,12 +52,15 @@ class EditorActivity : ComponentActivity() {
 @Composable
 fun EditorScreen(file: File, onBack: () -> Unit) {
     // Load initial state
+    val recordingData = remember { RecordingManager.loadRecording(file) }
     // We flatten the hierarchical structure for editing
-    val initialInteractions = remember { 
-        val loaded = RecordingManager.loadRecording(file)
-        flatten(loaded)
+    val initialInteractions = remember {
+        flatten(recordingData.events)
     }
     val interactions = remember { mutableStateListOf<Interaction>().apply { addAll(initialInteractions) } }
+
+    // Global Random State
+    var globalRandom by remember { mutableIntStateOf(recordingData.globalRandom) }
 
     Scaffold(
         topBar = {
@@ -82,7 +85,7 @@ fun EditorScreen(file: File, onBack: () -> Unit) {
                     IconButton(onClick = {
                         // Reconstruct hierarchy before saving
                         val hierarchy = buildHierarchy(interactions)
-                        RecordingManager.saveRecordingToFile(file, hierarchy)
+                        RecordingManager.saveRecordingToFile(file, hierarchy, globalRandom)
                         onBack()
                     }) {
                         Icon(Icons.Default.Save, contentDescription = "Save")
@@ -91,34 +94,47 @@ fun EditorScreen(file: File, onBack: () -> Unit) {
             )
         }
     ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .padding(innerPadding)
-                .fillMaxSize()
-        ) {
-            itemsIndexed(interactions) { index, interaction ->
-                InteractionRow(
-                    interaction = interaction,
-                    onUpdate = { updated ->
-                        interactions[index] = updated
-                    },
-                    onDelete = { interactions.removeAt(index) },
-                    onMoveUp = {
-                        if (index > 0) {
-                            val prev = interactions[index - 1]
-                            interactions[index - 1] = interaction
-                            interactions[index] = prev
+        Column(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+
+            // Global Random Input Field
+            OutlinedTextField(
+                value = globalRandom.toString(),
+                onValueChange = { globalRandom = it.toIntOrNull() ?: 0 },
+                label = { Text("Global Random Delay (ms)") },
+                modifier = Modifier.padding(8.dp).fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true
+            )
+
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
+                itemsIndexed(interactions) { index, interaction ->
+                    InteractionRow(
+                        interaction = interaction,
+                        onUpdate = { updated ->
+                            interactions[index] = updated
+                        },
+                        onDelete = { interactions.removeAt(index) },
+                        onMoveUp = {
+                            if (index > 0) {
+                                val prev = interactions[index - 1]
+                                interactions[index - 1] = interaction
+                                interactions[index] = prev
+                            }
+                        },
+                        onMoveDown = {
+                            if (index < interactions.size - 1) {
+                                val next = interactions[index + 1]
+                                interactions[index + 1] = interaction
+                                interactions[index] = next
+                            }
                         }
-                    },
-                    onMoveDown = {
-                        if (index < interactions.size - 1) {
-                            val next = interactions[index + 1]
-                            interactions[index + 1] = interaction
-                            interactions[index] = next
-                        }
-                    }
-                )
-                HorizontalDivider()
+                    )
+                    HorizontalDivider()
+                }
             }
         }
     }
@@ -157,7 +173,7 @@ fun InteractionRow(
                 Icon(Icons.Default.ArrowDownward, contentDescription = "Move Down")
             }
         }
-        
+
         // Main Content Area - Inline
         Row(
             modifier = Modifier.weight(1f),
@@ -247,9 +263,7 @@ fun InteractionRow(
                 else -> {}
             }
 
-            // Name Field (For all except LoopEnd maybe? User said "each row", but naming End Loop is redundant)
-            // But strict requirement: "Create a text field for each row"
-            // I'll add it for all.
+            // Name Field
             OutlinedTextField(
                 value = interaction.name,
                 onValueChange = { newName ->
@@ -268,7 +282,7 @@ fun InteractionRow(
                 singleLine = true
             )
         }
-        
+
         IconButton(onClick = onDelete) {
             Icon(Icons.Default.Delete, contentDescription = "Delete")
         }
