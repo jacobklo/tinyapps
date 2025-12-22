@@ -52,8 +52,11 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -121,16 +124,20 @@ class TocJavascriptInterface(private val onTocLoaded: (List<TocItem>) -> Unit) {
 }
 
 class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
-    
+
     // Manage tabs at Activity level
     private val tabs = mutableStateListOf<BrowserTab>()
     private val activeTabIndex = mutableStateOf(0)
-    
+
     // Store injected scripts (URL and Content)
     private val userScripts = mutableStateListOf<UserScript>()
-    
+
     // Dark Mode state
     private val isDarkMode = mutableStateOf(false)
+
+    // Blanking Feature State
+    private val isBlankingEnabled = mutableStateOf(false)
+    private val blankingPercentage = mutableStateOf("5")
 
     // TextToSpeech Engine
     private var tts: TextToSpeech? = null
@@ -188,7 +195,16 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     onTocClick = { id -> handleTocClick(id) },
                     // Dark Mode
                     isDarkMode = isDarkMode.value,
-                    onToggleDarkMode = { toggleDarkMode() }
+                    onToggleDarkMode = { toggleDarkMode() },
+                    // Blanking Feature
+                    isBlankingEnabled = isBlankingEnabled.value,
+                    onToggleBlanking = { toggleBlanking() },
+                    blankingPercentage = blankingPercentage.value,
+                    onBlankingPercentageChange = {
+                        blankingPercentage.value = it
+                        // If enabled, apply new percentage immediately
+                        if(isBlankingEnabled.value) applyBlanking()
+                    }
                 )
             }
         }
@@ -293,7 +309,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
 
         val webView = tabs.getOrNull(activeTabIndex.value)?.webView ?: return
-        
+
         // 1. Highlight the paragraph
         // 2. Get the text
         val script = """
@@ -324,7 +340,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         val webView = tabs.getOrNull(activeTabIndex.value)?.webView ?: return
         // Scroll to header
         webView.evaluateJavascript("document.getElementById('$id').scrollIntoView({behavior: 'smooth'});", null)
-        
+
         // Find corresponding paragraph to start TTS
         webView.evaluateJavascript("window.AndroidTtsHelper.getParaIndexAfter('$id')") { res ->
             val idx = res?.toIntOrNull() ?: -1
@@ -337,13 +353,26 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             }
         }
     }
-    
+
     // Toggle dark mode and apply/remove style in all tabs
     private fun toggleDarkMode() {
         isDarkMode.value = !isDarkMode.value
         tabs.forEach { tab ->
             applyDarkMode(tab.webView, isDarkMode.value)
         }
+    }
+
+    // Toggle Blanking and apply JS logic
+    private fun toggleBlanking() {
+        isBlankingEnabled.value = !isBlankingEnabled.value
+        applyBlanking()
+    }
+
+    private fun applyBlanking() {
+        val webView = tabs.getOrNull(activeTabIndex.value)?.webView ?: return
+        val percent = blankingPercentage.value.toIntOrNull() ?: 5
+        // JS function defined in createWebView
+        webView.evaluateJavascript("window.AndroidBlanker.toggle(${isBlankingEnabled.value}, $percent)", null)
     }
 
     // Injects or removes CSS for dark mode
@@ -379,7 +408,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 }
             })();
         """.trimIndent()
-        
+
         webView.evaluateJavascript(js, null)
     }
 
@@ -408,10 +437,10 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         val tocItems = mutableStateListOf<TocItem>()
         // Callback to update TOC items on the Main thread
         val onTocLoaded: (List<TocItem>) -> Unit = { items ->
-             lifecycleScope.launch(Dispatchers.Main) {
-                 tocItems.clear()
-                 tocItems.addAll(items)
-             }
+            lifecycleScope.launch(Dispatchers.Main) {
+                tocItems.clear()
+                tocItems.addAll(items)
+            }
         }
 
         val webView = createWebView(onTocLoaded)
@@ -438,7 +467,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 tabsJson.put(tab.url.value)
             }
             putString("saved_tabs", tabsJson.toString())
-            
+
             val scriptsJson = JSONArray()
             userScripts.forEach { script ->
                 val scriptObj = JSONObject()
@@ -447,17 +476,17 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 scriptsJson.put(scriptObj)
             }
             putString("saved_scripts", scriptsJson.toString())
-            
+
             // Save Dark Mode state
             putString("is_dark_mode", isDarkMode.value.toString())
-            
+
             apply()
         }
     }
 
     private fun loadSavedState() {
         val sharedPref = getPreferences(Context.MODE_PRIVATE) ?: return
-        
+
         val savedScripts = sharedPref.getString("saved_scripts", null)
         if (savedScripts != null) {
             try {
@@ -466,8 +495,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     val obj = jsonArray.getJSONObject(i)
                     userScripts.add(UserScript(obj.getString("url"), obj.getString("content")))
                 }
-            } catch (e: Exception) { 
-                e.printStackTrace() 
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
 
@@ -481,11 +510,11 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                         addNewTab(url)
                     }
                 }
-            } catch (e: Exception) { 
-                e.printStackTrace() 
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
-        
+
         // Load Dark Mode state
         val savedDarkMode = sharedPref.getString("is_dark_mode", "false")
         isDarkMode.value = savedDarkMode.toBoolean()
@@ -516,7 +545,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     super.onPageStarted(view, url, favicon)
                     tabs.find { it.webView == view }?.url?.value = url ?: ""
                 }
-                
+
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
                     tabs.find { it.webView == view }?.title?.value = view?.title ?: "No Title"
@@ -527,7 +556,52 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                             view?.evaluateJavascript(script.content, null)
                         }
                     }
-                    
+
+                    // Inject Blanking Helper Script
+                    val blankingScript = """
+                        window.AndroidBlanker = {
+                            toggle: function(enable, percentage) {
+                                const targets = document.querySelectorAll('p, h1, h2, h3, h4, h5, h6');
+                                targets.forEach(el => {
+                                    if (enable) {
+                                        // If we are enabling or re-rolling, restore original first if exists
+                                        if (el.dataset.originalHtml) {
+                                            el.innerHTML = el.dataset.originalHtml;
+                                        } else {
+                                            el.dataset.originalHtml = el.innerHTML;
+                                        }
+                                        
+                                        // Process text nodes to blank random words
+                                        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false);
+                                        let node;
+                                        const nodes = [];
+                                        while(node = walker.nextNode()) nodes.push(node);
+                                        
+                                        nodes.forEach(n => {
+                                            const text = n.nodeValue;
+                                            const words = text.split(' ');
+                                            const newWords = words.map(w => {
+                                                if (!w.trim()) return w;
+                                                if (Math.random() * 100 < percentage) {
+                                                    return '_'.repeat(w.length);
+                                                }
+                                                return w;
+                                            });
+                                            n.nodeValue = newWords.join(' ');
+                                        });
+                                    } else {
+                                        // Restore original content
+                                        if (el.dataset.originalHtml) {
+                                            el.innerHTML = el.dataset.originalHtml;
+                                            delete el.dataset.originalHtml; // Clean up
+                                        }
+                                    }
+                                });
+                            }
+                        };
+                    """.trimIndent()
+                    view?.evaluateJavascript(blankingScript, null)
+
                     // Inject TTS Helper Logic (Matches content.js logic for collecting/highlighting paragraphs)
                     val ttsHelperScript = """
                         window.AndroidTtsHelper = {
@@ -601,18 +675,24 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                         })();
                     """.trimIndent()
                     view?.evaluateJavascript(tocScript, null)
-                    
+
                     // Inject Dark Mode if enabled
                     if (isDarkMode.value) {
-                         applyDarkMode(view!!, true)
+                        applyDarkMode(view!!, true)
+                    }
+
+                    // Re-apply blanking if previously enabled (e.g. on navigation)
+                    if (isBlankingEnabled.value) {
+                        val percent = blankingPercentage.value.toIntOrNull() ?: 5
+                        view?.evaluateJavascript("window.AndroidBlanker.toggle(true, $percent)", null)
                     }
                 }
             }
-            
+
             webChromeClient = WebChromeClient()
         }
     }
-    
+
     private fun addScript(url: String) {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
@@ -623,7 +703,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 } else {
                     ""
                 }
-                
+
                 if (content.isNotEmpty()) {
                     withContext(Dispatchers.Main) {
                         userScripts.add(UserScript(url, content))
@@ -681,13 +761,20 @@ fun BrowserScreen(
     onTocClick: (String) -> Unit,
     // Dark Mode Params
     isDarkMode: Boolean,
-    onToggleDarkMode: () -> Unit
+    onToggleDarkMode: () -> Unit,
+    // Blanking Feature Params
+    isBlankingEnabled: Boolean,
+    onToggleBlanking: () -> Unit,
+    blankingPercentage: String,
+    onBlankingPercentageChange: (String) -> Unit
 ) {
     var showTabList by remember { mutableStateOf(false) }
     var showScriptList by remember { mutableStateOf(false) }
-    
+    // State to toggle visibility of top bar action buttons
+    var showControls by remember { mutableStateOf(true) }
+
     val activeTab = tabs.getOrNull(activeTabIndex)
-    
+
     BackHandler(enabled = activeTab?.webView?.canGoBack() == true) {
         activeTab?.webView?.goBack()
     }
@@ -722,74 +809,94 @@ fun BrowserScreen(
                     }
                 },
                 actions = {
-                    // TTS Controls (Right of URL Bar)
-                    if (activeTab != null) {
-                        // Delay Input
-                        OutlinedTextField(
-                            value = ttsDelay,
-                            onValueChange = onTtsDelayChange,
-                            modifier = Modifier.width(60.dp),
-                            label = { Text("s", fontSize = 10.sp) },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                        )
-                        
-                        // Dark Mode Toggle
-                        IconButton(onClick = onToggleDarkMode) {
-                             Text(text = if (isDarkMode) "☀" else "🌙", fontSize = 20.sp)
-                        }
-
-                        // Play/Stop
-                        IconButton(onClick = { if(isTtsPlaying) onTtsStop() else onTtsPlay() }) {
-                             val icon = if(isTtsPlaying) Icons.Default.Close else Icons.Default.PlayArrow
-                             val tint = if(isTtsPlaying) Color.Red else Color.Green
-                             Icon(icon, contentDescription = "Toggle TTS", tint = tint)
-                        }
-
-                        // Random/Sequential
-                        IconButton(onClick = onToggleTtsRandom) {
-                             val tint = if(isTtsRandom) Color(0xFFFBBC05) else MaterialTheme.colorScheme.onSurface
-                             // Reuse Refresh icon as shuffle proxy or use specific shuffle if available, 
-                             // using Refresh for now as standard icon set is limited in imports
-                             Icon(Icons.Default.Refresh, contentDescription = "Shuffle", tint = tint)
-                        }
-                    }
-
-                    // TOC Toggle
-                    IconButton(onClick = { 
+                    // Controls (Right of URL Bar) - Only show if toggle is enabled
+                    if (showControls) {
                         if (activeTab != null) {
-                            activeTab.showToc.value = !activeTab.showToc.value
-                        }
-                    }) {
-                        Icon(
-                            Icons.Default.List, 
-                            contentDescription = "Table of Contents",
-                            tint = if (activeTab?.showToc?.value == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                        )
-                    }
+                            // Blanking Feature Controls
+                            OutlinedTextField(
+                                value = blankingPercentage,
+                                onValueChange = onBlankingPercentageChange,
+                                modifier = Modifier.width(55.dp),
+                                label = { Text("%", fontSize = 10.sp) },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                            )
+                            IconButton(onClick = onToggleBlanking) {
+                                val icon = if (isBlankingEnabled) Icons.Default.VisibilityOff else Icons.Default.Visibility
+                                Icon(icon, contentDescription = "Toggle Word Hiding")
+                            }
 
-                    IconButton(onClick = onZoomOut) {
-                        Text("-", fontWeight = FontWeight.Bold, fontSize = 24.sp)
-                    }
-                    IconButton(onClick = onZoomIn) {
-                        Icon(Icons.Default.Add, contentDescription = "Zoom In")
-                    }
+                            // TTS Controls
+                            // Delay Input
+                            OutlinedTextField(
+                                value = ttsDelay,
+                                onValueChange = onTtsDelayChange,
+                                modifier = Modifier.width(55.dp),
+                                label = { Text("s", fontSize = 10.sp) },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                            )
 
-                    IconButton(onClick = { showTabList = true }) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(imageVector = Icons.Default.Menu, contentDescription = "Tabs")
-                            if (tabs.isNotEmpty()) {
-                                Text(
-                                    text = tabs.size.toString(),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    modifier = Modifier
-                                        .align(Alignment.BottomEnd)
-                                        .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
-                                        .padding(2.dp),
-                                    color = MaterialTheme.colorScheme.onPrimary
-                                )
+                            // Dark Mode Toggle
+                            IconButton(onClick = onToggleDarkMode) {
+                                Text(text = if (isDarkMode) "☀" else "🌙", fontSize = 20.sp)
+                            }
+
+                            // Play/Stop
+                            IconButton(onClick = { if (isTtsPlaying) onTtsStop() else onTtsPlay() }) {
+                                val icon = if (isTtsPlaying) Icons.Default.Close else Icons.Default.PlayArrow
+                                val tint = if (isTtsPlaying) Color.Red else Color.Green
+                                Icon(icon, contentDescription = "Toggle TTS", tint = tint)
+                            }
+
+                            // Random/Sequential
+                            IconButton(onClick = onToggleTtsRandom) {
+                                val tint = if (isTtsRandom) Color(0xFFFBBC05) else MaterialTheme.colorScheme.onSurface
+                                Icon(Icons.Default.Refresh, contentDescription = "Shuffle", tint = tint)
                             }
                         }
+
+                        // TOC Toggle
+                        IconButton(onClick = {
+                            if (activeTab != null) {
+                                activeTab.showToc.value = !activeTab.showToc.value
+                            }
+                        }) {
+                            Icon(
+                                Icons.Default.List,
+                                contentDescription = "Table of Contents",
+                                tint = if (activeTab?.showToc?.value == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        IconButton(onClick = onZoomOut) {
+                            Text("-", fontWeight = FontWeight.Bold, fontSize = 24.sp)
+                        }
+                        IconButton(onClick = onZoomIn) {
+                            Icon(Icons.Default.Add, contentDescription = "Zoom In")
+                        }
+
+                        IconButton(onClick = { showTabList = true }) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(imageVector = Icons.Default.Menu, contentDescription = "Tabs")
+                                if (tabs.isNotEmpty()) {
+                                    Text(
+                                        text = tabs.size.toString(),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = Modifier
+                                            .align(Alignment.BottomEnd)
+                                            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
+                                            .padding(2.dp),
+                                        color = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Toggle Button to show/hide controls (Always visible)
+                    IconButton(onClick = { showControls = !showControls }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "Toggle Controls")
                     }
                 }
             )
@@ -804,9 +911,9 @@ fun BrowserScreen(
                         .fillMaxHeight()) {
                         AndroidView(
                             factory = { context ->
-                                FrameLayout(context).apply { 
+                                FrameLayout(context).apply {
                                     layoutParams = ViewGroup.LayoutParams(
-                                        ViewGroup.LayoutParams.MATCH_PARENT, 
+                                        ViewGroup.LayoutParams.MATCH_PARENT,
                                         ViewGroup.LayoutParams.MATCH_PARENT
                                     )
                                 }
@@ -823,7 +930,7 @@ fun BrowserScreen(
                             modifier = Modifier.fillMaxSize()
                         )
                     }
-                    
+
                     // TOC Sidebar
                     if (activeTab.showToc.value) {
                         Surface(
@@ -887,21 +994,21 @@ fun BrowserScreen(
             ) {
                 Column(Modifier.padding(16.dp)) {
                     Row(
-                        Modifier.fillMaxWidth(), 
+                        Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("Tabs", style = MaterialTheme.typography.titleLarge)
-                        IconButton(onClick = { 
+                        IconButton(onClick = {
                             onNewTab()
-                            showTabList = false 
+                            showTabList = false
                         }) {
                             Icon(Icons.Default.Add, "New Tab")
                         }
                     }
-                    
+
                     Spacer(Modifier.height(8.dp))
-                    
+
                     LazyColumn {
                         itemsIndexed(tabs) { index, tab ->
                             Card(
@@ -940,14 +1047,14 @@ fun BrowserScreen(
             }
         }
     }
-    
+
     // Script Injection Dialog
     if (showScriptList) {
         var showAddScriptInput by remember { mutableStateOf(false) }
         var newScriptUrl by remember { mutableStateOf("") }
-        
+
         Dialog(onDismissRequest = { showScriptList = false }) {
-             Surface(
+            Surface(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(400.dp),
@@ -956,7 +1063,7 @@ fun BrowserScreen(
             ) {
                 Column(Modifier.padding(16.dp)) {
                     Row(
-                        Modifier.fillMaxWidth(), 
+                        Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -967,9 +1074,9 @@ fun BrowserScreen(
                             }
                         }
                     }
-                    
+
                     Spacer(Modifier.height(8.dp))
-                    
+
                     if (showAddScriptInput) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             OutlinedTextField(
@@ -990,9 +1097,9 @@ fun BrowserScreen(
                             }
                         }
                     }
-                    
+
                     Spacer(Modifier.height(8.dp))
-                    
+
                     LazyColumn {
                         itemsIndexed(userScripts) { index, script ->
                             Card(
