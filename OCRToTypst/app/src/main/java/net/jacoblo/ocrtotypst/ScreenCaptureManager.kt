@@ -13,6 +13,8 @@ import android.os.Handler
 import android.os.Looper
 import android.util.DisplayMetrics
 import android.view.WindowManager
+import java.io.File
+import java.io.FileOutputStream
 
 object ScreenCaptureManager {
     private var resultCode: Int = 0
@@ -84,6 +86,17 @@ object ScreenCaptureManager {
                         bitmap.copyPixelsFromBuffer(buffer)
                         
                         val croppedBitmap = Bitmap.createBitmap(bitmap, 0, 0, width, height)
+
+                        // Save the bitmap to a file as requested
+                        try {
+                            val file = File("/storage/emulated/0/Notes/tmp.jpg")
+                            file.parentFile?.mkdirs()
+                            val fos = FileOutputStream(file)
+                            croppedBitmap.compress(Bitmap.CompressFormat.JPEG, 100, fos)
+                            fos.close()
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
                         
                         image.close()
                         virtualDisplay?.release()
