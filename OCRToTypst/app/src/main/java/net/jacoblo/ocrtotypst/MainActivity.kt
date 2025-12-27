@@ -1,6 +1,9 @@
 package net.jacoblo.ocrtotypst
 
+import android.app.Activity
+import android.content.Context
 import android.content.Intent
+import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -22,6 +25,7 @@ import net.jacoblo.ocrtotypst.ui.theme.OCRToTypstTheme
 class MainActivity : ComponentActivity() {
 
     private var bubble: Bubble? = null
+    private var isMediaProjectionRequested = false
 
     // Register a result launcher for the overlay permission intent
     private val overlayPermissionLauncher = registerForActivityResult(
@@ -35,6 +39,27 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.StartActivityForResult()
     ) {
         checkPermissions()
+    }
+
+    // Register a result launcher for media projection
+    private val mediaProjectionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK && result.data != null) {
+            ScreenCaptureManager.setPermissionResult(result.resultCode, result.data!!)
+
+            val intent = Intent(this, MediaProjectionService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+
+            showBubble()
+        } else {
+            // Permission denied or cancelled, show bubble anyway but capture won't work
+            showBubble()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,7 +84,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         if (arePermissionsGranted()) {
-            showBubble()
+            requestMediaProjection()
         }
     }
 
@@ -75,25 +100,29 @@ class MainActivity : ComponentActivity() {
         }
 
         // Check All Files Access Permission (Android 11+)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            if (!Environment.isExternalStorageManager()) {
-                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
-                intent.data = Uri.parse("package:$packageName")
-                storagePermissionLauncher.launch(intent)
-                return
-            }
+        if (!Environment.isExternalStorageManager()) {
+            val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+            intent.data = Uri.parse("package:$packageName")
+            storagePermissionLauncher.launch(intent)
+            return
         }
         
-        showBubble()
+        requestMediaProjection()
+    }
+
+    private fun requestMediaProjection() {
+        if (!isMediaProjectionRequested) {
+            val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            mediaProjectionLauncher.launch(projectionManager.createScreenCaptureIntent())
+            isMediaProjectionRequested = true
+        } else {
+             showBubble()
+        }
     }
     
     private fun arePermissionsGranted(): Boolean {
         val overlay = Settings.canDrawOverlays(this)
-        val storage = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            Environment.isExternalStorageManager()
-        } else {
-            true
-        }
+        val storage = Environment.isExternalStorageManager()
         return overlay && storage
     }
 

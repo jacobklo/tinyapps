@@ -2,6 +2,7 @@ package net.jacoblo.ocrtotypst
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.ShapeDrawable
@@ -17,6 +18,7 @@ import android.widget.LinearLayout
 import android.widget.Toast
 import kotlin.math.pow
 import kotlin.math.sqrt
+import kotlin.math.abs
 
 class Bubble(private val context: Context) {
 
@@ -85,7 +87,25 @@ class Bubble(private val context: Context) {
                 addView(icon, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
 
                 setOnClickListener {
-                    Toast.makeText(context, "Button 1 clicked", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Start OCR...", Toast.LENGTH_SHORT).show()
+                    ScreenCaptureManager.captureScreen(context) { bitmap ->
+                        if (bitmap != null) {
+                            OcrManager.recognizeText(bitmap,
+                                onSuccess = { text ->
+                                    if (OcrManager.saveTextToFile(text)) {
+                                        Toast.makeText(context, "OCR succeed", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "Failed to save file", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                onFailure = {
+                                    Toast.makeText(context, "OCR failed", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        } else {
+                            Toast.makeText(context, "Screen capture failed", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 }
             }
             addView(button1, LinearLayout.LayoutParams(bubbleSize, bubbleSize))
@@ -251,6 +271,9 @@ class Bubble(private val context: Context) {
 
     fun remove() {
         try {
+            val intent = Intent(context, MediaProjectionService::class.java)
+            context.stopService(intent)
+
             if (bubbleView != null) {
                 windowManager.removeView(bubbleView)
                 bubbleView = null
