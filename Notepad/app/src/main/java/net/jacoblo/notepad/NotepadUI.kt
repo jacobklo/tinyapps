@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -200,8 +201,12 @@ fun EditorArea(tab: EditorTab, fontSize: Float, darkMode: Boolean) {
         color = if (darkMode) Color.White else Color.Black
     )
     
-    val lineCount = tab.content.text.count { it == '\n' } + 1
-    val lineNumbers = (1..lineCount).joinToString("\n")
+    // Maintain line numbers as state to sync with visual layout
+    // Initialize with naive count to prevent empty numbers on first render
+    var lineNumbers by remember(tab) {
+        val count = tab.content.text.count { it == '\n' } + 1
+        mutableStateOf((1..count).joinToString("\n"))
+    }
 
     Row(modifier = Modifier.fillMaxSize().verticalScroll(scrollState)) {
         Text(
@@ -220,7 +225,30 @@ fun EditorArea(tab: EditorTab, fontSize: Float, darkMode: Boolean) {
             modifier = Modifier
                 .weight(1f)
                 .padding(horizontal = 4.dp),
-            cursorBrush = SolidColor(if (darkMode) Color.White else Color.Black)
+            cursorBrush = SolidColor(if (darkMode) Color.White else Color.Black),
+            onTextLayout = { result ->
+                val sb = StringBuilder()
+                val text = result.layoutInput.text
+                var currentLine = 1
+                
+                for (i in 0 until result.lineCount) {
+                    val start = result.getLineStart(i)
+                    // Check if visual line is start of logical line (index 0 or previous char is newline)
+                    val isStart = start == 0 || (start > 0 && text[start - 1] == '\n')
+                    
+                    if (isStart) {
+                        sb.append(currentLine)
+                        currentLine++
+                    }
+                    if (i < result.lineCount - 1) sb.append("\n")
+                }
+                
+                // Only update if different to avoid redundant recompositions
+                val newNumbers = sb.toString()
+                if (lineNumbers != newNumbers) {
+                    lineNumbers = newNumbers
+                }
+            }
         )
     }
 }

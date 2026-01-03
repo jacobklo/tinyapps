@@ -27,6 +27,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -80,6 +81,8 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -179,10 +182,15 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     onAddScript = { url -> addScript(url) },
                     onRemoveScript = { script -> userScripts.remove(script) },
                     onZoomIn = {
-                        tabs.getOrNull(activeTabIndex.value)?.webView?.zoomIn()
+                        // Use textZoom to allow reflow and keep text on screen
+                        tabs.getOrNull(activeTabIndex.value)?.webView?.settings?.let {
+                           it.textZoom = (it.textZoom + 10).coerceAtMost(300)
+                        }
                     },
                     onZoomOut = {
-                        tabs.getOrNull(activeTabIndex.value)?.webView?.zoomOut()
+                        tabs.getOrNull(activeTabIndex.value)?.webView?.settings?.let {
+                           it.textZoom = (it.textZoom - 10).coerceAtLeast(50)
+                        }
                     },
                     // Pass TTS state and callbacks to UI
                     onTtsPlay = { startTts() },
@@ -607,8 +615,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                         window.AndroidTtsHelper = {
                             paragraphs: [],
                             init: function() {
-                                // Collect all non-empty paragraphs
-                                this.paragraphs = Array.from(document.querySelectorAll('p'))
+                                // Collect all non-empty paragraphs AND HEADERS
+                                this.paragraphs = Array.from(document.querySelectorAll('p, h1, h2, h3, h4, h5, h6'))
                                     .filter(p => p.innerText.trim().length > 0);
                             },
                             getParaText: function(index) {
@@ -933,9 +941,31 @@ fun BrowserScreen(
 
                     // TOC Sidebar
                     if (activeTab.showToc.value) {
+                        // Resizable logic
+                        val density = LocalDensity.current
+                        var tocWidth by remember { mutableStateOf(300.dp) }
+
+                        // Draggable Handle (Drag left to increase width)
+                        Box(
+                            modifier = Modifier
+                                .width(8.dp)
+                                .fillMaxHeight()
+                                .background(Color.LightGray)
+                                .pointerInput(Unit) {
+                                    detectHorizontalDragGestures { _, dragAmount ->
+                                        val delta = with(density) { dragAmount.toDp() }
+                                        // Dragging left (negative) -> Increase width, so subtract delta
+                                        tocWidth = (tocWidth - delta).coerceIn(100.dp, 600.dp)
+                                    }
+                                }
+                        ) {
+                             // Optional: Visual indicator like a grabber
+                             Box(Modifier.width(2.dp).fillMaxHeight().background(Color.Gray).align(Alignment.Center))
+                        }
+
                         Surface(
                             modifier = Modifier
-                                .fillMaxWidth(0.25f)
+                                .width(tocWidth)
                                 .fillMaxHeight(),
                             tonalElevation = 2.dp,
                             shadowElevation = 4.dp

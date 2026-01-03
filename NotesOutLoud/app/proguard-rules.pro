@@ -19,3 +19,39 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# --- WebView Javascript Interface Protection ---
+# Keep the class and methods explicitly used by WebView.addJavascriptInterface
+# R8 Full Mode is aggressive, so we must be specific.
+-keepclassmembers class net.jacoblo.notesoutloud.TocJavascriptInterface {
+    @android.webkit.JavascriptInterface <methods>;
+}
+
+# Protect the class name if you refer to it by string in any reflection (though your code doesn't seem to)
+-keepnames class net.jacoblo.notesoutloud.TocJavascriptInterface
+
+# --- Aggressive Size Optimizations ---
+
+# Assumes no side effects in class initializers (helps remove unused static blocks)
+-assumenosideeffects class android.util.Log {
+    public static boolean isLoggable(java.lang.String, int);
+    public static int v(...);
+    public static int d(...);
+    public static int i(...);
+    public static int w(...);
+    public static int e(...);
+}
+
+# Aggressive optimization passes
+-optimizationpasses 5
+
+# Allow changing access modifiers to package-private to improve access speed and size
+-allowaccessmodification
+
+# Remove attributes that are only useful for debugging
+-keepattributes *Annotation* # Keep annotations for Jetpack Compose and JS Interface
+-renamesourcefileattribute SourceFile
+-keepattributes SourceFile,LineNumberTable # Keep strictly if you need crash stack traces, remove to save more bytes
+
+# Repackage all classes into a single package (flattens hierarchy strings)
+-repackageclasses 'a'

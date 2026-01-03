@@ -22,16 +22,31 @@ android {
 
     buildTypes {
         release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // Enables code shrinking, obfuscation, and optimization
+            minifyEnabled true
+
+            // Enables resource shrinking (removes unused drawables, layouts, etc.)
+            shrinkResources = true
+
+            // Standard Android optimization rules + your custom rules
+            proguardFiles(
+                    getDefaultProguardFile("proguard-android-optimize.txt"),
+                    "proguard-rules.pro"
+            )
+
+            // Optional: If you don't need to debug the release build, this saves space
+            // by removing debug metadata
+            ndk {
+                debugSymbolLevel = "NONE"
+            }
         }
     }
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_11
-        targetCompatibility JavaVersion.VERSION_11
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
     kotlinOptions {
-        jvmTarget = '11'
+        jvmTarget = '17'
     }
     buildFeatures {
         compose true
