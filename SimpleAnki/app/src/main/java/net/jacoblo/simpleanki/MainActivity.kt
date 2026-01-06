@@ -203,6 +203,17 @@ fun AnkiScreen() {
                                 text = "Best: %.2fs".format(if (isShowingAnswer && currentRoundTime < bestTime && currentRoundTime > 0) currentRoundTime else bestTime),
                                 style = MaterialTheme.typography.bodySmall
                             )
+                            
+                            // 12) Reset current card stats button
+                            IconButton(onClick = {
+                                val newStats = stats.toMutableMap()
+                                newStats.remove(questionText)
+                                stats = newStats
+                                saveStats(context.filesDir, newStats)
+                                Toast.makeText(context, "Card stats reset", Toast.LENGTH_SHORT).show()
+                            }) {
+                                Icon(Icons.Default.Refresh, contentDescription = "Reset Card Stats")
+                            }
                         }
                     }
                 }
