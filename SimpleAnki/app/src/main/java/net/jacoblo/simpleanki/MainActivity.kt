@@ -150,8 +150,7 @@ fun AnkiScreen() {
                 // 4) Card styling
                 Card(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(400.dp)
+                        .fillMaxSize() // 1) Make Card height almost fill the whole screen
                         .clickable {
                             if (!isShowingAnswer) {
                                 // 5) Flip to answer
@@ -183,13 +182,17 @@ fun AnkiScreen() {
                         verticalArrangement = Arrangement.Center,
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text(
-                            text = if (isShowingAnswer) card.answer else card.question,
-                            style = MaterialTheme.typography.displayMedium, // Very large
-                            textAlign = TextAlign.Center
-                        )
-                        
-                        Spacer(modifier = Modifier.weight(1f))
+                        // Center the question/answer in the available space
+                        Box(
+                            modifier = Modifier.weight(1f),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (isShowingAnswer) card.answer else card.question,
+                                style = MaterialTheme.typography.displayMedium, // Very large
+                                textAlign = TextAlign.Center
+                            )
+                        }
                         
                         // 6) Statistics
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
