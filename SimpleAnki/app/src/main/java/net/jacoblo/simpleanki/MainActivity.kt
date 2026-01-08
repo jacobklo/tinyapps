@@ -14,6 +14,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -33,6 +35,21 @@ import kotlin.random.Random
 
 // Data model for a flashcard
 data class AnkiCard(val question: String, val answer: String)
+
+// 1) New data structure for stats
+data class CardStats(
+    val bestTime: Float = 9999f,
+    val history: List<Float> = emptyList() // Max 10 items
+) {
+    // 1) Calculate Average from history
+    val averageTime: Float
+        get() = if (history.isEmpty()) 0f else history.average().toFloat()
+        
+    val lastTime: Float
+        get() = history.lastOrNull() ?: 0f
+}
+
+enum class Screen { HOME, STATS }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -80,10 +97,13 @@ fun AnkiScreen() {
     var currentCardIndex by remember { mutableStateOf(-1) }
     var isShowingAnswer by remember { mutableStateOf(false) }
     
-    // Stats: question -> fastest time
-    var stats by remember { mutableStateOf(mapOf<String, Float>()) }
+    // 5) Stats: question -> CardStats
+    var stats by remember { mutableStateOf(mapOf<String, CardStats>()) }
     var currentRoundTime by remember { mutableStateOf(0f) }
     var startTime by remember { mutableStateOf(0L) }
+    
+    // Navigation state
+    var currentScreen by remember { mutableStateOf(Screen.HOME) }
     
     // Watch lifecycle to reload cards when permission granted
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -123,7 +143,15 @@ fun AnkiScreen() {
             TopAppBar(
                 title = { Text("Simple Anki") },
                 actions = {
-                    // 10) Reset button
+                    // 6.4) Navigation Icons
+                    IconButton(onClick = { currentScreen = Screen.HOME }) {
+                        Icon(Icons.Default.Home, contentDescription = "Home")
+                    }
+                    IconButton(onClick = { currentScreen = Screen.STATS }) {
+                        Icon(Icons.Default.List, contentDescription = "Stats")
+                    }
+
+                    // 10) Reset button (All cards)
                     IconButton(onClick = {
                         stats = emptyMap()
                         saveStats(context.filesDir, stats)
@@ -139,93 +167,146 @@ fun AnkiScreen() {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(16.dp),
-            contentAlignment = Alignment.Center
         ) {
-            if (cards.isNotEmpty() && currentCardIndex != -1) {
-                val card = cards[currentCardIndex]
-                val questionText = card.question
-                val bestTime = stats[questionText] ?: 9999f
-
-                // 4) Card styling
-                Card(
-                    modifier = Modifier
-                        .fillMaxSize() // 1) Make Card height almost fill the whole screen
-                        .clickable {
-                            if (!isShowingAnswer) {
-                                // 5) Flip to answer
-                                val now = System.currentTimeMillis()
-                                val timeTaken = (now - startTime) / 1000f
-                                currentRoundTime = timeTaken
-                                
-                                // Update stats
-                                val newBest = if (timeTaken < bestTime) timeTaken else bestTime
-                                val newStats = stats.toMutableMap()
-                                newStats[questionText] = newBest
-                                stats = newStats
-                                saveStats(context.filesDir, newStats)
-                                
-                                isShowingAnswer = true
-                            } else {
-                                // 11) Next question random
-                                isShowingAnswer = false
-                                currentCardIndex = cards.indices.random()
-                                startTime = System.currentTimeMillis()
-                            }
-                        },
-                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(24.dp),
-                        verticalArrangement = Arrangement.Center,
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        // Center the question/answer in the available space
-                        Box(
-                            modifier = Modifier.weight(1f),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = if (isShowingAnswer) card.answer else card.question,
-                                style = MaterialTheme.typography.displayMedium, // Very large
-                                textAlign = TextAlign.Center
-                            )
-                        }
+            if (currentScreen == Screen.STATS) {
+                // 6) Stats Page
+                StatsScreen(stats)
+            } else {
+                // Game Screen
+                GameView(
+                    cards = cards,
+                    currentCardIndex = currentCardIndex,
+                    isShowingAnswer = isShowingAnswer,
+                    stats = stats,
+                    currentRoundTime = currentRoundTime,
+                    startTime = startTime,
+                    onNextCard = {
+                        isShowingAnswer = false
+                        currentCardIndex = cards.indices.random()
+                        startTime = System.currentTimeMillis()
+                    },
+                    onFlip = {
+                        val now = System.currentTimeMillis()
+                        val timeTaken = (now - startTime) / 1000f
+                        currentRoundTime = timeTaken
                         
-                        // 6) Statistics
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            if (isShowingAnswer) {
-                                Text(
-                                    text = "Time: %.2fs".format(currentRoundTime),
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
+                        // 1) Update stats with history
+                        val questionText = cards[currentCardIndex].question
+                        val oldStat = stats[questionText] ?: CardStats()
+                        
+                        val newBest = if (timeTaken < oldStat.bestTime) timeTaken else oldStat.bestTime
+                        // Limit history to 10
+                        val newHistory = (oldStat.history + timeTaken).takeLast(10)
+                        
+                        val newStat = oldStat.copy(bestTime = newBest, history = newHistory)
+                        
+                        val newStats = stats.toMutableMap()
+                        newStats[questionText] = newStat
+                        stats = newStats
+                        saveStats(context.filesDir, newStats)
+                        
+                        isShowingAnswer = true
+                    },
+                    onResetCard = { question ->
+                        // 3) Reset specific card
+                        val newStats = stats.toMutableMap()
+                        newStats.remove(question)
+                        stats = newStats
+                        saveStats(context.filesDir, newStats)
+                        Toast.makeText(context, "Card stats reset", Toast.LENGTH_SHORT).show()
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun GameView(
+    cards: List<AnkiCard>,
+    currentCardIndex: Int,
+    isShowingAnswer: Boolean,
+    stats: Map<String, CardStats>,
+    currentRoundTime: Float,
+    startTime: Long,
+    onNextCard: () -> Unit,
+    onFlip: () -> Unit,
+    onResetCard: (String) -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        if (cards.isNotEmpty() && currentCardIndex != -1) {
+            val card = cards[currentCardIndex]
+            val questionText = card.question
+            val cardStats = stats[questionText] ?: CardStats()
+            val bestTime = cardStats.bestTime
+            val averageTime = cardStats.averageTime
+
+            // 4) Card styling
+            Card(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable {
+                        if (!isShowingAnswer) {
+                            onFlip()
+                        } else {
+                            onNextCard()
+                        }
+                    },
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier.weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (isShowingAnswer) card.answer else card.question,
+                            style = MaterialTheme.typography.displayMedium,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                    
+                    // 6) Statistics
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        if (isShowingAnswer) {
                             Text(
-                                text = "Best: %.2fs".format(if (isShowingAnswer && currentRoundTime < bestTime && currentRoundTime > 0) currentRoundTime else bestTime),
+                                text = "Time: %.2fs".format(currentRoundTime),
                                 style = MaterialTheme.typography.bodySmall
                             )
-                            
-                            // 12) Reset current card stats button
-                            IconButton(onClick = {
-                                val newStats = stats.toMutableMap()
-                                newStats.remove(questionText)
-                                stats = newStats
-                                saveStats(context.filesDir, newStats)
-                                Toast.makeText(context, "Card stats reset", Toast.LENGTH_SHORT).show()
-                            }) {
-                                Icon(Icons.Default.Refresh, contentDescription = "Reset Card Stats")
-                            }
+                        }
+                        Text(
+                            text = "Best: %.2fs".format(if (bestTime == 9999f) 0f else bestTime),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        // 4) Show Average
+                        Text(
+                            text = "Avg: %.2fs".format(averageTime),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        
+                        // 12) Reset current card stats button
+                        IconButton(onClick = { onResetCard(questionText) }) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Reset Card Stats")
                         }
                     }
                 }
-            } else {
-                Text(
-                    text = "No cards found.\nPlease grant permission or check simple-anki.json",
-                    textAlign = TextAlign.Center
-                )
             }
+        } else {
+            Text(
+                text = "No cards found.\nPlease grant permission or check simple-anki.json",
+                textAlign = TextAlign.Center
+            )
         }
     }
 }
@@ -273,18 +354,32 @@ fun createSampleFile() {
     }
 }
 
-// 7) Load stats from internal storage
-fun loadStats(filesDir: File): Map<String, Float> {
+// 7) Load stats (UPDATED for CardStats)
+fun loadStats(filesDir: File): Map<String, CardStats> {
     val file = File(filesDir, "stats.json")
     if (!file.exists()) return emptyMap()
     return try {
         val jsonString = file.readText()
         val jsonObject = JSONObject(jsonString)
-        val map = mutableMapOf<String, Float>()
+        val map = mutableMapOf<String, CardStats>()
         val keys = jsonObject.keys()
         while(keys.hasNext()) {
             val key = keys.next()
-            map[key] = jsonObject.getDouble(key).toFloat()
+            val obj = jsonObject.optJSONObject(key)
+            if (obj != null) {
+                // New format
+                val best = obj.getDouble("best").toFloat()
+                val histArray = obj.getJSONArray("history")
+                val history = mutableListOf<Float>()
+                for (i in 0 until histArray.length()) {
+                    history.add(histArray.getDouble(i).toFloat())
+                }
+                map[key] = CardStats(best, history)
+            } else {
+                // Legacy format (just float) or invalid
+                val best = jsonObject.getDouble(key).toFloat()
+                map[key] = CardStats(bestTime = best)
+            }
         }
         map
     } catch (e: Exception) {
@@ -292,10 +387,17 @@ fun loadStats(filesDir: File): Map<String, Float> {
     }
 }
 
-// 7) Save stats to internal storage
-fun saveStats(filesDir: File, stats: Map<String, Float>) {
+// 7) Save stats (UPDATED for CardStats)
+fun saveStats(filesDir: File, stats: Map<String, CardStats>) {
     val file = File(filesDir, "stats.json")
     val jsonObject = JSONObject()
-    stats.forEach { (k, v) -> jsonObject.put(k, v.toDouble()) }
+    stats.forEach { (k, v) ->
+        val statObj = JSONObject()
+        statObj.put("best", v.bestTime.toDouble())
+        val histArray = JSONArray()
+        v.history.forEach { histArray.put(it.toDouble()) }
+        statObj.put("history", histArray)
+        jsonObject.put(k, statObj)
+    }
     file.writeText(jsonObject.toString())
 }
