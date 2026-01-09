@@ -36,17 +36,33 @@ import kotlin.random.Random
 // Data model for a flashcard
 data class AnkiCard(val question: String, val answer: String)
 
-// 1) New data structure for stats
+// 1) New data structure for stats (Modified: Removed bestTime field)
 data class CardStats(
-    val bestTime: Float = 9999f,
     val history: List<Float> = emptyList() // Max 10 items
 ) {
+    // 1) Calculate Best from history
+    val bestTime: Float
+        get() = if (history.isEmpty()) 9999f else history.minOrNull() ?: 9999f
+
     // 1) Calculate Average from history
     val averageTime: Float
         get() = if (history.isEmpty()) 0f else history.average().toFloat()
         
     val lastTime: Float
         get() = history.lastOrNull() ?: 0f
+
+    // 4) Calculate Median from history
+    val medianTime: Float
+        get() {
+            if (history.isEmpty()) return 0f
+            val sorted = history.sorted()
+            val size = sorted.size
+            return if (size % 2 == 0) {
+                (sorted[size / 2 - 1] + sorted[size / 2]) / 2
+            } else {
+                sorted[size / 2]
+            }
+        }
 }
 
 enum class Screen { HOME, STATS }
@@ -102,6 +118,9 @@ fun AnkiScreen() {
     var currentRoundTime by remember { mutableStateOf(0f) }
     var startTime by remember { mutableStateOf(0L) }
     
+    // 2) Counter for stats updates
+    var statsUpdateCount by remember { mutableIntStateOf(0) }
+    
     // Navigation state
     var currentScreen by remember { mutableStateOf(Screen.HOME) }
     
@@ -131,7 +150,10 @@ fun AnkiScreen() {
                         }
                     }
                 }
-                stats = loadStats(context.filesDir)
+                // 7) Load stats and update count
+                val (loadedStats, loadedCount) = loadStats(context.filesDir)
+                stats = loadedStats
+                statsUpdateCount = loadedCount
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -143,6 +165,15 @@ fun AnkiScreen() {
             TopAppBar(
                 title = { Text("Simple Anki") },
                 actions = {
+                    // 2) Update Counter
+                    Text(
+                        text = "$statsUpdateCount",
+                        modifier = Modifier
+                            .align(Alignment.CenterVertically)
+                            .padding(end = 8.dp),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+
                     // 6.4) Navigation Icons
                     IconButton(onClick = { currentScreen = Screen.HOME }) {
                         Icon(Icons.Default.Home, contentDescription = "Home")
@@ -152,13 +183,14 @@ fun AnkiScreen() {
                     }
 
                     // 10) Reset button (All cards)
-                    IconButton(onClick = {
-                        stats = emptyMap()
-                        saveStats(context.filesDir, stats)
-                        Toast.makeText(context, "Stats reset", Toast.LENGTH_SHORT).show()
-                    }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Reset Stats")
-                    }
+//                    IconButton(onClick = {
+//                        stats = emptyMap()
+//                        saveStats(context.filesDir, stats)
+//                        statsUpdateCount++
+//                        Toast.makeText(context, "Stats reset", Toast.LENGTH_SHORT).show()
+//                    }) {
+//                        Icon(Icons.Default.Refresh, contentDescription = "Reset Stats")
+//                    }
                 }
             )
         }
@@ -194,16 +226,17 @@ fun AnkiScreen() {
                         val questionText = cards[currentCardIndex].question
                         val oldStat = stats[questionText] ?: CardStats()
                         
-                        val newBest = if (timeTaken < oldStat.bestTime) timeTaken else oldStat.bestTime
                         // Limit history to 10
                         val newHistory = (oldStat.history + timeTaken).takeLast(10)
                         
-                        val newStat = oldStat.copy(bestTime = newBest, history = newHistory)
+                        val newStat = oldStat.copy(history = newHistory)
                         
                         val newStats = stats.toMutableMap()
                         newStats[questionText] = newStat
                         stats = newStats
-                        saveStats(context.filesDir, newStats)
+                        
+                        // 7) Save stats and increment count
+                        statsUpdateCount = saveStats(context.filesDir, newStats, statsUpdateCount)
                         
                         isShowingAnswer = true
                     },
@@ -212,7 +245,10 @@ fun AnkiScreen() {
                         val newStats = stats.toMutableMap()
                         newStats.remove(question)
                         stats = newStats
-                        saveStats(context.filesDir, newStats)
+                        
+                        // 7) Save stats and increment count
+                        statsUpdateCount = saveStats(context.filesDir, newStats, statsUpdateCount)
+                        
                         Toast.makeText(context, "Card stats reset", Toast.LENGTH_SHORT).show()
                     }
                 )
@@ -354,50 +390,61 @@ fun createSampleFile() {
     }
 }
 
-// 7) Load stats (UPDATED for CardStats)
-fun loadStats(filesDir: File): Map<String, CardStats> {
+// 7) Load stats (UPDATED for CardStats and statsUpdateCount)
+fun loadStats(filesDir: File): Pair<Map<String, CardStats>, Int> {
     val file = File(filesDir, "stats.json")
-    if (!file.exists()) return emptyMap()
+    if (!file.exists()) return Pair(emptyMap(), 0)
     return try {
         val jsonString = file.readText()
         val jsonObject = JSONObject(jsonString)
         val map = mutableMapOf<String, CardStats>()
+        var updateCount = 0
+        
         val keys = jsonObject.keys()
         while(keys.hasNext()) {
             val key = keys.next()
+            // 7) Check for statsUpdateCount key
+            if (key == "statsUpdateCount") {
+                updateCount = jsonObject.optInt(key, 0)
+                continue
+            }
+            
             val obj = jsonObject.optJSONObject(key)
             if (obj != null) {
-                // New format
-                val best = obj.getDouble("best").toFloat()
+                // New format: read history only
                 val histArray = obj.getJSONArray("history")
                 val history = mutableListOf<Float>()
                 for (i in 0 until histArray.length()) {
                     history.add(histArray.getDouble(i).toFloat())
                 }
-                map[key] = CardStats(best, history)
-            } else {
-                // Legacy format (just float) or invalid
-                val best = jsonObject.getDouble(key).toFloat()
-                map[key] = CardStats(bestTime = best)
+                map[key] = CardStats(history)
             }
         }
-        map
+        Pair(map, updateCount)
     } catch (e: Exception) {
-        emptyMap()
+        Pair(emptyMap(), 0)
     }
 }
 
-// 7) Save stats (UPDATED for CardStats)
-fun saveStats(filesDir: File, stats: Map<String, CardStats>) {
+// 7) Save stats (UPDATED for CardStats and statsUpdateCount)
+fun saveStats(filesDir: File, stats: Map<String, CardStats>, currentCount: Int): Int {
+    // 7) Increment count before saving
+    val newCount = currentCount + 1
+    
     val file = File(filesDir, "stats.json")
     val jsonObject = JSONObject()
+    
+    // 7) Save the count
+    jsonObject.put("statsUpdateCount", newCount)
+    
     stats.forEach { (k, v) ->
         val statObj = JSONObject()
-        statObj.put("best", v.bestTime.toDouble())
+        // No longer saving explicit "best", calculated from history
         val histArray = JSONArray()
         v.history.forEach { histArray.put(it.toDouble()) }
         statObj.put("history", histArray)
         jsonObject.put(k, statObj)
     }
     file.writeText(jsonObject.toString())
+    return newCount
 }

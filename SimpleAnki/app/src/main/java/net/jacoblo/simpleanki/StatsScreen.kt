@@ -4,7 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -25,6 +25,7 @@ fun StatsScreen(stats: Map<String, CardStats>) {
             SortColumn.QUESTION -> if (sortAscending) list.sortedBy { it.key } else list.sortedByDescending { it.key }
             SortColumn.BEST -> if (sortAscending) list.sortedBy { it.value.bestTime } else list.sortedByDescending { it.value.bestTime }
             SortColumn.AVERAGE -> if (sortAscending) list.sortedBy { it.value.averageTime } else list.sortedByDescending { it.value.averageTime }
+            SortColumn.MEDIAN -> if (sortAscending) list.sortedBy { it.value.medianTime } else list.sortedByDescending { it.value.medianTime }
             SortColumn.LAST -> if (sortAscending) list.sortedBy { it.value.lastTime } else list.sortedByDescending { it.value.lastTime }
         }
     }
@@ -37,6 +38,9 @@ fun StatsScreen(stats: Map<String, CardStats>) {
                 .background(MaterialTheme.colorScheme.primaryContainer)
                 .padding(12.dp)
         ) {
+            // 3) Row Count Header
+            Text("#", modifier = Modifier.weight(0.5f).padding(end = 4.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+
             HeaderCell("Question", Modifier.weight(2.5f)) {
                 if (sortColumn == SortColumn.QUESTION) sortAscending = !sortAscending else { sortColumn = SortColumn.QUESTION; sortAscending = true }
             }
@@ -45,6 +49,10 @@ fun StatsScreen(stats: Map<String, CardStats>) {
             }
             HeaderCell("Avg", Modifier.weight(1f)) {
                 if (sortColumn == SortColumn.AVERAGE) sortAscending = !sortAscending else { sortColumn = SortColumn.AVERAGE; sortAscending = true }
+            }
+            // 4) Median Header
+            HeaderCell("Med", Modifier.weight(1f)) {
+                if (sortColumn == SortColumn.MEDIAN) sortAscending = !sortAscending else { sortColumn = SortColumn.MEDIAN; sortAscending = true }
             }
             HeaderCell("Last", Modifier.weight(1f)) {
                 if (sortColumn == SortColumn.LAST) sortAscending = !sortAscending else { sortColumn = SortColumn.LAST; sortAscending = true }
@@ -56,12 +64,15 @@ fun StatsScreen(stats: Map<String, CardStats>) {
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 16.dp)
         ) {
-            items(sortedData) { (question, stat) ->
+            itemsIndexed(sortedData) { index, (question, stat) ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
+                    // 3) Row Count
+                    Text("${index + 1}", modifier = Modifier.weight(0.5f).padding(end = 4.dp), style = MaterialTheme.typography.bodyMedium)
+
                     Text(question, modifier = Modifier.weight(2.5f), style = MaterialTheme.typography.bodyMedium)
                     // Show '-' if default 9999
                     Text(
@@ -70,6 +81,9 @@ fun StatsScreen(stats: Map<String, CardStats>) {
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Text("%.2f".format(stat.averageTime), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    // 4) Median Value
+                    Text("%.2f".format(stat.medianTime), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    
                     Text("%.2f".format(stat.lastTime), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                 }
                 HorizontalDivider(thickness = 0.5.dp)
@@ -88,4 +102,4 @@ fun HeaderCell(text: String, modifier: Modifier, onClick: () -> Unit) {
     )
 }
 
-enum class SortColumn { QUESTION, BEST, AVERAGE, LAST }
+enum class SortColumn { QUESTION, BEST, AVERAGE, MEDIAN, LAST }
