@@ -80,6 +80,22 @@ fun NotepadApp(state: NotepadState) {
                     onSaveAs = { state.activeTab?.let { saveFileLauncher.launch(it.title) } },
                     onFind = { showFindDialog = true },
                     onSelectLines = { showSelectLinesDialog = true },
+                    onReformat = {
+                        state.activeTab?.let { tab ->
+                            if (TextFormatter.isSupported(tab.title)) {
+                                try {
+                                    val newText = TextFormatter.format(tab.title, tab.content.text)
+                                    // Update content and push to undo stack
+                                    tab.updateContent(TextFieldValue(newText))
+                                    Toast.makeText(context, "Formatted", Toast.LENGTH_SHORT).show()
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Format failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                Toast.makeText(context, "File format not support to reformat", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
                     onUndo = { state.activeTab?.undo() },
                     onRedo = { state.activeTab?.redo() },
                     onIndent = { indentSelection(state.activeTab) },
@@ -136,6 +152,7 @@ fun NotepadTopBar(
     onSaveAs: () -> Unit,
     onFind: () -> Unit,
     onSelectLines: () -> Unit,
+    onReformat: () -> Unit,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
     onIndent: () -> Unit,
@@ -154,6 +171,8 @@ fun NotepadTopBar(
             
             IconButton(onClick = onFind) { Icon(Icons.Default.Search, "Find") }
             IconButton(onClick = onSelectLines) { Icon(Icons.Default.FormatLineSpacing, "Select Lines") }
+            
+            IconButton(onClick = onReformat) { Icon(Icons.Default.AutoFixHigh, "Reformat") }
             
             IconButton(onClick = onIndent) { Icon(Icons.AutoMirrored.Filled.FormatIndentIncrease, "Indent") }
             IconButton(onClick = onUnindent) { Icon(Icons.AutoMirrored.Filled.FormatIndentDecrease, "Unindent") }
