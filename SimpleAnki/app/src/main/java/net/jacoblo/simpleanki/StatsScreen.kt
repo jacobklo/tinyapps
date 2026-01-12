@@ -13,14 +13,16 @@ import androidx.compose.ui.unit.dp
 
 // 6) New All Card Stats Page
 @Composable
-fun StatsScreen(stats: Map<String, CardStats>) {
+fun StatsScreen(stats: Map<String, CardStats>, validQuestions: List<String>) {
     // 6.2) Sortable columns state
     var sortColumn by remember { mutableStateOf(SortColumn.QUESTION) }
     var sortAscending by remember { mutableStateOf(true) }
 
     // Sort data based on selection
-    val sortedData = remember(stats, sortColumn, sortAscending) {
-        val list = stats.entries.toList()
+    val sortedData = remember(stats, sortColumn, sortAscending, validQuestions) {
+        // 3) Filter stats to only include questions present in the current card list
+        val validStats = stats.filterKeys { it in validQuestions }
+        val list = validStats.entries.toList()
         when (sortColumn) {
             SortColumn.QUESTION -> if (sortAscending) list.sortedBy { it.key } else list.sortedByDescending { it.key }
             SortColumn.BEST -> if (sortAscending) list.sortedBy { it.value.bestTime } else list.sortedByDescending { it.value.bestTime }

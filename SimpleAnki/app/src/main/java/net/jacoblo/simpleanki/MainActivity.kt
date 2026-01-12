@@ -151,7 +151,7 @@ fun AnkiScreen() {
                     }
                 }
                 // 7) Load stats and update count
-                val (loadedStats, loadedCount) = loadStats(context.filesDir)
+                val (loadedStats, loadedCount) = loadStats()
                 stats = loadedStats
                 statsUpdateCount = loadedCount
             }
@@ -185,7 +185,7 @@ fun AnkiScreen() {
                     // 10) Reset button (All cards)
 //                    IconButton(onClick = {
 //                        stats = emptyMap()
-//                        saveStats(context.filesDir, stats)
+//                        saveStats(stats, statsUpdateCount)
 //                        statsUpdateCount++
 //                        Toast.makeText(context, "Stats reset", Toast.LENGTH_SHORT).show()
 //                    }) {
@@ -202,7 +202,7 @@ fun AnkiScreen() {
         ) {
             if (currentScreen == Screen.STATS) {
                 // 6) Stats Page
-                StatsScreen(stats)
+                StatsScreen(stats, cards.map { it.question })
             } else {
                 // Game Screen
                 GameView(
@@ -236,7 +236,7 @@ fun AnkiScreen() {
                         stats = newStats
                         
                         // 7) Save stats and increment count
-                        statsUpdateCount = saveStats(context.filesDir, newStats, statsUpdateCount)
+                        statsUpdateCount = saveStats(newStats, statsUpdateCount)
                         
                         isShowingAnswer = true
                     },
@@ -247,7 +247,7 @@ fun AnkiScreen() {
                         stats = newStats
                         
                         // 7) Save stats and increment count
-                        statsUpdateCount = saveStats(context.filesDir, newStats, statsUpdateCount)
+                        statsUpdateCount = saveStats(newStats, statsUpdateCount)
                         
                         Toast.makeText(context, "Card stats reset", Toast.LENGTH_SHORT).show()
                     }
@@ -349,7 +349,9 @@ fun GameView(
 
 // 2) Load cards from external storage
 fun loadCards(): List<AnkiCard> {
-    val file = File(Environment.getExternalStorageDirectory(), "simple-anki.json")
+    val appDir = File(Environment.getExternalStorageDirectory(), "SimpleAnki")
+    if (!appDir.exists()) appDir.mkdirs()
+    val file = File(appDir, "simple-anki.json")
     if (!file.exists()) return emptyList()
     
     return try {
@@ -368,7 +370,9 @@ fun loadCards(): List<AnkiCard> {
 
 // 2) Create sample file if not exists
 fun createSampleFile() {
-    val file = File(Environment.getExternalStorageDirectory(), "simple-anki.json")
+    val appDir = File(Environment.getExternalStorageDirectory(), "SimpleAnki")
+    if (!appDir.exists()) appDir.mkdirs()
+    val file = File(appDir, "simple-anki.json")
     val list = listOf(
         AnkiCard("Capital of France?", "Paris"),
         AnkiCard("2 + 2?", "4"),
@@ -391,8 +395,10 @@ fun createSampleFile() {
 }
 
 // 7) Load stats (UPDATED for CardStats and statsUpdateCount)
-fun loadStats(filesDir: File): Pair<Map<String, CardStats>, Int> {
-    val file = File(filesDir, "stats.json")
+fun loadStats(): Pair<Map<String, CardStats>, Int> {
+    val appDir = File(Environment.getExternalStorageDirectory(), "SimpleAnki")
+    if (!appDir.exists()) appDir.mkdirs()
+    val file = File(appDir, "stats.json")
     if (!file.exists()) return Pair(emptyMap(), 0)
     return try {
         val jsonString = file.readText()
@@ -427,11 +433,13 @@ fun loadStats(filesDir: File): Pair<Map<String, CardStats>, Int> {
 }
 
 // 7) Save stats (UPDATED for CardStats and statsUpdateCount)
-fun saveStats(filesDir: File, stats: Map<String, CardStats>, currentCount: Int): Int {
+fun saveStats(stats: Map<String, CardStats>, currentCount: Int): Int {
     // 7) Increment count before saving
     val newCount = currentCount + 1
     
-    val file = File(filesDir, "stats.json")
+    val appDir = File(Environment.getExternalStorageDirectory(), "SimpleAnki")
+    if (!appDir.exists()) appDir.mkdirs()
+    val file = File(appDir, "stats.json")
     val jsonObject = JSONObject()
     
     // 7) Save the count
