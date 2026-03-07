@@ -10,6 +10,8 @@
         tools:ignore="ScopedStorage" />
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <uses-feature android:name="android.software.live_wallpaper" />
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -51,6 +53,20 @@
             android:name=".AppLauncherActivity"
             android:exported="false"
             android:theme="@style/Theme.MoodLauncher" />
+
+        <service
+            android:name=".CalendarWallpaperService"
+            android:enabled="true"
+            android:exported="true"
+            android:label="@string/wallpaper_name"
+            android:permission="android.permission.BIND_WALLPAPER">
+            <intent-filter>
+                <action android:name="android.service.wallpaper.WallpaperService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.wallpaper"
+                android:resource="@xml/wallpaper" />
+        </service>
 
     </application>
 
