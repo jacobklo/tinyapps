@@ -37,27 +37,22 @@ class TtsManager(
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
-            val result = tts?.setLanguage(Locale.US)
-            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                toastCallback?.invoke("TTS Language not supported")
-            } else {
-                isTtsReady = true
-                tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                    override fun onStart(utteranceId: String?) {}
-                    override fun onDone(utteranceId: String?) {
-                        lifecycleScope.launch(Dispatchers.Main) {
-                            val delayMs = (ttsDelaySeconds.value.toLongOrNull() ?: 2L) * 1000
-                            delay(delayMs)
-                            if (isTtsPlaying.value) {
-                                playNextParagraph()
-                            }
+            isTtsReady = true
+            tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) {}
+                override fun onDone(utteranceId: String?) {
+                    lifecycleScope.launch(Dispatchers.Main) {
+                        val delayMs = (ttsDelaySeconds.value.toLongOrNull() ?: 2L) * 1000
+                        delay(delayMs)
+                        if (isTtsPlaying.value) {
+                            playNextParagraph()
                         }
                     }
-                    override fun onError(utteranceId: String?) {
-                        isTtsPlaying.value = false
-                    }
-                })
-            }
+                }
+                override fun onError(utteranceId: String?) {
+                    isTtsPlaying.value = false
+                }
+            })
         }
     }
 
