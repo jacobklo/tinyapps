@@ -81,11 +81,8 @@ class WebViewFactory(
                     // Inject Blanking Helper Script (user-editable)
                     view?.evaluateJavascript(blankingScriptContent(), null)
 
-                    // Inject TTS Helper
+                    // Inject TTS + TOC (unified script)
                     view?.evaluateJavascript(JsScripts.TTS_HELPER_SCRIPT, null)
-
-                    // Inject TOC Extraction
-                    view?.evaluateJavascript(JsScripts.TOC_EXTRACTION_SCRIPT, null)
 
                     // Inject Dark Mode if enabled
                     if (isDarkMode()) {

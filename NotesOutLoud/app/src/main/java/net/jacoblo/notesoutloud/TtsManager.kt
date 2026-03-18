@@ -94,15 +94,18 @@ class TtsManager(
     }
 
     fun handleTocClick(id: String) {
+        if (!isTtsReady) {
+            toastCallback?.invoke("TTS not ready")
+            return
+        }
+        val idx = id.toIntOrNull() ?: return
         val webView = getActiveWebView() ?: return
-        webView.evaluateJavascript("document.getElementById('$id').scrollIntoView({behavior: 'smooth'});", null)
 
-        webView.evaluateJavascript("window.AndroidTtsHelper.getParaIndexAfter('$id')") { res ->
-            val idx = res?.toIntOrNull() ?: -1
-            if (idx != -1) {
+        webView.evaluateJavascript("window.AndroidTtsHelper.getCount()") { countStr ->
+            ttsParagraphCount = countStr?.toIntOrNull() ?: 0
+            if (idx in 0 until ttsParagraphCount) {
                 currentParaIndex = idx
-            }
-            if (isTtsPlaying.value) {
+                isTtsPlaying.value = true
                 playNextParagraph(speakCurrent = true)
             }
         }

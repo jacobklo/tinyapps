@@ -73,139 +73,240 @@ window.AndroidBlanker = {
 };
     """.trimIndent()
 
+    // Unified TTS + TOC script.
+    // Extracts all visible text from the page, chunks it for TTS,
+    // and sends the chunk list to Android as the TOC/list view.
     val TTS_HELPER_SCRIPT = """
 window.AndroidTtsHelper = {
-    paragraphs: [],
-    _getTextElements: function() {
-        const tags = new Set(['P','H1','H2','H3','H4','H5','H6']);
-        const found = Array.from(document.querySelectorAll('p, h1, h2, h3, h4, h5, h6'));
-        const foundSet = new Set(found);
-        document.querySelectorAll('div, span, li, td, th, dd, dt, blockquote, label, a, em, strong, b, i, section, article').forEach(el => {
-            if (foundSet.has(el)) return;
-            let ancestor = el.parentElement;
-            let insideFound = false;
-            while (ancestor) {
-                if (foundSet.has(ancestor)) { insideFound = true; break; }
-                ancestor = ancestor.parentElement;
-            }
-            if (insideFound) return;
-            let hasDirectText = false;
-            for (let child of el.childNodes) {
-                if (child.nodeType === 3 && child.nodeValue.trim().length > 0) {
-                    hasDirectText = true;
-                    break;
+    chunks: [],
+    MAX_LEN: 3000,
+    MIN_LEN: 20,
+
+    init: function() {
+        var segs = this._extractSegments();
+        this.chunks = this._buildChunks(segs);
+        this._assignIds();
+        this._sendToc();
+    },
+
+    // -- Text extraction --
+    // Walk every text node in the body, group by nearest block ancestor.
+    // This captures <p>, <div> with raw text, <li>, <td>, headings, etc.
+    _nearestBlock: function(el) {
+        var B = {DIV:1,P:1,H1:1,H2:1,H3:1,H4:1,H5:1,H6:1,LI:1,TD:1,TH:1,
+            BLOCKQUOTE:1,PRE:1,ARTICLE:1,SECTION:1,ASIDE:1,HEADER:1,FOOTER:1,
+            MAIN:1,DD:1,DT:1,FIGCAPTION:1,BODY:1};
+        while (el && !B[el.tagName]) el = el.parentElement;
+        return el || document.body;
+    },
+
+    _isVisible: function(el) {
+        if (!el || el === document.body) return true;
+        var s = getComputedStyle(el);
+        return s.display !== 'none' && s.visibility !== 'hidden';
+    },
+
+    _extractSegments: function() {
+        var self = this;
+        var segments = [];
+        var skip = {SCRIPT:1, STYLE:1, NOSCRIPT:1, SVG:1, CANVAS:1};
+
+        var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ALL, {
+            acceptNode: function(node) {
+                if (node.nodeType === 1) {
+                    if (skip[node.tagName]) return NodeFilter.FILTER_REJECT;
+                    if (node.tagName === 'BR') return NodeFilter.FILTER_ACCEPT;
+                    return NodeFilter.FILTER_SKIP;
                 }
-            }
-            if (hasDirectText) {
-                found.push(el);
-                foundSet.add(el);
+                if (node.nodeType === 3) {
+                    var p = node.parentElement;
+                    if (!p) return NodeFilter.FILTER_REJECT;
+                    if (skip[p.tagName]) return NodeFilter.FILTER_REJECT;
+                    if (node.nodeValue.trim().length === 0) return NodeFilter.FILTER_REJECT;
+                    return NodeFilter.FILTER_ACCEPT;
+                }
+                return NodeFilter.FILTER_REJECT;
             }
         });
-        found.sort((a, b) => a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
-        return found;
+
+        var node;
+        var curBlock = null;
+        var curText = '';
+
+        while (node = walker.nextNode()) {
+            if (node.nodeType === 1) {
+                if (curText && curBlock && self._isVisible(curBlock)) {
+                    segments.push({text: curText.trim(), element: curBlock});
+                }
+                curText = '';
+                continue;
+            }
+            var block = self._nearestBlock(node.parentElement);
+            if (block === curBlock && curText) {
+                curText += ' ' + node.nodeValue.trim();
+            } else {
+                if (curText && curBlock && self._isVisible(curBlock)) {
+                    segments.push({text: curText.trim(), element: curBlock});
+                }
+                curBlock = block;
+                curText = node.nodeValue.trim();
+            }
+        }
+        if (curText && curBlock && self._isVisible(curBlock)) {
+            segments.push({text: curText.trim(), element: curBlock});
+        }
+        return segments;
     },
-    init: function() {
-        this.paragraphs = this._getTextElements()
-            .filter(p => p.innerText.trim().length > 0);
+
+    // -- Chunking: merge short segments, split long ones --
+    _splitToFit: function(text, max) {
+        if (text.length <= max) return [text];
+        var parts = [];
+        var remaining = text;
+        while (remaining.length > max) {
+            var cut = remaining.substring(0, max);
+            // Try sentence boundary
+            var pos = Math.max(
+                cut.lastIndexOf('. '),
+                cut.lastIndexOf('! '),
+                cut.lastIndexOf('? '),
+                cut.lastIndexOf('\n')
+            );
+            if (pos > max * 0.3) {
+                parts.push(remaining.substring(0, pos + 1).trim());
+                remaining = remaining.substring(pos + 1).trim();
+            } else {
+                // Fall back to word boundary
+                var sp = cut.lastIndexOf(' ');
+                if (sp > max * 0.3) {
+                    parts.push(remaining.substring(0, sp).trim());
+                    remaining = remaining.substring(sp).trim();
+                } else {
+                    parts.push(cut.trim());
+                    remaining = remaining.substring(max).trim();
+                }
+            }
+        }
+        if (remaining.trim()) parts.push(remaining.trim());
+        return parts;
     },
+
+    _buildChunks: function(segments) {
+        var MAX = this.MAX_LEN;
+        var MIN = this.MIN_LEN;
+        var result = [];
+        var buf = '';
+        var bufEls = [];
+        var self = this;
+
+        function flush() {
+            if (buf) {
+                result.push({text: buf, elements: bufEls.slice()});
+                buf = '';
+                bufEls = [];
+            }
+        }
+
+        for (var i = 0; i < segments.length; i++) {
+            var text = segments[i].text;
+            var el = segments[i].element;
+
+            // Oversized segment: flush buffer, then split
+            if (text.length > MAX) {
+                flush();
+                var parts = self._splitToFit(text, MAX);
+                for (var j = 0; j < parts.length; j++) {
+                    result.push({text: parts[j], elements: [el]});
+                }
+                continue;
+            }
+
+            // Try appending to buffer
+            var combined = buf ? buf + ' ' + text : text;
+            if (combined.length <= MAX) {
+                buf = combined;
+                bufEls.push(el);
+            } else {
+                // Would overflow: flush then start new buffer
+                flush();
+                buf = text;
+                bufEls = [el];
+            }
+
+            // Flush if buffer is big enough, unless next segment is short and fits
+            if (buf.length >= MIN) {
+                var next = segments[i + 1];
+                if (!next || next.text.length >= MIN || buf.length + 1 + next.text.length > MAX) {
+                    flush();
+                }
+            }
+        }
+        flush();
+        return result;
+    },
+
+    // -- ID assignment and TOC push --
+    _assignIds: function() {
+        for (var i = 0; i < this.chunks.length; i++) {
+            var el = this.chunks[i].elements[0];
+            if (el && !el.id) {
+                el.id = 'android_chunk_' + i;
+            }
+        }
+    },
+
+    _sendToc: function() {
+        if (!window.AndroidToc) return;
+        var toc = [];
+        for (var i = 0; i < this.chunks.length; i++) {
+            toc.push({
+                id: '' + i,
+                text: this.chunks[i].text,
+                level: 1
+            });
+        }
+        window.AndroidToc.updateToc(JSON.stringify(toc));
+    },
+
+    // -- Public API (same interface as before) --
+    getCount: function() { return this.chunks.length; },
+
     getParaText: function(index) {
-        if(index < 0 || index >= this.paragraphs.length) return null;
-        return this.paragraphs[index].innerText;
+        if (index < 0 || index >= this.chunks.length) return null;
+        return this.chunks[index].text;
     },
+
     highlight: function(index) {
-         document.querySelectorAll('.ext-tts-highlight').forEach(e => e.classList.remove('ext-tts-highlight'));
-         if(index >= 0 && index < this.paragraphs.length) {
-             const el = this.paragraphs[index];
-             el.classList.add('ext-tts-highlight');
-             el.scrollIntoView({behavior: 'smooth', block: 'center'});
-         }
+        document.querySelectorAll('.ext-tts-highlight').forEach(function(e) {
+            e.classList.remove('ext-tts-highlight');
+        });
+        if (index >= 0 && index < this.chunks.length) {
+            var chunk = this.chunks[index];
+            for (var i = 0; i < chunk.elements.length; i++) {
+                chunk.elements[i].classList.add('ext-tts-highlight');
+            }
+            if (chunk.elements[0]) {
+                chunk.elements[0].scrollIntoView({behavior: 'smooth', block: 'center'});
+            }
+        }
     },
+
     getParaIndexAfter: function(elementId) {
-        const target = document.getElementById(elementId);
-        if(!target) return -1;
-        return this.paragraphs.findIndex(p =>
-            (target.compareDocumentPosition(p) & Node.DOCUMENT_POSITION_FOLLOWING)
-        );
-    },
-    getCount: function() { return this.paragraphs.length; }
+        var el = document.getElementById(elementId);
+        if (!el) return -1;
+        for (var i = 0; i < this.chunks.length; i++) {
+            for (var j = 0; j < this.chunks[i].elements.length; j++) {
+                if (this.chunks[i].elements[j] === el) return i;
+            }
+        }
+        return -1;
+    }
 };
 (function(){
-    const style = document.createElement('style');
+    var style = document.createElement('style');
     style.textContent = ".ext-tts-highlight { outline: 3px solid #4285F4 !important; background-color: rgba(66, 133, 244, 0.05) !important; transition: all 0.3s ease-in-out; }";
     document.head.appendChild(style);
     window.AndroidTtsHelper.init();
-})();
-    """.trimIndent()
-
-    val TOC_EXTRACTION_SCRIPT = """
-(function() {
-    var headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6, details > summary'));
-    var toc = [];
-    var idCounter = 0;
-    var headingSet = new Set(headings);
-
-    for (var i = 0; i < headings.length; i++) {
-        var el = headings[i];
-        if (!el.id) {
-            el.id = 'android_toc_' + (idCounter++);
-        }
-        var level = 1;
-        if (el.tagName.match(/^H\d$/)) {
-            level = parseInt(el.tagName.substring(1));
-        } else if (el.tagName === 'SUMMARY') {
-            var current = el.parentElement;
-            var depth = 0;
-            while (current && current !== document.body) {
-                if (current.tagName === 'DETAILS') depth++;
-                current = current.parentElement;
-            }
-            level = Math.min(6, depth);
-        }
-        toc.push({id: el.id, text: el.innerText.trim(), level: level});
-    }
-
-    // Also capture elements with direct text that aren't inside any heading
-    // (e.g. <div id="content">"some text"<br>"more text"</div>)
-    // These appear as level 6 entries in the TOC
-    document.querySelectorAll('div, section, article, blockquote, li, td, dd').forEach(function(el) {
-        // Skip if it IS a heading or is inside one
-        var ancestor = el;
-        var insideHeading = false;
-        while (ancestor) {
-            if (headingSet.has(ancestor)) { insideHeading = true; break; }
-            ancestor = ancestor.parentElement;
-        }
-        if (insideHeading) return;
-        // Skip if it contains child headings (it's a wrapper, not a text block)
-        if (el.querySelector('h1, h2, h3, h4, h5, h6')) return;
-        // Check for direct text node children with real content
-        var hasDirectText = false;
-        for (var c = 0; c < el.childNodes.length; c++) {
-            if (el.childNodes[c].nodeType === 3 && el.childNodes[c].nodeValue.trim().length > 0) {
-                hasDirectText = true;
-                break;
-            }
-        }
-        if (!hasDirectText) return;
-        var text = el.innerText.trim();
-        if (text.length === 0 || text.length > 200) return;
-        if (!el.id) {
-            el.id = 'android_toc_' + (idCounter++);
-        }
-        toc.push({id: el.id, text: text, level: 6});
-    });
-
-    // Sort by document order
-    toc.sort(function(a, b) {
-        var elA = document.getElementById(a.id);
-        var elB = document.getElementById(b.id);
-        if (!elA || !elB) return 0;
-        return (elA.compareDocumentPosition(elB) & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1;
-    });
-
-    if (window.AndroidToc) {
-        window.AndroidToc.updateToc(JSON.stringify(toc));
-    }
 })();
     """.trimIndent()
 

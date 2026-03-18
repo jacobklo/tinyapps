@@ -344,15 +344,14 @@ fun TocSidebar(activeTab: BrowserTab, onTocClick: (String) -> Unit) {
             HorizontalDivider()
             LazyColumn(modifier = Modifier.fillMaxSize()) {
                 items(activeTab.tocItems) { item ->
-                    val indent = 8.dp * (item.level - 1)
                     Text(
                         text = item.text.ifBlank { item.id },
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onTocClick(item.id) }
-                            .padding(start = 8.dp + indent, top = 8.dp, bottom = 8.dp, end = 8.dp),
-                        maxLines = 3,
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
                     HorizontalDivider(thickness = 0.5.dp, color = Color.LightGray.copy(alpha = 0.5f))
