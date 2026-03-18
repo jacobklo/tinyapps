@@ -196,6 +196,48 @@ fun ScriptInjectionDialog(
 }
 
 @Composable
+fun PageSourceEditorDialog(
+    sourceCode: String,
+    onApply: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var editedSource by remember(sourceCode) { mutableStateOf(sourceCode) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.9f),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface
+        ) {
+            Column(Modifier.padding(16.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Page Source", style = MaterialTheme.typography.titleLarge)
+                    Button(onClick = {
+                        onApply(editedSource)
+                        onDismiss()
+                    }) {
+                        Text("Apply")
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = editedSource,
+                    onValueChange = { editedSource = it },
+                    modifier = Modifier.fillMaxSize(),
+                    singleLine = false
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun BlankingScriptEditorDialog(
     blankingScriptContent: String,
     defaultBlankingScript: String,

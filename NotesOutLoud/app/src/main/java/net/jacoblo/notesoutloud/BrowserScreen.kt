@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
@@ -93,7 +94,14 @@ fun BrowserScreen(
     // Blanking Script Editor Params
     blankingScriptContent: String,
     defaultBlankingScript: String,
-    onSaveBlankingScript: (String) -> Unit
+    onSaveBlankingScript: (String) -> Unit,
+    // TTS Settings
+    onOpenTtsSettings: () -> Unit,
+    // Page Source Editor
+    onEditPageSource: () -> Unit,
+    onApplyPageSource: (String) -> Unit,
+    onDismissPageSourceEditor: () -> Unit,
+    pageSourceToEdit: String?
 ) {
     var showTabList by remember { mutableStateOf(false) }
     var showScriptList by remember { mutableStateOf(false) }
@@ -133,6 +141,11 @@ fun BrowserScreen(
                                 Icon(Icons.Default.Edit, contentDescription = "Edit Blanking Script")
                             }
 
+                            // Edit Page Source
+                            IconButton(onClick = onEditPageSource) {
+                                Text("</>", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+
                             // TTS Controls - Delay Input
                             OutlinedTextField(
                                 value = ttsDelay,
@@ -142,6 +155,11 @@ fun BrowserScreen(
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                             )
+
+                            // TTS Settings
+                            IconButton(onClick = onOpenTtsSettings) {
+                                Icon(Icons.Default.Settings, contentDescription = "TTS Settings")
+                            }
 
                             // Dark Mode Toggle
                             IconButton(onClick = onToggleDarkMode) {
@@ -300,6 +318,14 @@ fun BrowserScreen(
             defaultBlankingScript = defaultBlankingScript,
             onSave = onSaveBlankingScript,
             onDismiss = { showBlankingScriptEditor = false }
+        )
+    }
+
+    if (pageSourceToEdit != null) {
+        PageSourceEditorDialog(
+            sourceCode = pageSourceToEdit,
+            onApply = onApplyPageSource,
+            onDismiss = onDismissPageSourceEditor
         )
     }
 }

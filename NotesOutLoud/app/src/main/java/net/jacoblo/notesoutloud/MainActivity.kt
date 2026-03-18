@@ -34,6 +34,7 @@ class MainActivity : ComponentActivity() {
     private val isBlankingEnabled = mutableStateOf(false)
     private val blankingPercentage = mutableStateOf("5")
     private val blankingScriptContent = mutableStateOf(JsScripts.DEFAULT_BLANKING_SCRIPT)
+    private val pageSourceToEdit = mutableStateOf<String?>(null)
 
     private lateinit var ttsManager: TtsManager
     private lateinit var stateManager: StateManager
@@ -108,7 +109,33 @@ class MainActivity : ComponentActivity() {
                         blankingScriptContent.value = script
                         saveState()
                         tabs.getOrNull(activeTabIndex.value)?.webView?.reload()
-                    }
+                    },
+                    onOpenTtsSettings = {
+                        startActivity(Intent("com.android.settings.TTS_SETTINGS"))
+                    },
+                    onEditPageSource = {
+                        tabs.getOrNull(activeTabIndex.value)?.webView?.let { webView ->
+                            webView.evaluateJavascript("document.documentElement.outerHTML") { html ->
+                                val decoded = try {
+                                    org.json.JSONTokener(html).nextValue() as? String
+                                } catch (e: Exception) {
+                                    html?.removeSurrounding("\"")
+                                }
+                                pageSourceToEdit.value = decoded ?: ""
+                            }
+                        }
+                    },
+                    onApplyPageSource = { html ->
+                        tabs.getOrNull(activeTabIndex.value)?.webView?.let { webView ->
+                            val baseUrl = webView.url ?: "about:blank"
+                            webView.loadDataWithBaseURL(baseUrl, html, "text/html", "UTF-8", null)
+                        }
+                        pageSourceToEdit.value = null
+                    },
+                    onDismissPageSourceEditor = {
+                        pageSourceToEdit.value = null
+                    },
+                    pageSourceToEdit = pageSourceToEdit.value
                 )
             }
         }
