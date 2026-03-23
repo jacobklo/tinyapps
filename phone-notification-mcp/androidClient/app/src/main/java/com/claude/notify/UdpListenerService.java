@@ -9,7 +9,9 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
+import android.net.wifi.WifiManager;
 import android.os.IBinder;
+import android.os.PowerManager;
 import androidx.core.app.NotificationCompat;
 import android.util.Log;
 import java.net.DatagramPacket;
@@ -25,6 +27,8 @@ public class UdpListenerService extends Service {
     private volatile boolean running = false;
     private DatagramSocket socket;
     private int notificationId = 100;
+    private PowerManager.WakeLock wakeLock;
+    private WifiManager.WifiLock wifiLock;
 
     @Override
     public void onCreate() {
@@ -49,6 +53,7 @@ public class UdpListenerService extends Service {
 
         if (!running) {
             running = true;
+            acquireLocks();
             Log.i(TAG, "Starting UDP listener on port " + PORT);
             new Thread(this::listenLoop).start();
         }
@@ -124,10 +129,34 @@ public class UdpListenerService extends Service {
         manager.createNotificationChannel(notifyChannel);
     }
 
+    private void acquireLocks() {
+        PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, TAG + ":udp");
+        wakeLock.acquire();
+        Log.i(TAG, "Wake lock acquired");
+
+        WifiManager wm = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+        wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, TAG + ":wifi");
+        wifiLock.acquire();
+        Log.i(TAG, "WiFi lock acquired");
+    }
+
+    private void releaseLocks() {
+        if (wakeLock != null && wakeLock.isHeld()) {
+            wakeLock.release();
+            Log.i(TAG, "Wake lock released");
+        }
+        if (wifiLock != null && wifiLock.isHeld()) {
+            wifiLock.release();
+            Log.i(TAG, "WiFi lock released");
+        }
+    }
+
     @Override
     public void onDestroy() {
         running = false;
         if (socket != null) socket.close();
+        releaseLocks();
         super.onDestroy();
     }
 
