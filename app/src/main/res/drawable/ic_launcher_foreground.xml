@@ -1,0 +1,23 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Main Paper Body: White rounded rectangle centered in viewport -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M32,22h44c2.2,0 4,1.8 4,4v56c0,2.2 -1.8,4 -4,4h-44c-2.2,0 -4,-1.8 -4,-4v-56c0,-2.2 1.8,-4 4,-4z"/>
+
+    <!-- Header Strip: Blue top section mimicking a notepad binding -->
+    <path
+        android:fillColor="#2196F3"
+        android:pathData="M32,22h44c2.2,0 4,1.8 4,4v8h-52v-8c0,-2.2 1.8,-4 4,-4z"/>
+
+    <!-- Content Lines: Light gray strokes representing written text -->
+    <path
+        android:strokeColor="#E0E0E0"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:pathData="M38,46h32 M38,56h32 M38,66h20"/>
+</vector>
