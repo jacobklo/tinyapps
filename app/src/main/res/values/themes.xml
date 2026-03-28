@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.RandomMp3Alarm" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!-- Fullscreen theme for AlarmActivity -->
+    <style name="Theme.AlarmFullScreen" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowBackground">@color/alarm_background</item>
+        <item name="android:windowShowWallpaper">false</item>
+    </style>
+
+</resources>
