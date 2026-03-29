@@ -199,7 +199,7 @@ class NotificationService : Service(), TextToSpeech.OnInitListener {
             .setSmallIcon(android.R.drawable.ic_menu_today)
             .setContentTitle("Today's Events (${events.size})")
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setOngoing(false)
+            .setOngoing(true)
             .setAutoCancel(false)
             .setContentIntent(openPi)
 
@@ -270,6 +270,12 @@ class NotificationService : Service(), TextToSpeech.OnInitListener {
             (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
                 .createNotificationChannel(channel)
         }
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        // Re-schedule sync alarm so the chain isn't broken if the user swipes the app
+        scheduleNextSync()
     }
 
     override fun onDestroy() {

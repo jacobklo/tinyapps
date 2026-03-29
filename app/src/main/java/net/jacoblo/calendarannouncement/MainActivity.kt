@@ -12,6 +12,7 @@ import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.widget.Toast
@@ -272,16 +273,24 @@ class MainActivity : ComponentActivity() {
                         startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM))
                     }
                 }
+                val batteryExcluded = trigger.let {
+                    (getSystemService(Context.POWER_SERVICE) as PowerManager)
+                        .isIgnoringBatteryOptimizations(packageName)
+                }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Text("Battery Optimization", modifier = Modifier.weight(1f))
-                    Button(onClick = {
-                        startActivity(
-                            Intent(
-                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                                Uri.parse("package:$packageName")
+                    if (batteryExcluded) {
+                        Text("Excluded", color = MaterialTheme.colorScheme.primary)
+                    } else {
+                        Button(onClick = {
+                            startActivity(
+                                Intent(
+                                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                    Uri.parse("package:$packageName")
+                                )
                             )
-                        )
-                    }) { Text("Exclude") }
+                        }) { Text("Exclude") }
+                    }
                 }
 
                 // --- SERVICE ---
@@ -291,7 +300,15 @@ class MainActivity : ComponentActivity() {
                     Text("Enable background service", modifier = Modifier.weight(1f))
                     Switch(
                         checked = serviceEnabled,
-                        onCheckedChange = { serviceEnabled = it }
+                        onCheckedChange = {
+                            serviceEnabled = it
+                            prefs.serviceEnabled = it
+                            if (it) {
+                                NotificationService.start(this@MainActivity)
+                            } else {
+                                NotificationService.stop(this@MainActivity)
+                            }
+                        }
                     )
                 }
 
