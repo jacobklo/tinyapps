@@ -123,12 +123,14 @@ class Bubble(private val context: Context) {
 
                 setOnClickListener {
                     val file = RecordingManager.currentSelectedFile
-                    if (file != null && RecorderService.instance != null) {
-                        val data = RecordingManager.loadRecording(file)
-                        RecorderService.instance?.playRecording(data.events, data.globalRandom)
-                        Toast.makeText(context, "Playing ${file.name}", Toast.LENGTH_SHORT).show()
-                    } else {
+                    if (file == null) {
                         Toast.makeText(context, "Select a recording first", Toast.LENGTH_SHORT).show()
+                    } else if (!GestureExecutor.isReady()) {
+                        Toast.makeText(context, "Gesture backend not ready", Toast.LENGTH_SHORT).show()
+                    } else {
+                        val data = RecordingManager.loadRecording(file)
+                        GestureExecutor.playRecording(data.events, data.globalRandom)
+                        Toast.makeText(context, "Playing ${file.name}", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -232,11 +234,15 @@ class Bubble(private val context: Context) {
     private fun startRecording() {
         if (isRecording) return
 
-        if (RecorderService.instance == null) {
-            Toast.makeText(context, "Please enable Accessibility Service for AutoClicker", Toast.LENGTH_LONG).show()
-            val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
-            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            context.startActivity(intent)
+        if (!GestureExecutor.isReady()) {
+            if (AppSettings.useRoot) {
+                Toast.makeText(context, "Root access not granted", Toast.LENGTH_LONG).show()
+            } else {
+                Toast.makeText(context, "Please enable Accessibility Service for AutoClicker", Toast.LENGTH_LONG).show()
+                val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                context.startActivity(intent)
+            }
             return
         }
 
@@ -382,13 +388,7 @@ class Bubble(private val context: Context) {
                 if (distance < 20) {
                     // Click
                     recordedEvents.add(ClickInteraction(startX, startY, duration, 0, delay))
-
-                    val service = RecorderService.instance
-                    if (service != null) {
-                        service.performClick(startX, startY, duration, 0, completionCallback)
-                    } else {
-                        completionCallback()
-                    }
+                    GestureExecutor.click(startX, startY, duration, 0, completionCallback)
                 } else {
                     // Drag
                     // Add last point
@@ -399,13 +399,7 @@ class Bubble(private val context: Context) {
 
                     val points = ArrayList(currentDragPoints)
                     recordedEvents.add(DragInteraction(points, 0,0,delay))
-
-                    val service = RecorderService.instance
-                    if (service != null) {
-                        service.performDrag(points, 0,0,completionCallback)
-                    } else {
-                        completionCallback()
-                    }
+                    GestureExecutor.drag(points, 0,0,completionCallback)
                 }
 
                 lastEventTime = currentTime

@@ -116,6 +116,13 @@ fun EditorScreen(file: File, onBack: () -> Unit) {
                 singleLine = true
             )
 
+            OutlinedButton(
+                onClick = { interactions.add(TextInteraction(text = "", delayBefore = 0)) },
+                modifier = Modifier.padding(horizontal = 8.dp)
+            ) {
+                Text("Add Text Input")
+            }
+
             LazyColumn(
                 modifier = Modifier
                     .weight(1f)
@@ -206,6 +213,9 @@ fun InteractionRow(
                             Text("(0,0)", style = MaterialTheme.typography.bodyLarge)
                         }
                     }
+                    is TextInteraction -> {
+                        Text("Text", style = MaterialTheme.typography.labelLarge)
+                    }
                     is LoopStartInteraction -> {
                         Text("Start Loop", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                     }
@@ -276,6 +286,15 @@ fun InteractionRow(
                         singleLine = true
                     )
                 }
+                is TextInteraction -> {
+                    OutlinedTextField(
+                        value = interaction.text,
+                        onValueChange = { onUpdate(interaction.copy(text = it)) },
+                        label = { Text("Text") },
+                        modifier = Modifier.width(160.dp),
+                        singleLine = true
+                    )
+                }
                 else -> {}
             }
 
@@ -286,6 +305,7 @@ fun InteractionRow(
                     val updated = when (interaction) {
                         is ClickInteraction -> interaction.copy(name = newName)
                         is DragInteraction -> interaction.copy(name = newName)
+                        is TextInteraction -> interaction.copy(name = newName)
                         is LoopStartInteraction -> interaction.copy(name = newName)
                         is LoopEndInteraction -> interaction.copy(name = newName)
                         is RandomSelectStartInteraction -> interaction.copy(name = newName)

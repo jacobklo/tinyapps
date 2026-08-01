@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -69,6 +70,11 @@ class MainActivity : ComponentActivity() {
                                     IconButton(onClick = { refreshKey++ }) {
                                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                                     }
+                                    IconButton(onClick = {
+                                        startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
+                                    }) {
+                                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                                    }
                                 }
                             )
                         }
@@ -105,7 +111,8 @@ class MainActivity : ComponentActivity() {
             }
         }
         
-        if (!isAccessibilityServiceEnabled()) {
+        // Root injects gestures directly, so the Accessibility Service is not needed.
+        if (!AppSettings.useRoot && !isAccessibilityServiceEnabled()) {
             val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
             startActivity(intent)
             return
@@ -116,14 +123,14 @@ class MainActivity : ComponentActivity() {
     
     private fun arePermissionsGranted(): Boolean {
         val overlay = Settings.canDrawOverlays(this)
-        val accessibility = isAccessibilityServiceEnabled()
+        val gestures = AppSettings.useRoot || isAccessibilityServiceEnabled()
         // Verify storage permission status
         val storage = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             Environment.isExternalStorageManager()
         } else {
             true
         }
-        return overlay && accessibility && storage
+        return overlay && gestures && storage
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {

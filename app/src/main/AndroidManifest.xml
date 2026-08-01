@@ -12,6 +12,7 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
+        android:name=".AutoClickerApp"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -33,6 +34,11 @@
         
         <activity
             android:name=".EditorActivity"
+            android:exported="false"
+            android:theme="@style/Theme.AutoClicker" />
+
+        <activity
+            android:name=".SettingsActivity"
             android:exported="false"
             android:theme="@style/Theme.AutoClicker" />
 

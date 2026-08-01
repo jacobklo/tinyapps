@@ -38,6 +38,13 @@ data class DragInteraction(
     override val name: String = ""
 ) : Interaction()
 
+// Text entry into whatever field currently holds input focus
+data class TextInteraction(
+    val text: String,
+    override val delayBefore: Long,
+    override val name: String = ""
+) : Interaction()
+
 // New ForLoop interaction
 data class ForLoopInteraction(
     val repeatCount: Int,
@@ -138,6 +145,10 @@ object RecordingManager {
                 jsonObj.put("randomFactorStart", event.randomFactorStart) // Save randomFactorStart
                 jsonObj.put("randomFactorHighest", event.randomFactorHighest) // Save randomFactorHighest
             }
+            is TextInteraction -> {
+                jsonObj.put("type", "text")
+                jsonObj.put("text", event.text)
+            }
             is ForLoopInteraction -> {
                 jsonObj.put("type", "loop")
                 jsonObj.put("count", event.repeatCount)
@@ -230,6 +241,13 @@ object RecordingManager {
                     points = points,
                     randomFactorStart = obj.optInt("randomFactorStart", 0), // Load randomFactorStart
                     randomFactorHighest = obj.optInt("randomFactorHighest", 0), // Load randomFactorHighest
+                    delayBefore = delayBefore,
+                    name = name
+                )
+            }
+            "text" -> {
+                TextInteraction(
+                    text = obj.optString("text", ""),
                     delayBefore = delayBefore,
                     name = name
                 )
