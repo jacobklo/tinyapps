@@ -28,6 +28,41 @@ object GestureExecutor {
 
 	private val scope = CoroutineScope(Dispatchers.Main + Job())
 
+	@Volatile
+	var evdevDevice: EvdevDevice? = null
+		private set
+
+	/** True when root replay can use evdev rather than falling back to `input swipe`. */
+	val evdevReady: Boolean
+		get() = evdevDevice != null && EvdevInjector.isReady
+
+	/**
+	 * Discovers the touchscreen and opens the injector. Blocks on root, so call
+	 * it off the main thread. Failing here is not fatal: root replay degrades to
+	 * the `input swipe` path.
+	 */
+	fun prepareRoot(): Boolean {
+		val device = EvdevDevice.detect()
+		if (device == null) {
+			Log.w(TAG, "no touchscreen found, root replay falls back to input swipe")
+			evdevDevice = null
+			return false
+		}
+		if (!EvdevInjector.open(device)) {
+			Log.w(TAG, "evdev node not writable, root replay falls back to input swipe")
+			evdevDevice = null
+			return false
+		}
+		evdevDevice = device
+		Log.i(TAG, "evdev backend ready on ${device.path}")
+		return true
+	}
+
+	fun releaseRoot() {
+		EvdevInjector.close()
+		evdevDevice = null
+	}
+
 	fun isReady(): Boolean =
 		if (AppSettings.useRoot) RootShell.isOpen else RecorderService.instance != null
 
@@ -60,7 +95,10 @@ object GestureExecutor {
 			delay(event.delayBefore + randDelay)
 
 			when (event) {
-				is ClickInteraction -> runClick(event.x, event.y, event.duration, event.randomFactor)
+				is ClickInteraction -> runClick(
+					event.x, event.y, event.duration, event.randomFactor,
+					TouchSample(event.pressure, event.touchMajor, event.touchMinor)
+				)
 				is DragInteraction -> runDrag(event.points, event.randomFactorStart, event.randomFactorHighest)
 				is TextInteraction -> runText(event.text)
 				is ForLoopInteraction -> {
@@ -80,11 +118,21 @@ object GestureExecutor {
 		}
 	}
 
-	private suspend fun runClick(x: Float, y: Float, duration: Long, randomFactor: Int) {
+	private suspend fun runClick(
+		x: Float,
+		y: Float,
+		duration: Long,
+		randomFactor: Int,
+		sample: TouchSample = TouchSample(0, 0, 0)
+	) {
 		val finalX = x + jitter(randomFactor)
 		val finalY = y + jitter(randomFactor)
 
 		if (AppSettings.useRoot) {
+			if (evdevReady) {
+				withContext(Dispatchers.IO) { EvdevInjector.playClick(finalX, finalY, duration, sample) }
+				return
+			}
 			val px = finalX.roundToInt()
 			val py = finalY.roundToInt()
 			// A zero-length swipe is the only `input` form that honours a press duration.
@@ -105,6 +153,12 @@ object GestureExecutor {
 		val randomized = randomizePath(points, randomFactorStart, randomFactorHighest)
 
 		if (AppSettings.useRoot) {
+			if (evdevReady) {
+				// Every recorded point is replayed with its own timing, pressure
+				// and contact size, instead of collapsing to a linear swipe.
+				withContext(Dispatchers.IO) { EvdevInjector.playDrag(randomized) }
+				return
+			}
 			val first = randomized.first()
 			val last = randomized.last()
 			val duration = randomized.sumOf { it.dt }
@@ -155,9 +209,10 @@ object GestureExecutor {
 		randomFactorStart: Int,
 		randomFactorHighest: Int
 	): List<DragPoint> {
+		// copy() so captured pressure and contact size survive the offsetting.
 		if (points.size <= 1) {
 			return points.map {
-				DragPoint(it.x + jitter(randomFactorStart), it.y + jitter(randomFactorStart), it.dt)
+				it.copy(x = it.x + jitter(randomFactorStart), y = it.y + jitter(randomFactorStart))
 			}
 		}
 
@@ -166,7 +221,7 @@ object GestureExecutor {
 			// Jitter ramps from randomFactorStart at both ends to randomFactorHighest at the middle.
 			val t = (1.0 - abs(index - mid) / mid).coerceIn(0.0, 1.0)
 			val factor = (randomFactorStart + (randomFactorHighest - randomFactorStart) * t).toInt()
-			DragPoint(point.x + jitter(factor), point.y + jitter(factor), point.dt)
+			point.copy(x = point.x + jitter(factor), y = point.y + jitter(factor))
 		}
 	}
 }

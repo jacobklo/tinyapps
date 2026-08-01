@@ -9,6 +9,8 @@ import android.graphics.PixelFormat
 import android.graphics.drawable.ShapeDrawable
 import android.graphics.drawable.shapes.OvalShape
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -258,6 +260,13 @@ class Bubble(private val context: Context) {
         recordedEvents.clear()
         lastEventTime = System.currentTimeMillis()
 
+        // Under root the touchscreen is read directly, so no overlay is needed:
+        // the finger's own events reach the app untouched and are only mirrored.
+        if (startEvdevRecording()) {
+            Toast.makeText(context, "Recording Started (root)", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         setupRecordingOverlay()
 
         // Bring bubble to front by re-adding it
@@ -279,9 +288,41 @@ class Bubble(private val context: Context) {
         recordButtonIcon?.setImageResource(R.drawable.ic_record)
         recordButtonView?.invalidate()
 
+        EvdevRecorder.stop()
         removeRecordingOverlay()
         RecordingManager.saveRecording(recordedEvents)
         Toast.makeText(context, "Recording Saved", Toast.LENGTH_SHORT).show()
+    }
+
+    /**
+     * Starts passive touchscreen capture. Returns false when root evdev is not
+     * available, so the caller falls back to the overlay recorder.
+     */
+    private fun startEvdevRecording(): Boolean {
+        if (!AppSettings.useRoot) return false
+        val device = GestureExecutor.evdevDevice ?: return false
+        val mainThread = Handler(Looper.getMainLooper())
+        return EvdevRecorder.start(
+            device = device,
+            shouldIgnore = { x, y -> isOnBubble(x, y) },
+            // Hop to the main thread so recordedEvents is only ever touched
+            // there, exactly as the overlay recorder does.
+            onGesture = { interaction -> mainThread.post { recordedEvents.add(interaction) } }
+        )
+    }
+
+    /**
+     * Without a capture overlay the bubble's own buttons are ordinary screen
+     * area, so the tap that stops recording would otherwise be recorded too.
+     */
+    private fun isOnBubble(x: Float, y: Float): Boolean {
+        val view = bubbleView ?: return false
+        // Read the real on-screen position rather than bubbleParams: the window
+        // is laid out below the status bar, so params.y sits ~1 inset too high.
+        val location = IntArray(2)
+        view.getLocationOnScreen(location)
+        return x >= location[0] && x <= location[0] + view.width &&
+                y >= location[1] && y <= location[1] + view.height
     }
 
     private fun setupRecordingOverlay() {
@@ -387,7 +428,7 @@ class Bubble(private val context: Context) {
 
                 if (distance < 20) {
                     // Click
-                    recordedEvents.add(ClickInteraction(startX, startY, duration, 0, delay))
+                    recordedEvents.add(ClickInteraction(startX, startY, duration, 0, delayBefore = delay))
                     GestureExecutor.click(startX, startY, duration, 0, completionCallback)
                 } else {
                     // Drag

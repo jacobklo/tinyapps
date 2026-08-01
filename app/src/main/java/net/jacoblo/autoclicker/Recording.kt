@@ -19,6 +19,11 @@ data class ClickInteraction(
     val y: Float,
     val duration: Long,
     val randomFactor: Int = 0, // Added randomFactor
+    // Captured from the digitizer when recorded under root; 0 means "not
+    // captured", and the evdev injector substitutes a device-typical value.
+    val pressure: Int = 0,
+    val touchMajor: Int = 0,
+    val touchMinor: Int = 0,
     override val delayBefore: Long,
     override val name: String = ""
 ) : Interaction()
@@ -27,7 +32,10 @@ data class ClickInteraction(
 data class DragPoint(
     val x: Float,
     val y: Float,
-    val dt: Long
+    val dt: Long,
+    val pressure: Int = 0,
+    val touchMajor: Int = 0,
+    val touchMinor: Int = 0
 )
 
 data class DragInteraction(
@@ -118,6 +126,15 @@ object RecordingManager {
         file.writeText(finalJson.toString(4))
     }
 
+    // Omitted entirely when nothing was captured, so recordings made on the
+    // accessibility backend keep the original compact shape.
+    private fun putTouch(target: JSONObject, pressure: Int, touchMajor: Int, touchMinor: Int) {
+        if (pressure == 0 && touchMajor == 0 && touchMinor == 0) return
+        target.put("p", pressure)
+        target.put("maj", touchMajor)
+        target.put("min", touchMinor)
+    }
+
     private fun eventToJson(event: Interaction): JSONObject? {
         val jsonObj = JSONObject()
         jsonObj.put("delayBefore", event.delayBefore)
@@ -130,6 +147,7 @@ object RecordingManager {
                 jsonObj.put("y", event.y)
                 jsonObj.put("duration", event.duration)
                 jsonObj.put("randomFactor", event.randomFactor) // Save randomFactor
+                putTouch(jsonObj, event.pressure, event.touchMajor, event.touchMinor)
             }
             is DragInteraction -> {
                 jsonObj.put("type", "drag")
@@ -139,6 +157,7 @@ object RecordingManager {
                     pointObj.put("x", point.x)
                     pointObj.put("y", point.y)
                     pointObj.put("dt", point.dt)
+                    putTouch(pointObj, point.pressure, point.touchMajor, point.touchMinor)
                     pointsArray.put(pointObj)
                 }
                 jsonObj.put("points", pointsArray)
@@ -210,6 +229,9 @@ object RecordingManager {
                     y = obj.getDouble("y").toFloat(),
                     duration = obj.getLong("duration"),
                     randomFactor = obj.optInt("randomFactor", 0), // Load randomFactor
+                    pressure = obj.optInt("p", 0),
+                    touchMajor = obj.optInt("maj", 0),
+                    touchMinor = obj.optInt("min", 0),
                     delayBefore = delayBefore,
                     name = name
                 )
@@ -223,7 +245,10 @@ object RecordingManager {
                         points.add(DragPoint(
                             x = pObj.getDouble("x").toFloat(),
                             y = pObj.getDouble("y").toFloat(),
-                            dt = pObj.getLong("dt")
+                            dt = pObj.getLong("dt"),
+                            pressure = pObj.optInt("p", 0),
+                            touchMajor = pObj.optInt("maj", 0),
+                            touchMinor = pObj.optInt("min", 0)
                         ))
                     }
                 } else {

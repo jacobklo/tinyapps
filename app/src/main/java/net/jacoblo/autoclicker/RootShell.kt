@@ -69,10 +69,14 @@ object RootShell {
 	}
 
 	/** Runs one command and blocks until it completes. */
+	fun exec(command: String): Boolean = execOutput(command) != null
+
+	/** Runs one command and returns everything it printed, or null if it failed. */
 	@Synchronized
-	fun exec(command: String): Boolean {
-		val out = stdin ?: return false
-		val reader = stdout ?: return false
+	fun execOutput(command: String): String? {
+		val out = stdin ?: return null
+		val reader = stdout ?: return null
+		val collected = StringBuilder()
 		try {
 			out.write("$command\necho $MARKER\n".toByteArray())
 			out.flush()
@@ -81,17 +85,31 @@ object RootShell {
 				if (line == null) {
 					Log.w(TAG, "root shell died running: $command")
 					close()
-					return false
+					return null
 				}
-				if (line.trim() == MARKER) return true
-				Log.d(TAG, "su> $line")
+				if (line.trim() == MARKER) return collected.toString()
+				collected.append(line).append('\n')
 			}
 		} catch (e: Exception) {
 			Log.e(TAG, "root command failed: $command", e)
 			close()
-			return false
+			return null
 		}
 	}
+
+	/**
+	 * Spawns a separate root process for streaming work. The shared shell above
+	 * is request/response and would be blocked for the lifetime of a stream, so
+	 * `getevent` readers and the evdev writer each get their own process. The
+	 * caller owns the returned process and must destroy it.
+	 */
+	fun spawn(command: String): Process? =
+		try {
+			ProcessBuilder("su", "-c", command).redirectErrorStream(true).start()
+		} catch (e: Exception) {
+			Log.e(TAG, "cannot spawn root process: $command", e)
+			null
+		}
 
 	/** Revives the shell after a su daemon restart killed it mid-session. */
 	@Synchronized
