@@ -111,26 +111,25 @@ class MainActivity : ComponentActivity() {
             }
         }
         
-        // Root injects gestures directly, so the Accessibility Service is not needed.
-        if (!AppSettings.useRoot && !isAccessibilityServiceEnabled()) {
-            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-            startActivity(intent)
-            return
-        }
-
+        // The gesture backend is deliberately not demanded here. Root needs no
+        // Accessibility Service at all, and bouncing to its settings screen on
+        // every launch would bury the "Use Root" toggle that turns it off.
+        // Bubble nudges to Accessibility Settings when recording is pressed.
         startBubbleService()
     }
     
+    // Deliberately excludes the gesture backend: the screen has to render even
+    // with no backend ready, otherwise the "Use Root" setting is unreachable
+    // without first enabling the Accessibility Service it is meant to replace.
     private fun arePermissionsGranted(): Boolean {
         val overlay = Settings.canDrawOverlays(this)
-        val gestures = AppSettings.useRoot || isAccessibilityServiceEnabled()
         // Verify storage permission status
         val storage = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             Environment.isExternalStorageManager()
         } else {
             true
         }
-        return overlay && gestures && storage
+        return overlay && storage
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {
