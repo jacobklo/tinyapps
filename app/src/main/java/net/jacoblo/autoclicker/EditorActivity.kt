@@ -186,13 +186,17 @@ fun EditorScreen(file: File, onBack: () -> Unit) {
                             expanded = expandedId == row.id,
                             dragging = dragging,
                             dragHandle = {
-                                Icon(
-                                    imageVector = Icons.Default.DragHandle,
-                                    contentDescription = "Reorder",
+                                Box(
                                     modifier = Modifier
                                         .draggableHandle(onDragStarted = { expandedId = null })
-                                        .size(28.dp)
-                                )
+                                        .size(48.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.DragHandle,
+                                        contentDescription = "Reorder"
+                                    )
+                                }
                             },
                             onToggleExpand = {
                                 expandedId = if (expandedId == row.id) null else row.id
@@ -201,7 +205,13 @@ fun EditorScreen(file: File, onBack: () -> Unit) {
                             onDelete = {
                                 rows.removeAt(index)
                                 expandedId = null
-                            }
+                            },
+                            // Long-pressing the row drags it too. The handle
+                            // alone was a 28dp target at the screen edge, so a
+                            // finger that missed it just scrolled or expanded.
+                            modifier = Modifier.longPressDraggableHandle(
+                                onDragStarted = { expandedId = null }
+                            )
                         )
                     }
                     HorizontalDivider()
@@ -241,14 +251,15 @@ fun InteractionRow(
     dragHandle: @Composable () -> Unit,
     onToggleExpand: () -> Unit,
     onUpdate: (Interaction) -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val accent = blockAccent(depth)
     val background =
         if (dragging) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .background(background)
             .height(IntrinsicSize.Min)
