@@ -4,6 +4,9 @@ import android.os.Environment
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 // Data holder for recording and its metadata
 data class RecordingData(val events: List<Interaction>, val globalRandom: Int = 0)
@@ -104,8 +107,17 @@ object RecordingManager {
         }
 
     fun saveRecording(events: List<Interaction>, globalRandom: Int = 0) {
-        val timestamp = System.currentTimeMillis()
-        val file = File(recordingsDir, "$timestamp.json")
+        // ':' is rejected by the FUSE layer that apps write external storage
+        // through (EPERM), even though root can create such a file directly.
+        val stamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
+        // Second resolution can collide where the old millisecond name could
+        // not, and overwriting a recording would lose it silently.
+        var file = File(recordingsDir, "$stamp.json")
+        var suffix = 2
+        while (file.exists()) {
+            file = File(recordingsDir, "${stamp}_$suffix.json")
+            suffix++
+        }
         saveRecordingToFile(file, events, globalRandom)
     }
 
