@@ -4,8 +4,10 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -72,26 +74,6 @@ fun EditorScreen(file: File, onBack: () -> Unit) {
                     }
                 },
                 actions = {
-                    TextButton(onClick = {
-                        interactions.add(LoopStartInteraction(repeatCount = 1))
-                    }) {
-                        Text("Start For")
-                    }
-                    TextButton(onClick = {
-                        interactions.add(LoopEndInteraction())
-                    }) {
-                        Text("End For")
-                    }
-                    TextButton(onClick = {
-                        interactions.add(RandomSelectStartInteraction())
-                    }) {
-                        Text("Start Rand")
-                    }
-                    TextButton(onClick = {
-                        interactions.add(RandomSelectEndInteraction())
-                    }) {
-                        Text("End Rand")
-                    }
                     IconButton(onClick = {
                         // Reconstruct hierarchy before saving
                         val hierarchy = buildHierarchy(interactions)
@@ -116,11 +98,35 @@ fun EditorScreen(file: File, onBack: () -> Unit) {
                 singleLine = true
             )
 
-            OutlinedButton(
-                onClick = { interactions.add(TextInteraction(text = "", delayBefore = 0)) },
-                modifier = Modifier.padding(horizontal = 8.dp)
+            // Block insertion lives here rather than in the app bar, where five
+            // actions crowded the filename off the screen entirely.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("Add Text Input")
+                AssistChip(
+                    onClick = { interactions.add(TextInteraction(text = "", delayBefore = 0)) },
+                    label = { Text("+ Text") }
+                )
+                AssistChip(
+                    onClick = { interactions.add(LoopStartInteraction(repeatCount = 1)) },
+                    label = { Text("Start For") }
+                )
+                AssistChip(
+                    onClick = { interactions.add(LoopEndInteraction()) },
+                    label = { Text("End For") }
+                )
+                AssistChip(
+                    onClick = { interactions.add(RandomSelectStartInteraction()) },
+                    label = { Text("Start Rand") }
+                )
+                AssistChip(
+                    onClick = { interactions.add(RandomSelectEndInteraction()) },
+                    label = { Text("End Rand") }
+                )
             }
 
             LazyColumn(
@@ -157,6 +163,7 @@ fun EditorScreen(file: File, onBack: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun InteractionRow(
     interaction: Interaction,
@@ -191,14 +198,15 @@ fun InteractionRow(
             }
         }
 
-        // Main Content Area - Inline
-        Row(
+        // Header line plus a wrapping field area. The fields no longer fit on
+        // one line, and overflowing squeezed the Name box to a letter per line.
+        Column(
             modifier = Modifier.weight(1f),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
             // Type and Info
-            Column(modifier = Modifier.widthIn(max = 100.dp)) {
+            Column(modifier = Modifier.weight(1f)) {
                 when (interaction) {
                     is ClickInteraction -> {
                         Text("Click", style = MaterialTheme.typography.labelLarge)
@@ -230,6 +238,27 @@ fun InteractionRow(
                     }
                     else -> {}
                 }
+            }
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete")
+                }
+            }
+
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+            // Wait before this action runs. The end markers are discarded when
+            // the hierarchy is rebuilt, so a delay on them would go nowhere.
+            if (interaction !is LoopEndInteraction && interaction !is RandomSelectEndInteraction) {
+                OutlinedTextField(
+                    value = interaction.delayBefore.toString(),
+                    onValueChange = { onUpdate(interaction.withDelay(it.toLongOrNull() ?: 0L)) },
+                    label = { Text("Wait ms") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.width(90.dp),
+                    singleLine = true
+                )
             }
 
             // Loop Count Field (Only for LoopStart)
@@ -317,15 +346,25 @@ fun InteractionRow(
                     onUpdate(updated)
                 },
                 label = { Text("Name") },
-                modifier = Modifier.width(200.dp), // Reduced width to fit everything
+                modifier = Modifier.width(180.dp),
                 singleLine = true
             )
-        }
-
-        IconButton(onClick = onDelete) {
-            Icon(Icons.Default.Delete, contentDescription = "Delete")
+            }
         }
     }
+}
+
+/** delayBefore lives on every subclass separately, so copying needs a branch. */
+fun Interaction.withDelay(delay: Long): Interaction = when (this) {
+    is ClickInteraction -> copy(delayBefore = delay)
+    is DragInteraction -> copy(delayBefore = delay)
+    is TextInteraction -> copy(delayBefore = delay)
+    is ForLoopInteraction -> copy(delayBefore = delay)
+    is RandomSelectInteraction -> copy(delayBefore = delay)
+    is LoopStartInteraction -> copy(delayBefore = delay)
+    is LoopEndInteraction -> copy(delayBefore = delay)
+    is RandomSelectStartInteraction -> copy(delayBefore = delay)
+    is RandomSelectEndInteraction -> copy(delayBefore = delay)
 }
 
 // Helper functions for Flattening / Unflattening

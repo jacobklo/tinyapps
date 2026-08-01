@@ -29,7 +29,7 @@ import net.jacoblo.autoclicker.ui.theme.AutoClickerTheme
 import java.io.File
 
 class MainActivity : ComponentActivity() {
-    
+
     private val overlayPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
@@ -58,18 +58,12 @@ class MainActivity : ComponentActivity() {
 
             setContent {
                 AutoClickerTheme {
-                    // Trigger recreation of the list screen
-                    var refreshKey by remember { mutableIntStateOf(0) }
-
                     Scaffold(
                         modifier = Modifier.fillMaxSize(),
                         topBar = {
                             TopAppBar(
                                 title = { Text("Auto Clicker") },
                                 actions = {
-                                    IconButton(onClick = { refreshKey++ }) {
-                                        Icon(Icons.Default.Refresh, contentDescription = "Refresh")
-                                    }
                                     IconButton(onClick = {
                                         startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
                                     }) {
@@ -79,12 +73,9 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     ) { innerPadding ->
-                        // Force recreation when refreshKey changes
-                        key(refreshKey) {
-                            RecordingsListScreen(
-                                modifier = Modifier.padding(innerPadding)
-                            )
-                        }
+                        RecordingsListScreen(
+                            modifier = Modifier.padding(innerPadding)
+                        )
                     }
                 }
             }
@@ -146,9 +137,13 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun RecordingsListScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    var recordings by remember { mutableStateOf(RecordingManager.getRecordings()) }
+    // Re-reads whenever a recording is saved, renamed or deleted anywhere in
+    // the process, including from the bubble while this screen is on top.
+    val revision by RecordingManager.revision.collectAsState()
+    val recordings = remember(revision) { RecordingManager.getRecordings() }
     var selectedFile by remember { mutableStateOf(RecordingManager.currentSelectedFile) }
     var fileToRename by remember { mutableStateOf<File?>(null) }
+    var fileToDelete by remember { mutableStateOf<File?>(null) }
 
     Column(modifier = modifier.fillMaxSize()) {
         Text(
@@ -175,17 +170,37 @@ fun RecordingsListScreen(modifier: Modifier = Modifier) {
                          context.startActivity(intent)
                     },
                     onRename = { fileToRename = file },
-                    onDelete = {
-                        RecordingManager.deleteRecording(file)
-                        recordings = RecordingManager.getRecordings()
-                        if (selectedFile == file) {
-                            selectedFile = null
-                        }
-                    }
+                    onDelete = { fileToDelete = file }
                 )
                 HorizontalDivider()
             }
         }
+    }
+
+    // Deleting is immediate and unrecoverable, so make it deliberate.
+    val pendingDelete = fileToDelete
+    if (pendingDelete != null) {
+        AlertDialog(
+            onDismissRequest = { fileToDelete = null },
+            title = { Text("Delete recording?") },
+            text = { Text("\"${pendingDelete.nameWithoutExtension}\" will be permanently deleted.") },
+            confirmButton = {
+                Button(onClick = {
+                    RecordingManager.deleteRecording(pendingDelete)
+                    if (selectedFile == pendingDelete) {
+                        selectedFile = null
+                    }
+                    fileToDelete = null
+                }) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { fileToDelete = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     if (fileToRename != null) {
@@ -194,7 +209,6 @@ fun RecordingsListScreen(modifier: Modifier = Modifier) {
             onDismiss = { fileToRename = null },
             onConfirm = { newName ->
                 RecordingManager.renameRecording(fileToRename!!, newName)
-                recordings = RecordingManager.getRecordings()
                 // Update selectedFile if the renamed file was selected
                 // (RecordingManager handles updating its internal reference, but we need to update UI state if needed)
                 if (selectedFile == fileToRename) {

@@ -1,6 +1,9 @@
 package net.jacoblo.autoclicker
 
 import android.os.Environment
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -97,6 +100,12 @@ object RecordingManager {
 
     var currentSelectedFile: File? = null
 
+    // Bumped whenever the set of recordings changes, so the list screen updates
+    // even while it is already on screen -- recording happens through the
+    // bubble without the activity ever pausing.
+    private val _revision = MutableStateFlow(0)
+    val revision: StateFlow<Int> = _revision.asStateFlow()
+
     private val recordingsDir: File
         get() {
             val dir = File(Environment.getExternalStorageDirectory(), "Recordings")
@@ -136,6 +145,7 @@ object RecordingManager {
         }
 
         file.writeText(finalJson.toString(4))
+        _revision.value++
     }
 
     // Omitted entirely when nothing was captured, so recordings made on the
@@ -320,6 +330,7 @@ object RecordingManager {
         if (success && currentSelectedFile == file) {
             currentSelectedFile = newFile
         }
+        if (success) _revision.value++
         return success
     }
 
@@ -327,6 +338,8 @@ object RecordingManager {
         if (currentSelectedFile == file) {
             currentSelectedFile = null
         }
-        return file.delete()
+        val deleted = file.delete()
+        if (deleted) _revision.value++
+        return deleted
     }
 }
