@@ -10,20 +10,23 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import net.jacoblo.autoclicker.ui.theme.AutoClickerTheme
 import java.io.File
@@ -145,35 +148,48 @@ fun RecordingsListScreen(modifier: Modifier = Modifier) {
     var fileToRename by remember { mutableStateOf<File?>(null) }
     var fileToDelete by remember { mutableStateOf<File?>(null) }
 
-    Column(modifier = modifier.fillMaxSize()) {
-        Text(
-            text = "Recordings",
-            style = MaterialTheme.typography.headlineMedium,
-            modifier = Modifier.padding(16.dp)
-        )
-
-        LazyColumn(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            items(recordings) { file ->
-                RecordingItem(
-                    file = file,
-                    isSelected = (file == selectedFile),
-                    onSelect = {
-                        selectedFile = file
-                        RecordingManager.currentSelectedFile = file
-                    },
-                    onClick = {
-                         val intent = Intent(context, EditorActivity::class.java).apply {
-                             putExtra("FILE_PATH", file.absolutePath)
-                         }
-                         context.startActivity(intent)
-                    },
-                    onRename = { fileToRename = file },
-                    onDelete = { fileToDelete = file }
+    if (recordings.isEmpty()) {
+        Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(32.dp)
+            ) {
+                Text("No recordings yet", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Tap the red button on the floating bubble to start recording.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
                 )
-                HorizontalDivider()
             }
+        }
+        return
+    }
+
+    LazyColumn(modifier = modifier.fillMaxSize()) {
+        items(recordings, key = { it.absolutePath }) { file ->
+            val summary = remember(file, revision) {
+                summarize(RecordingManager.loadRecording(file).events)
+            }
+            RecordingItem(
+                file = file,
+                isSelected = (file == selectedFile),
+                summary = summary,
+                onSelect = {
+                    selectedFile = file
+                    RecordingManager.currentSelectedFile = file
+                },
+                onEdit = {
+                    val intent = Intent(context, EditorActivity::class.java).apply {
+                        putExtra("FILE_PATH", file.absolutePath)
+                    }
+                    context.startActivity(intent)
+                },
+                onRename = { fileToRename = file },
+                onDelete = { fileToDelete = file }
+            )
+            HorizontalDivider()
         }
     }
 
@@ -220,37 +236,84 @@ fun RecordingsListScreen(modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * Tapping the row picks which recording the bubble's play button runs; the
+ * pencil opens it for editing. Previously an unlabelled radio did the picking
+ * while a whole-row tap opened the editor, which read backwards.
+ */
 @Composable
 fun RecordingItem(
     file: File,
     isSelected: Boolean,
+    summary: RecordingSummary,
     onSelect: () -> Unit,
-    onClick: () -> Unit,
+    onEdit: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit
 ) {
+    var menuOpen by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClick() }
-            .padding(16.dp),
+            .background(
+                if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+            )
+            .clickable { onSelect() }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        RadioButton(
-            selected = isSelected,
-            onClick = onSelect
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(
-            text = file.nameWithoutExtension,
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.bodyLarge
-        )
-        IconButton(onClick = onRename) {
-            Icon(Icons.Default.Edit, contentDescription = "Rename")
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = file.nameWithoutExtension,
+                    style = MaterialTheme.typography.titleMedium
+                )
+                if (isSelected) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Surface(
+                        color = MaterialTheme.colorScheme.primary,
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(
+                            text = "PLAYS",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+            Text(
+                text = summary.describe(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
-        IconButton(onClick = onDelete) {
-            Icon(Icons.Default.Delete, contentDescription = "Delete")
+
+        IconButton(onClick = onEdit) {
+            Icon(Icons.Default.Edit, contentDescription = "Edit")
+        }
+        Box {
+            IconButton(onClick = { menuOpen = true }) {
+                Icon(Icons.Default.MoreVert, contentDescription = "More")
+            }
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text("Rename") },
+                    onClick = {
+                        menuOpen = false
+                        onRename()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Delete") },
+                    onClick = {
+                        menuOpen = false
+                        onDelete()
+                    }
+                )
+            }
         }
     }
 }

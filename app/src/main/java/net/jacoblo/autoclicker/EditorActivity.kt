@@ -2,28 +2,40 @@ package net.jacoblo.autoclicker
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import net.jacoblo.autoclicker.ui.theme.AutoClickerTheme
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 import java.io.File
+
+private val INDENT_PER_LEVEL = 20.dp
+
+/** An interaction plus a stable id, so reordering can key rows by identity. */
+private data class EditorRow(val id: Long, val interaction: Interaction)
 
 class EditorActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -53,33 +65,53 @@ class EditorActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditorScreen(file: File, onBack: () -> Unit) {
-    // Load initial state
     val recordingData = remember { RecordingManager.loadRecording(file) }
-    // We flatten the hierarchical structure for editing
-    val initialInteractions = remember {
-        flatten(recordingData.events)
+    // The hierarchy is flattened for editing and rebuilt on save.
+    val initialInteractions = remember { flatten(recordingData.events) }
+    // Rows carry an id because reordering needs stable identity: keying by
+    // position would attach a row's field state to the slot, not the item.
+    val rows = remember {
+        mutableStateListOf<EditorRow>().apply {
+            initialInteractions.forEachIndexed { index, item -> add(EditorRow(index.toLong(), item)) }
+        }
     }
-    val interactions = remember { mutableStateListOf<Interaction>().apply { addAll(initialInteractions) } }
+    var nextRowId by remember { mutableLongStateOf(initialInteractions.size.toLong()) }
 
-    // Global Random State
     var globalRandom by remember { mutableIntStateOf(recordingData.globalRandom) }
+    // Only one row is expanded at a time; collapsed rows are a single summary line.
+    var expandedId by remember { mutableStateOf<Long?>(null) }
+    var confirmDiscard by remember { mutableStateOf(false) }
+
+    val interactions = rows.map { it.interaction }
+    val dirty = interactions != initialInteractions || globalRandom != recordingData.globalRandom
+    val depths = blockDepths(interactions)
+
+    fun add(interaction: Interaction) {
+        rows.add(EditorRow(nextRowId++, interaction))
+    }
+
+    fun save() {
+        RecordingManager.saveRecordingToFile(file, buildHierarchy(interactions), globalRandom)
+        onBack()
+    }
+
+    fun leave() {
+        if (dirty) confirmDiscard = true else onBack()
+    }
+
+    BackHandler { leave() }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(file.name) },
+                title = { Text(file.nameWithoutExtension) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = { leave() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
-                    IconButton(onClick = {
-                        // Reconstruct hierarchy before saving
-                        val hierarchy = buildHierarchy(interactions)
-                        RecordingManager.saveRecordingToFile(file, hierarchy, globalRandom)
-                        onBack()
-                    }) {
+                    IconButton(onClick = { save() }) {
                         Icon(Icons.Default.Save, contentDescription = "Save")
                     }
                 }
@@ -88,18 +120,16 @@ fun EditorScreen(file: File, onBack: () -> Unit) {
     ) { innerPadding ->
         Column(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
 
-            // Global Random Input Field
-            OutlinedTextField(
-                value = globalRandom.toString(),
-                onValueChange = { globalRandom = it.toIntOrNull() ?: 0 },
-                label = { Text("Global Random Delay (ms)") },
-                modifier = Modifier.padding(8.dp).fillMaxWidth(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true
+            NumberField(
+                value = globalRandom.toLong(),
+                onValueChange = { globalRandom = it.toInt() },
+                label = "Global Random Delay (ms)",
+                modifier = Modifier.padding(8.dp).fillMaxWidth()
             )
 
-            // Block insertion lives here rather than in the app bar, where five
-            // actions crowded the filename off the screen entirely.
+            // Blocks are inserted as a matched pair. Adding the two ends
+            // separately made it easy to leave them unbalanced, and an
+            // unmatched End is silently dropped when the hierarchy is rebuilt.
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -108,56 +138,155 @@ fun EditorScreen(file: File, onBack: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 AssistChip(
-                    onClick = { interactions.add(TextInteraction(text = "", delayBefore = 0)) },
+                    onClick = { add(TextInteraction(text = "", delayBefore = 0)) },
                     label = { Text("+ Text") }
                 )
                 AssistChip(
-                    onClick = { interactions.add(LoopStartInteraction(repeatCount = 1)) },
-                    label = { Text("Start For") }
+                    onClick = {
+                        add(LoopStartInteraction(repeatCount = 2))
+                        add(LoopEndInteraction())
+                    },
+                    label = { Text("+ Repeat block") }
                 )
                 AssistChip(
-                    onClick = { interactions.add(LoopEndInteraction()) },
-                    label = { Text("End For") }
-                )
-                AssistChip(
-                    onClick = { interactions.add(RandomSelectStartInteraction()) },
-                    label = { Text("Start Rand") }
-                )
-                AssistChip(
-                    onClick = { interactions.add(RandomSelectEndInteraction()) },
-                    label = { Text("End Rand") }
+                    onClick = {
+                        add(RandomSelectStartInteraction())
+                        add(RandomSelectEndInteraction())
+                    },
+                    label = { Text("+ Random block") }
                 )
             }
 
+            if (!isBalanced(interactions)) {
+                Text(
+                    "Unbalanced blocks: every Repeat/Random needs a matching End, or the extra one is dropped on save.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                )
+            }
+
+            val listState = rememberLazyListState()
+            val reorderState = rememberReorderableLazyListState(listState) { from, to ->
+                rows.add(to.index, rows.removeAt(from.index))
+                expandedId = null
+            }
+
             LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
             ) {
-                itemsIndexed(interactions) { index, interaction ->
-                    InteractionRow(
-                        interaction = interaction,
-                        onUpdate = { updated ->
-                            interactions[index] = updated
-                        },
-                        onDelete = { interactions.removeAt(index) },
-                        onMoveUp = {
-                            if (index > 0) {
-                                val prev = interactions[index - 1]
-                                interactions[index - 1] = interaction
-                                interactions[index] = prev
+                itemsIndexed(rows, key = { _, row -> row.id }) { index, row ->
+                    ReorderableItem(reorderState, key = row.id) { dragging ->
+                        InteractionRow(
+                            interaction = row.interaction,
+                            depth = depths.getOrElse(index) { 0 },
+                            expanded = expandedId == row.id,
+                            dragging = dragging,
+                            dragHandle = {
+                                Icon(
+                                    imageVector = Icons.Default.DragHandle,
+                                    contentDescription = "Reorder",
+                                    modifier = Modifier
+                                        .draggableHandle(onDragStarted = { expandedId = null })
+                                        .size(28.dp)
+                                )
+                            },
+                            onToggleExpand = {
+                                expandedId = if (expandedId == row.id) null else row.id
+                            },
+                            onUpdate = { updated -> rows[index] = row.copy(interaction = updated) },
+                            onDelete = {
+                                rows.removeAt(index)
+                                expandedId = null
                             }
-                        },
-                        onMoveDown = {
-                            if (index < interactions.size - 1) {
-                                val next = interactions[index + 1]
-                                interactions[index + 1] = interaction
-                                interactions[index] = next
-                            }
-                        }
-                    )
+                        )
+                    }
                     HorizontalDivider()
                 }
+            }
+        }
+    }
+
+    if (confirmDiscard) {
+        AlertDialog(
+            onDismissRequest = { confirmDiscard = false },
+            title = { Text("Discard changes?") },
+            text = { Text("Your edits to this recording have not been saved.") },
+            confirmButton = {
+                Button(onClick = {
+                    confirmDiscard = false
+                    onBack()
+                }) {
+                    Text("Discard")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDiscard = false }) {
+                    Text("Keep editing")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun InteractionRow(
+    interaction: Interaction,
+    depth: Int,
+    expanded: Boolean,
+    dragging: Boolean,
+    dragHandle: @Composable () -> Unit,
+    onToggleExpand: () -> Unit,
+    onUpdate: (Interaction) -> Unit,
+    onDelete: () -> Unit
+) {
+    val accent = blockAccent(depth)
+    val background =
+        if (dragging) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(background)
+            .height(IntrinsicSize.Min)
+    ) {
+        // Indent rails make the nesting visible; the flat Start/End markers
+        // gave no indication of what was inside a block.
+        repeat(depth) { level ->
+            Box(
+                modifier = Modifier
+                    .padding(start = INDENT_PER_LEVEL)
+                    .width(2.dp)
+                    .fillMaxHeight()
+                    .background(blockAccent(level).copy(alpha = 0.4f))
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .clickable { onToggleExpand() }
+                .padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 8.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = describeInteraction(interaction),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (interaction.isBlockMarker()) accent else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete")
+                }
+                dragHandle()
+            }
+
+            if (expanded) {
+                Spacer(modifier = Modifier.height(8.dp))
+                InteractionFields(interaction = interaction, onUpdate = onUpdate)
             }
         }
     }
@@ -165,196 +294,225 @@ fun EditorScreen(file: File, onBack: () -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun InteractionRow(
-    interaction: Interaction,
-    onUpdate: (Interaction) -> Unit,
-    onDelete: () -> Unit,
-    onMoveUp: () -> Unit,
-    onMoveDown: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(8.dp), // Reduced padding
-        verticalAlignment = Alignment.CenterVertically
+private fun InteractionFields(interaction: Interaction, onUpdate: (Interaction) -> Unit) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        // Move Up/Down Controls
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(end = 8.dp)
-        ) {
-            IconButton(
-                onClick = onMoveUp,
-                modifier = Modifier.size(24.dp)
-            ) {
-                Icon(Icons.Default.ArrowUpward, contentDescription = "Move Up")
-            }
-            Spacer(modifier = Modifier.height(4.dp))
-            IconButton(
-                onClick = onMoveDown,
-                modifier = Modifier.size(24.dp)
-            ) {
-                Icon(Icons.Default.ArrowDownward, contentDescription = "Move Down")
-            }
+        // End markers are discarded when the hierarchy is rebuilt, so a delay
+        // on them would go nowhere.
+        if (!interaction.isBlockEnd()) {
+            NumberField(
+                value = interaction.delayBefore,
+                onValueChange = { onUpdate(interaction.withDelay(it)) },
+                label = "Wait ms",
+                modifier = Modifier.width(100.dp)
+            )
         }
 
-        // Header line plus a wrapping field area. The fields no longer fit on
-        // one line, and overflowing squeezed the Name box to a letter per line.
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-            // Type and Info
-            Column(modifier = Modifier.weight(1f)) {
-                when (interaction) {
-                    is ClickInteraction -> {
-                        Text("Click", style = MaterialTheme.typography.labelLarge)
-                        Text("(${interaction.x.toInt()}, ${interaction.y.toInt()})", style = MaterialTheme.typography.bodyLarge)
-                    }
-                    is DragInteraction -> {
-                        Text("Drag", style = MaterialTheme.typography.labelLarge)
-                        if (interaction.points.isNotEmpty()) {
-                            val start = interaction.points.first()
-                            Text("(${start.x.toInt()}, ${start.y.toInt()})", style = MaterialTheme.typography.bodyLarge)
-                        } else {
-                            Text("(0,0)", style = MaterialTheme.typography.bodyLarge)
-                        }
-                    }
-                    is TextInteraction -> {
-                        Text("Text", style = MaterialTheme.typography.labelLarge)
-                    }
-                    is LoopStartInteraction -> {
-                        Text("Start Loop", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                    }
-                    is LoopEndInteraction -> {
-                        Text("End Loop", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                    }
-                    is RandomSelectStartInteraction -> {
-                        Text("Start Rand", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
-                    }
-                    is RandomSelectEndInteraction -> {
-                        Text("End Rand", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
-                    }
-                    else -> {}
-                }
+        when (interaction) {
+            is ClickInteraction -> {
+                NumberField(
+                    value = interaction.x.toLong(),
+                    onValueChange = { onUpdate(interaction.copy(x = it.toFloat())) },
+                    label = "X",
+                    modifier = Modifier.width(90.dp)
+                )
+                NumberField(
+                    value = interaction.y.toLong(),
+                    onValueChange = { onUpdate(interaction.copy(y = it.toFloat())) },
+                    label = "Y",
+                    modifier = Modifier.width(90.dp)
+                )
+                NumberField(
+                    value = interaction.duration,
+                    onValueChange = { onUpdate(interaction.copy(duration = it)) },
+                    label = "Hold ms",
+                    modifier = Modifier.width(100.dp)
+                )
+                NumberField(
+                    value = interaction.randomFactor.toLong(),
+                    onValueChange = { onUpdate(interaction.copy(randomFactor = it.toInt())) },
+                    label = "Rand px",
+                    modifier = Modifier.width(100.dp)
+                )
             }
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, contentDescription = "Delete")
+            is DragInteraction -> {
+                val start = interaction.points.firstOrNull()
+                if (start != null) {
+                    // Editing the start translates the whole path, which is what
+                    // you want when a recorded gesture landed slightly off.
+                    NumberField(
+                        value = start.x.toLong(),
+                        onValueChange = { onUpdate(interaction.translatedTo(it.toFloat(), start.y)) },
+                        label = "Start X",
+                        modifier = Modifier.width(100.dp)
+                    )
+                    NumberField(
+                        value = start.y.toLong(),
+                        onValueChange = { onUpdate(interaction.translatedTo(start.x, it.toFloat())) },
+                        label = "Start Y",
+                        modifier = Modifier.width(100.dp)
+                    )
                 }
+                NumberField(
+                    value = interaction.randomFactorStart.toLong(),
+                    onValueChange = { onUpdate(interaction.copy(randomFactorStart = it.toInt())) },
+                    label = "Rand start",
+                    modifier = Modifier.width(110.dp)
+                )
+                NumberField(
+                    value = interaction.randomFactorHighest.toLong(),
+                    onValueChange = { onUpdate(interaction.copy(randomFactorHighest = it.toInt())) },
+                    label = "Rand mid",
+                    modifier = Modifier.width(110.dp)
+                )
             }
-
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-            // Wait before this action runs. The end markers are discarded when
-            // the hierarchy is rebuilt, so a delay on them would go nowhere.
-            if (interaction !is LoopEndInteraction && interaction !is RandomSelectEndInteraction) {
+            is TextInteraction -> {
                 OutlinedTextField(
-                    value = interaction.delayBefore.toString(),
-                    onValueChange = { onUpdate(interaction.withDelay(it.toLongOrNull() ?: 0L)) },
-                    label = { Text("Wait ms") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.width(90.dp),
+                    value = interaction.text,
+                    onValueChange = { onUpdate(interaction.copy(text = it)) },
+                    label = { Text("Text") },
+                    modifier = Modifier.width(220.dp),
                     singleLine = true
                 )
             }
-
-            // Loop Count Field (Only for LoopStart)
-            if (interaction is LoopStartInteraction) {
-                OutlinedTextField(
-                    value = interaction.repeatCount.toString(),
-                    onValueChange = {
-                        val count = it.toIntOrNull() ?: 0
-                        onUpdate(interaction.copy(repeatCount = count))
-                    },
-                    label = { Text("#") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.width(60.dp),
-                    singleLine = true
+            is LoopStartInteraction -> {
+                NumberField(
+                    value = interaction.repeatCount.toLong(),
+                    onValueChange = { onUpdate(interaction.copy(repeatCount = it.toInt())) },
+                    label = "Repeat",
+                    modifier = Modifier.width(100.dp)
                 )
             }
+            else -> {}
+        }
 
-            // Random Factor Fields
-            when (interaction) {
-                is ClickInteraction -> {
-                    OutlinedTextField(
-                        value = interaction.randomFactor.toString(),
-                        onValueChange = {
-                            val r = it.toIntOrNull() ?: 0
-                            onUpdate(interaction.copy(randomFactor = r))
-                        },
-                        label = { Text("Rand") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.width(80.dp),
-                        singleLine = true
-                    )
-                }
-                is DragInteraction -> {
-                    OutlinedTextField(
-                        value = interaction.randomFactorStart.toString(),
-                        onValueChange = {
-                            val r = it.toIntOrNull() ?: 0
-                            onUpdate(interaction.copy(randomFactorStart = r))
-                        },
-                        label = { Text("R.Start") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.width(80.dp),
-                        singleLine = true
-                    )
-                    OutlinedTextField(
-                        value = interaction.randomFactorHighest.toString(),
-                        onValueChange = {
-                            val r = it.toIntOrNull() ?: 0
-                            onUpdate(interaction.copy(randomFactorHighest = r))
-                        },
-                        label = { Text("R.High") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.width(80.dp),
-                        singleLine = true
-                    )
-                }
-                is TextInteraction -> {
-                    OutlinedTextField(
-                        value = interaction.text,
-                        onValueChange = { onUpdate(interaction.copy(text = it)) },
-                        label = { Text("Text") },
-                        modifier = Modifier.width(160.dp),
-                        singleLine = true
-                    )
-                }
-                else -> {}
-            }
+        OutlinedTextField(
+            value = interaction.name,
+            onValueChange = { onUpdate(interaction.withName(it)) },
+            label = { Text("Name") },
+            modifier = Modifier.width(180.dp),
+            singleLine = true
+        )
+    }
+}
 
-            // Name Field
-            OutlinedTextField(
-                value = interaction.name,
-                onValueChange = { newName ->
-                    val updated = when (interaction) {
-                        is ClickInteraction -> interaction.copy(name = newName)
-                        is DragInteraction -> interaction.copy(name = newName)
-                        is TextInteraction -> interaction.copy(name = newName)
-                        is LoopStartInteraction -> interaction.copy(name = newName)
-                        is LoopEndInteraction -> interaction.copy(name = newName)
-                        is RandomSelectStartInteraction -> interaction.copy(name = newName)
-                        is RandomSelectEndInteraction -> interaction.copy(name = newName)
-                        // Should not happen as nested types are flattened
-                        is ForLoopInteraction -> interaction.copy(name = newName)
-                        is RandomSelectInteraction -> interaction.copy(name = newName)
-                    }
-                    onUpdate(updated)
-                },
-                label = { Text("Name") },
-                modifier = Modifier.width(180.dp),
-                singleLine = true
-            )
+/**
+ * Numeric field that keeps its own text while being edited.
+ *
+ * Parsing straight into the model meant clearing the box snapped it back to
+ * "0", so you could never delete the leading digit and retype.
+ */
+@Composable
+private fun NumberField(
+    value: Long,
+    onValueChange: (Long) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier
+) {
+    var text by remember { mutableStateOf(value.toString()) }
+    // Resync when the value changed from outside this field (row reuse, reorder).
+    if ((text.toLongOrNull() ?: 0L) != value) {
+        text = value.toString()
+    }
+
+    OutlinedTextField(
+        value = text,
+        onValueChange = { input ->
+            val digits = input.filter { it.isDigit() }.take(9)
+            text = digits
+            onValueChange(digits.toLongOrNull() ?: 0L)
+        },
+        label = { Text(label) },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        modifier = modifier,
+        singleLine = true
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Row presentation helpers
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun blockAccent(depth: Int): Color {
+    val palette = listOf(
+        MaterialTheme.colorScheme.primary,
+        MaterialTheme.colorScheme.tertiary,
+        MaterialTheme.colorScheme.secondary
+    )
+    return palette[depth % palette.size]
+}
+
+private fun Interaction.isBlockMarker(): Boolean =
+    this is LoopStartInteraction || this is LoopEndInteraction ||
+        this is RandomSelectStartInteraction || this is RandomSelectEndInteraction
+
+private fun Interaction.isBlockEnd(): Boolean =
+    this is LoopEndInteraction || this is RandomSelectEndInteraction
+
+private fun describeInteraction(interaction: Interaction): String {
+    val wait = if (interaction.delayBefore > 0) "wait ${interaction.delayBefore}ms  " else ""
+    val label = when (interaction) {
+        is ClickInteraction ->
+            "Click (${interaction.x.toInt()}, ${interaction.y.toInt()})  ${interaction.duration}ms"
+        is DragInteraction -> {
+            val start = interaction.points.firstOrNull()
+            val end = interaction.points.lastOrNull()
+            if (start == null || end == null) {
+                "Drag (empty)"
+            } else {
+                "Drag (${start.x.toInt()}, ${start.y.toInt()}) to (${end.x.toInt()}, ${end.y.toInt()})  ${interaction.points.size} pts"
             }
+        }
+        is TextInteraction ->
+            if (interaction.text.isBlank()) "Text (empty)" else "Text \"${interaction.text}\""
+        is LoopStartInteraction -> "Repeat ${interaction.repeatCount}x"
+        is LoopEndInteraction -> "End repeat"
+        is RandomSelectStartInteraction -> "Random one of"
+        is RandomSelectEndInteraction -> "End random"
+        is ForLoopInteraction -> "Repeat ${interaction.repeatCount}x"
+        is RandomSelectInteraction -> "Random one of"
+    }
+    val name = if (interaction.name.isBlank()) "" else "  -  ${interaction.name}"
+    return "$wait$label$name"
+}
+
+/** Indent level of each row, so nested blocks can be drawn as nested. */
+fun blockDepths(items: List<Interaction>): List<Int> {
+    var depth = 0
+    return items.map { item ->
+        when (item) {
+            is LoopStartInteraction, is RandomSelectStartInteraction -> depth++
+            is LoopEndInteraction, is RandomSelectEndInteraction -> {
+                depth = (depth - 1).coerceAtLeast(0)
+                depth
+            }
+            else -> depth
         }
     }
 }
 
-/** delayBefore lives on every subclass separately, so copying needs a branch. */
+fun isBalanced(items: List<Interaction>): Boolean {
+    var depth = 0
+    items.forEach { item ->
+        when (item) {
+            is LoopStartInteraction, is RandomSelectStartInteraction -> depth++
+            is LoopEndInteraction, is RandomSelectEndInteraction -> {
+                depth--
+                if (depth < 0) return false
+            }
+            else -> {}
+        }
+    }
+    return depth == 0
+}
+
+// ---------------------------------------------------------------------------
+// Interaction copy helpers -- every subclass carries its own fields
+// ---------------------------------------------------------------------------
+
 fun Interaction.withDelay(delay: Long): Interaction = when (this) {
     is ClickInteraction -> copy(delayBefore = delay)
     is DragInteraction -> copy(delayBefore = delay)
@@ -367,7 +525,29 @@ fun Interaction.withDelay(delay: Long): Interaction = when (this) {
     is RandomSelectEndInteraction -> copy(delayBefore = delay)
 }
 
-// Helper functions for Flattening / Unflattening
+fun Interaction.withName(newName: String): Interaction = when (this) {
+    is ClickInteraction -> copy(name = newName)
+    is DragInteraction -> copy(name = newName)
+    is TextInteraction -> copy(name = newName)
+    is ForLoopInteraction -> copy(name = newName)
+    is RandomSelectInteraction -> copy(name = newName)
+    is LoopStartInteraction -> copy(name = newName)
+    is LoopEndInteraction -> copy(name = newName)
+    is RandomSelectStartInteraction -> copy(name = newName)
+    is RandomSelectEndInteraction -> copy(name = newName)
+}
+
+/** Moves the whole path so its first point lands on the given coordinates. */
+fun DragInteraction.translatedTo(x: Float, y: Float): DragInteraction {
+    val start = points.firstOrNull() ?: return this
+    val dx = x - start.x
+    val dy = y - start.y
+    return copy(points = points.map { it.copy(x = it.x + dx, y = it.y + dy) })
+}
+
+// ---------------------------------------------------------------------------
+// Flattening / Unflattening
+// ---------------------------------------------------------------------------
 
 fun flatten(interactions: List<Interaction>): List<Interaction> {
     val flatList = mutableListOf<Interaction>()

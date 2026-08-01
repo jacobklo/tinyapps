@@ -96,6 +96,56 @@ data class RandomSelectEndInteraction(
     override val name: String = ""
 ) : Interaction()
 
+/** At-a-glance description of a recording for the list screen. */
+data class RecordingSummary(val actions: Int, val durationMs: Long, val loops: Int) {
+
+    fun describe(): String {
+        val parts = mutableListOf("$actions action${if (actions == 1) "" else "s"}")
+        if (durationMs > 0) parts.add("~%.1fs".format(durationMs / 1000.0))
+        if (loops > 0) parts.add("$loops loop${if (loops == 1) "" else "s"}")
+        return parts.joinToString("  ")
+    }
+}
+
+/**
+ * Runtime estimate. Loop bodies are counted repeatCount times; a random-select
+ * is counted once through, so anything containing one is approximate.
+ */
+fun summarize(events: List<Interaction>): RecordingSummary {
+    var actions = 0
+    var duration = 0L
+    var loops = 0
+
+    fun walk(list: List<Interaction>, repeats: Int) {
+        list.forEach { event ->
+            duration += event.delayBefore * repeats
+            when (event) {
+                is ClickInteraction -> {
+                    actions++
+                    duration += event.duration * repeats
+                }
+                is DragInteraction -> {
+                    actions++
+                    duration += event.points.sumOf { it.dt } * repeats
+                }
+                is TextInteraction -> actions++
+                is ForLoopInteraction -> {
+                    loops++
+                    walk(event.interactions, repeats * event.repeatCount.coerceAtLeast(0))
+                }
+                is RandomSelectInteraction -> {
+                    loops++
+                    walk(event.interactions, repeats)
+                }
+                else -> {}
+            }
+        }
+    }
+
+    walk(events, 1)
+    return RecordingSummary(actions, duration, loops)
+}
+
 object RecordingManager {
 
     var currentSelectedFile: File? = null
