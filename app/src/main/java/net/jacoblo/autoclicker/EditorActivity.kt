@@ -7,15 +7,14 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Save
@@ -33,6 +32,30 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 import java.io.File
 
 private val INDENT_PER_LEVEL = 20.dp
+
+/**
+ * Something the editor can insert. Blocks return both markers, because adding
+ * the two ends separately made it easy to leave them unbalanced and an
+ * unmatched End is dropped when the hierarchy is rebuilt.
+ */
+private class StepOption(val label: String, val create: () -> List<Interaction>)
+
+private val STEP_OPTIONS = listOf(
+    StepOption("Wait") { listOf(WaitInteraction(delayBefore = 1000)) },
+    StepOption("Toast") { listOf(ToastInteraction("", 0)) },
+    StepOption("Text input") { listOf(TextInteraction(text = "", delayBefore = 0)) },
+    StepOption("Set variable") { listOf(SetVariableInteraction("count", "0", 0)) },
+    StepOption("Key event") { listOf(KeyEventInteraction("BACK", 0)) },
+    StepOption("Launch app") { listOf(LaunchAppInteraction("", 0)) },
+    StepOption("Shell command") { listOf(ShellInteraction("", 0)) },
+    StepOption("Repeat block") { listOf(LoopStartInteraction(repeatCount = 2), LoopEndInteraction()) },
+    StepOption("While block") { listOf(WhileStartInteraction("1 == 1"), WhileEndInteraction()) },
+    StepOption("If block") { listOf(IfStartInteraction("1 == 1"), IfEndInteraction()) },
+    StepOption("Else if") { listOf(ElseIfInteraction("1 == 1")) },
+    StepOption("Else") { listOf(ElseInteraction()) },
+    StepOption("Random block") { listOf(RandomSelectStartInteraction(), RandomSelectEndInteraction()) },
+    StepOption("Break") { listOf(BreakInteraction()) }
+)
 
 /** An interaction plus a stable id, so reordering can key rows by identity. */
 private data class EditorRow(val id: Long, val interaction: Interaction)
@@ -78,6 +101,7 @@ fun EditorScreen(file: File, onBack: () -> Unit) {
     var nextRowId by remember { mutableLongStateOf(initialInteractions.size.toLong()) }
 
     var globalRandom by remember { mutableIntStateOf(recordingData.globalRandom) }
+    var stepToAdd by remember { mutableStateOf(STEP_OPTIONS.first()) }
     // Only one row is expanded at a time; collapsed rows are a single summary line.
     var expandedId by remember { mutableStateOf<Long?>(null) }
     var confirmDiscard by remember { mutableStateOf(false) }
@@ -120,91 +144,32 @@ fun EditorScreen(file: File, onBack: () -> Unit) {
     ) { innerPadding ->
         Column(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
 
-            NumberField(
-                value = globalRandom.toLong(),
-                onValueChange = { globalRandom = it.toInt() },
-                label = "Global Random Delay (ms)",
-                modifier = Modifier.padding(8.dp).fillMaxWidth()
-            )
-
-            // Blocks are inserted as a matched pair. Adding the two ends
-            // separately made it easy to leave them unbalanced, and an
-            // unmatched End is silently dropped when the hierarchy is rebuilt.
+            // One row: the global delay, a picker for what to insert, and the
+            // button that inserts it. Fourteen chips in a horizontally scrolling
+            // strip hid most of the options off the right edge.
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 8.dp),
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                AssistChip(
-                    onClick = { add(TextInteraction(text = "", delayBefore = 0)) },
-                    label = { Text("+ Text") }
+                NumberField(
+                    value = globalRandom.toLong(),
+                    onValueChange = { globalRandom = it.toInt() },
+                    label = "Rand ms",
+                    modifier = Modifier.width(110.dp)
                 )
-                AssistChip(
-                    onClick = {
-                        add(LoopStartInteraction(repeatCount = 2))
-                        add(LoopEndInteraction())
-                    },
-                    label = { Text("+ Repeat block") }
+
+                StepPicker(
+                    selected = stepToAdd,
+                    onSelected = { stepToAdd = it },
+                    modifier = Modifier.weight(1f)
                 )
-                AssistChip(
-                    onClick = {
-                        add(RandomSelectStartInteraction())
-                        add(RandomSelectEndInteraction())
-                    },
-                    label = { Text("+ Random block") }
-                )
-                AssistChip(
-                    onClick = {
-                        add(IfStartInteraction("1 == 1"))
-                        add(IfEndInteraction())
-                    },
-                    label = { Text("+ If block") }
-                )
-                AssistChip(
-                    onClick = { add(ElseIfInteraction("1 == 1")) },
-                    label = { Text("+ Else if") }
-                )
-                AssistChip(
-                    onClick = { add(ElseInteraction()) },
-                    label = { Text("+ Else") }
-                )
-                AssistChip(
-                    onClick = {
-                        add(WhileStartInteraction("1 == 1"))
-                        add(WhileEndInteraction())
-                    },
-                    label = { Text("+ While block") }
-                )
-                AssistChip(
-                    onClick = { add(BreakInteraction()) },
-                    label = { Text("+ Break") }
-                )
-                AssistChip(
-                    onClick = { add(WaitInteraction(delayBefore = 1000)) },
-                    label = { Text("+ Wait") }
-                )
-                AssistChip(
-                    onClick = { add(ToastInteraction("", 0)) },
-                    label = { Text("+ Toast") }
-                )
-                AssistChip(
-                    onClick = { add(SetVariableInteraction("count", "0", 0)) },
-                    label = { Text("+ Set var") }
-                )
-                AssistChip(
-                    onClick = { add(KeyEventInteraction("BACK", 0)) },
-                    label = { Text("+ Key") }
-                )
-                AssistChip(
-                    onClick = { add(LaunchAppInteraction("", 0)) },
-                    label = { Text("+ Launch app") }
-                )
-                AssistChip(
-                    onClick = { add(ShellInteraction("", 0)) },
-                    label = { Text("+ Shell") }
-                )
+
+                FilledIconButton(onClick = { stepToAdd.create().forEach { add(it) } }) {
+                    Icon(Icons.Default.Add, contentDescription = "Add step")
+                }
             }
 
             if (!isBalanced(interactions)) {
@@ -289,6 +254,43 @@ fun EditorScreen(file: File, onBack: () -> Unit) {
                 }
             }
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StepPicker(
+    selected: StepOption,
+    onSelected: (StepOption) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded },
+        modifier = modifier
+    ) {
+        OutlinedTextField(
+            value = selected.label,
+            onValueChange = {},
+            readOnly = true,
+            singleLine = true,
+            label = { Text("Add step") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            STEP_OPTIONS.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option.label) },
+                    onClick = {
+                        onSelected(option)
+                        expanded = false
+                    }
+                )
+            }
+        }
     }
 }
 
