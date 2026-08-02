@@ -186,6 +186,10 @@ fun EditorScreen(file: File, onBack: () -> Unit) {
                     label = { Text("+ Wait") }
                 )
                 AssistChip(
+                    onClick = { add(ToastInteraction("", 0)) },
+                    label = { Text("+ Toast") }
+                )
+                AssistChip(
                     onClick = { add(SetVariableInteraction("count", "0", 0)) },
                     label = { Text("+ Set var") }
                 )
@@ -451,6 +455,14 @@ private fun InteractionFields(interaction: Interaction, onUpdate: (Interaction) 
                     modifier = Modifier.width(180.dp)
                 )
             }
+            is ToastInteraction -> {
+                TextFieldEntry(
+                    value = interaction.message,
+                    onValueChange = { onUpdate(interaction.copy(message = it)) },
+                    label = "Message ({...} is evaluated)",
+                    width = 280.dp
+                )
+            }
             is KeyEventInteraction -> {
                 TextFieldEntry(
                     value = interaction.key,
@@ -646,6 +658,7 @@ private fun describeInteraction(interaction: Interaction, screen: ScreenGeometry
         is LaunchAppInteraction -> "Launch ${interaction.packageName.ifBlank { "(no package)" }}"
         is ShellInteraction -> "Shell: ${interaction.command.ifBlank { "(empty)" }}"
         is WaitInteraction -> "Wait"
+        is ToastInteraction -> "Toast: ${interaction.message.ifBlank { "(empty)" }}"
         is SetVariableInteraction -> "Set ${interaction.variable} = ${interaction.expression}"
         is BreakInteraction -> "Break"
         is LoopStartInteraction -> repeatLabel(interaction.repeatCount)
@@ -724,6 +737,7 @@ fun Interaction.withDelay(delay: Long): Interaction = when (this) {
     is LaunchAppInteraction -> copy(delayBefore = delay)
     is ShellInteraction -> copy(delayBefore = delay)
     is WaitInteraction -> copy(delayBefore = delay)
+    is ToastInteraction -> copy(delayBefore = delay)
     is SetVariableInteraction -> copy(delayBefore = delay)
     is BreakInteraction -> copy(delayBefore = delay)
     is ForLoopInteraction -> copy(delayBefore = delay)
@@ -750,6 +764,7 @@ fun Interaction.withName(newName: String): Interaction = when (this) {
     is LaunchAppInteraction -> copy(name = newName)
     is ShellInteraction -> copy(name = newName)
     is WaitInteraction -> copy(name = newName)
+    is ToastInteraction -> copy(name = newName)
     is SetVariableInteraction -> copy(name = newName)
     is BreakInteraction -> copy(name = newName)
     is ForLoopInteraction -> copy(name = newName)

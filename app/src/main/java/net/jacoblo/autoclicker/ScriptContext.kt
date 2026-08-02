@@ -73,6 +73,37 @@ class ScriptContext : EvalContext {
 		false
 	}
 
+	/**
+	 * Substitutes {expression} in otherwise literal text.
+	 *
+	 * Text with no braces comes back untouched, so a plain message needs no
+	 * quoting; an unclosed brace is left as written rather than swallowing the
+	 * rest of the message.
+	 */
+	suspend fun interpolate(template: String): String {
+		if (!template.contains('{')) return template
+
+		val result = StringBuilder()
+		var index = 0
+		while (index < template.length) {
+			val open = template.indexOf('{', index)
+			if (open < 0) {
+				result.append(template, index, template.length)
+				break
+			}
+			result.append(template, index, open)
+
+			val close = template.indexOf('}', open)
+			if (close < 0) {
+				result.append(template, open, template.length)
+				break
+			}
+			result.append(evaluateOrZero(template.substring(open + 1, close)).asText())
+			index = close + 1
+		}
+		return result.toString()
+	}
+
 	suspend fun evaluateOrZero(source: String): Value = try {
 		evaluate(parseExpression(source), this)
 	} catch (e: ExpressionException) {

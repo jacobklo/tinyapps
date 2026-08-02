@@ -80,6 +80,17 @@ data class ShellInteraction(
     override val name: String = ""
 ) : Interaction()
 
+/**
+ * Shows a toast. [message] is plain text, except that anything in braces is
+ * evaluated as an expression, so a script can report what it is doing:
+ * "attempt {count} of 5".
+ */
+data class ToastInteraction(
+    val message: String,
+    override val delayBefore: Long,
+    override val name: String = ""
+) : Interaction()
+
 /** Does nothing but honour its delayBefore, for a pause between actions. */
 data class WaitInteraction(
     override val delayBefore: Long,
@@ -221,6 +232,7 @@ fun summarize(events: List<Interaction>): RecordingSummary {
                 }
                 is TextInteraction -> actions++
                 is KeyEventInteraction -> actions++
+                is ToastInteraction -> actions++
                 is LaunchAppInteraction -> actions++
                 is ShellInteraction -> actions++
                 is SetVariableInteraction -> actions++
@@ -354,6 +366,10 @@ object RecordingManager {
             }
             is WaitInteraction -> {
                 jsonObj.put("type", "wait")
+            }
+            is ToastInteraction -> {
+                jsonObj.put("type", "toast")
+                jsonObj.put("message", event.message)
             }
             is SetVariableInteraction -> {
                 jsonObj.put("type", "set")
@@ -500,6 +516,7 @@ object RecordingManager {
             "launch" -> LaunchAppInteraction(obj.optString("package", ""), delayBefore, name)
             "shell" -> ShellInteraction(obj.optString("command", ""), delayBefore, name)
             "wait" -> WaitInteraction(delayBefore, name)
+            "toast" -> ToastInteraction(obj.optString("message", ""), delayBefore, name)
             "break" -> BreakInteraction(delayBefore, name)
             "set" -> SetVariableInteraction(
                 variable = obj.optString("variable", ""),

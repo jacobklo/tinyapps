@@ -50,6 +50,11 @@ android {
     buildFeatures {
         compose true
     }
+    testOptions {
+        // android.util.Log and friends throw by default under JVM unit tests;
+        // returning defaults lets code that logs on a failure path be tested.
+        unitTests.returnDefaultValues = true
+    }
 }
 
 dependencies {

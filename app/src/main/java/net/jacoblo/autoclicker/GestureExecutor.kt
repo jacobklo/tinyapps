@@ -2,6 +2,7 @@ package net.jacoblo.autoclicker
 
 import android.os.PowerManager
 import android.util.Log
+import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -170,6 +171,7 @@ object GestureExecutor {
 				is WaitInteraction -> {
 					// The delay above is the whole action.
 				}
+				is ToastInteraction -> runToast(context.interpolate(event.message))
 				is SetVariableInteraction ->
 					context.set(event.variable, context.evaluateOrZero(event.expression))
 
@@ -311,6 +313,15 @@ object GestureExecutor {
 			return
 		}
 		service.dispatchText(text)
+	}
+
+	// Deliberately not root-gated: a toast is the script telling you what it is
+	// doing, which is most wanted when the rest is not working.
+	private suspend fun runToast(message: String) {
+		if (message.isEmpty()) return
+		withContext(Dispatchers.Main) {
+			Toast.makeText(AppSettings.appContext, message, Toast.LENGTH_SHORT).show()
+		}
 	}
 
 	// The actions below are root-only. The accessibility backend has no
