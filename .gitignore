@@ -12,7 +12,8 @@ local.properties
 build/
 release/
 
-androidTest/
-test/
+# Source tests are versioned; only their build output is ignored.
+**/build/test-results/
+**/build/reports/
 
 *.apk
