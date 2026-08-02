@@ -155,6 +155,52 @@ fun EditorScreen(file: File, onBack: () -> Unit) {
                     },
                     label = { Text("+ Random block") }
                 )
+                AssistChip(
+                    onClick = {
+                        add(IfStartInteraction("1 == 1"))
+                        add(IfEndInteraction())
+                    },
+                    label = { Text("+ If block") }
+                )
+                AssistChip(
+                    onClick = { add(ElseIfInteraction("1 == 1")) },
+                    label = { Text("+ Else if") }
+                )
+                AssistChip(
+                    onClick = { add(ElseInteraction()) },
+                    label = { Text("+ Else") }
+                )
+                AssistChip(
+                    onClick = {
+                        add(WhileStartInteraction("1 == 1"))
+                        add(WhileEndInteraction())
+                    },
+                    label = { Text("+ While block") }
+                )
+                AssistChip(
+                    onClick = { add(BreakInteraction()) },
+                    label = { Text("+ Break") }
+                )
+                AssistChip(
+                    onClick = { add(WaitInteraction(delayBefore = 1000)) },
+                    label = { Text("+ Wait") }
+                )
+                AssistChip(
+                    onClick = { add(SetVariableInteraction("count", "0", 0)) },
+                    label = { Text("+ Set var") }
+                )
+                AssistChip(
+                    onClick = { add(KeyEventInteraction("BACK", 0)) },
+                    label = { Text("+ Key") }
+                )
+                AssistChip(
+                    onClick = { add(LaunchAppInteraction("", 0)) },
+                    label = { Text("+ Launch app") }
+                )
+                AssistChip(
+                    onClick = { add(ShellInteraction("", 0)) },
+                    label = { Text("+ Shell") }
+                )
             }
 
             if (!isBalanced(interactions)) {
@@ -401,8 +447,66 @@ private fun InteractionFields(interaction: Interaction, onUpdate: (Interaction) 
                 NumberField(
                     value = interaction.repeatCount.toLong(),
                     onValueChange = { onUpdate(interaction.copy(repeatCount = it.toInt())) },
-                    label = "Repeat",
-                    modifier = Modifier.width(100.dp)
+                    label = "Repeat (0 = forever)",
+                    modifier = Modifier.width(180.dp)
+                )
+            }
+            is KeyEventInteraction -> {
+                TextFieldEntry(
+                    value = interaction.key,
+                    onValueChange = { onUpdate(interaction.copy(key = it)) },
+                    label = "Key (BACK, HOME, APP_SWITCH...)",
+                    width = 280.dp
+                )
+            }
+            is LaunchAppInteraction -> {
+                TextFieldEntry(
+                    value = interaction.packageName,
+                    onValueChange = { onUpdate(interaction.copy(packageName = it)) },
+                    label = "Package name",
+                    width = 280.dp
+                )
+            }
+            is ShellInteraction -> {
+                TextFieldEntry(
+                    value = interaction.command,
+                    onValueChange = { onUpdate(interaction.copy(command = it)) },
+                    label = "Shell command (root)",
+                    width = 280.dp
+                )
+            }
+            is SetVariableInteraction -> {
+                TextFieldEntry(
+                    value = interaction.variable,
+                    onValueChange = { onUpdate(interaction.copy(variable = it)) },
+                    label = "Variable",
+                    width = 140.dp
+                )
+                ExpressionField(
+                    value = interaction.expression,
+                    onValueChange = { onUpdate(interaction.copy(expression = it)) },
+                    label = "= expression"
+                )
+            }
+            is IfStartInteraction -> {
+                ExpressionField(
+                    value = interaction.condition,
+                    onValueChange = { onUpdate(interaction.copy(condition = it)) },
+                    label = "Condition"
+                )
+            }
+            is ElseIfInteraction -> {
+                ExpressionField(
+                    value = interaction.condition,
+                    onValueChange = { onUpdate(interaction.copy(condition = it)) },
+                    label = "Condition"
+                )
+            }
+            is WhileStartInteraction -> {
+                ExpressionField(
+                    value = interaction.condition,
+                    onValueChange = { onUpdate(interaction.copy(condition = it)) },
+                    label = "While condition"
                 )
             }
             else -> {}
@@ -416,6 +520,53 @@ private fun InteractionFields(interaction: Interaction, onUpdate: (Interaction) 
             singleLine = true
         )
     }
+}
+
+@Composable
+private fun TextFieldEntry(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    width: Dp
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        modifier = Modifier.width(width),
+        singleLine = true
+    )
+}
+
+/**
+ * Expression entry that reports a parse error as you type, so a broken
+ * condition is caught in the editor rather than silently evaluating false at
+ * playback time.
+ */
+@Composable
+private fun ExpressionField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String
+) {
+    val error = remember(value) {
+        if (value.isBlank()) null else try {
+            parseExpression(value)
+            null
+        } catch (e: ExpressionException) {
+            e.message
+        }
+    }
+
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        isError = error != null,
+        supportingText = error?.let { { Text(it) } },
+        modifier = Modifier.width(280.dp),
+        singleLine = true
+    )
 }
 
 /**
@@ -465,12 +616,13 @@ private fun blockAccent(depth: Int): Color {
     return palette[depth % palette.size]
 }
 
-private fun Interaction.isBlockMarker(): Boolean =
-    this is LoopStartInteraction || this is LoopEndInteraction ||
-        this is RandomSelectStartInteraction || this is RandomSelectEndInteraction
+private fun repeatLabel(count: Int): String =
+    if (count <= 0) "Repeat forever" else "Repeat ${count}x"
 
-private fun Interaction.isBlockEnd(): Boolean =
-    this is LoopEndInteraction || this is RandomSelectEndInteraction
+private fun Interaction.isBlockMarker(): Boolean =
+    opensBlock(this) || closesBlock(this) || isMidBlock(this)
+
+private fun Interaction.isBlockEnd(): Boolean = closesBlock(this) || isMidBlock(this)
 
 private fun describeInteraction(interaction: Interaction, screen: ScreenGeometry): String {
     fun px(x: Float, y: Float) = "(${(x * screen.width).toInt()}, ${(y * screen.height).toInt()})"
@@ -490,27 +642,54 @@ private fun describeInteraction(interaction: Interaction, screen: ScreenGeometry
         }
         is TextInteraction ->
             if (interaction.text.isBlank()) "Text (empty)" else "Text \"${interaction.text}\""
-        is LoopStartInteraction -> "Repeat ${interaction.repeatCount}x"
+        is KeyEventInteraction -> "Key ${interaction.key}"
+        is LaunchAppInteraction -> "Launch ${interaction.packageName.ifBlank { "(no package)" }}"
+        is ShellInteraction -> "Shell: ${interaction.command.ifBlank { "(empty)" }}"
+        is WaitInteraction -> "Wait"
+        is SetVariableInteraction -> "Set ${interaction.variable} = ${interaction.expression}"
+        is BreakInteraction -> "Break"
+        is LoopStartInteraction -> repeatLabel(interaction.repeatCount)
         is LoopEndInteraction -> "End repeat"
         is RandomSelectStartInteraction -> "Random one of"
         is RandomSelectEndInteraction -> "End random"
-        is ForLoopInteraction -> "Repeat ${interaction.repeatCount}x"
+        is IfStartInteraction -> "If ${interaction.condition}"
+        is ElseIfInteraction -> "Else if ${interaction.condition}"
+        is ElseInteraction -> "Else"
+        is IfEndInteraction -> "End if"
+        is WhileStartInteraction -> "While ${interaction.condition}"
+        is WhileEndInteraction -> "End while"
+        is ForLoopInteraction -> repeatLabel(interaction.repeatCount)
         is RandomSelectInteraction -> "Random one of"
+        is IfInteraction -> "If ${interaction.branches.firstOrNull()?.condition ?: ""}"
+        is WhileInteraction -> "While ${interaction.condition}"
     }
     val name = if (interaction.name.isBlank()) "" else "  -  ${interaction.name}"
     return "$wait$label$name"
 }
 
+private fun opensBlock(item: Interaction): Boolean =
+    item is LoopStartInteraction || item is RandomSelectStartInteraction ||
+        item is WhileStartInteraction || item is IfStartInteraction
+
+private fun closesBlock(item: Interaction): Boolean =
+    item is LoopEndInteraction || item is RandomSelectEndInteraction ||
+        item is WhileEndInteraction || item is IfEndInteraction
+
+/** ElseIf and Else sit at the parent's level but keep the block open. */
+private fun isMidBlock(item: Interaction): Boolean =
+    item is ElseIfInteraction || item is ElseInteraction
+
 /** Indent level of each row, so nested blocks can be drawn as nested. */
 fun blockDepths(items: List<Interaction>): List<Int> {
     var depth = 0
     return items.map { item ->
-        when (item) {
-            is LoopStartInteraction, is RandomSelectStartInteraction -> depth++
-            is LoopEndInteraction, is RandomSelectEndInteraction -> {
+        when {
+            opensBlock(item) -> depth++
+            closesBlock(item) -> {
                 depth = (depth - 1).coerceAtLeast(0)
                 depth
             }
+            isMidBlock(item) -> (depth - 1).coerceAtLeast(0)
             else -> depth
         }
     }
@@ -519,12 +698,14 @@ fun blockDepths(items: List<Interaction>): List<Int> {
 fun isBalanced(items: List<Interaction>): Boolean {
     var depth = 0
     items.forEach { item ->
-        when (item) {
-            is LoopStartInteraction, is RandomSelectStartInteraction -> depth++
-            is LoopEndInteraction, is RandomSelectEndInteraction -> {
+        when {
+            opensBlock(item) -> depth++
+            closesBlock(item) -> {
                 depth--
                 if (depth < 0) return false
             }
+            // An ElseIf or Else outside any If has nothing to attach to.
+            isMidBlock(item) -> if (depth == 0) return false
             else -> {}
         }
     }
@@ -539,24 +720,52 @@ fun Interaction.withDelay(delay: Long): Interaction = when (this) {
     is ClickInteraction -> copy(delayBefore = delay)
     is DragInteraction -> copy(delayBefore = delay)
     is TextInteraction -> copy(delayBefore = delay)
+    is KeyEventInteraction -> copy(delayBefore = delay)
+    is LaunchAppInteraction -> copy(delayBefore = delay)
+    is ShellInteraction -> copy(delayBefore = delay)
+    is WaitInteraction -> copy(delayBefore = delay)
+    is SetVariableInteraction -> copy(delayBefore = delay)
+    is BreakInteraction -> copy(delayBefore = delay)
     is ForLoopInteraction -> copy(delayBefore = delay)
     is RandomSelectInteraction -> copy(delayBefore = delay)
+    is IfInteraction -> copy(delayBefore = delay)
+    is WhileInteraction -> copy(delayBefore = delay)
     is LoopStartInteraction -> copy(delayBefore = delay)
     is LoopEndInteraction -> copy(delayBefore = delay)
     is RandomSelectStartInteraction -> copy(delayBefore = delay)
     is RandomSelectEndInteraction -> copy(delayBefore = delay)
+    is IfStartInteraction -> copy(delayBefore = delay)
+    is ElseIfInteraction -> copy(delayBefore = delay)
+    is ElseInteraction -> copy(delayBefore = delay)
+    is IfEndInteraction -> copy(delayBefore = delay)
+    is WhileStartInteraction -> copy(delayBefore = delay)
+    is WhileEndInteraction -> copy(delayBefore = delay)
 }
 
 fun Interaction.withName(newName: String): Interaction = when (this) {
     is ClickInteraction -> copy(name = newName)
     is DragInteraction -> copy(name = newName)
     is TextInteraction -> copy(name = newName)
+    is KeyEventInteraction -> copy(name = newName)
+    is LaunchAppInteraction -> copy(name = newName)
+    is ShellInteraction -> copy(name = newName)
+    is WaitInteraction -> copy(name = newName)
+    is SetVariableInteraction -> copy(name = newName)
+    is BreakInteraction -> copy(name = newName)
     is ForLoopInteraction -> copy(name = newName)
     is RandomSelectInteraction -> copy(name = newName)
+    is IfInteraction -> copy(name = newName)
+    is WhileInteraction -> copy(name = newName)
     is LoopStartInteraction -> copy(name = newName)
     is LoopEndInteraction -> copy(name = newName)
     is RandomSelectStartInteraction -> copy(name = newName)
     is RandomSelectEndInteraction -> copy(name = newName)
+    is IfStartInteraction -> copy(name = newName)
+    is ElseIfInteraction -> copy(name = newName)
+    is ElseInteraction -> copy(name = newName)
+    is IfEndInteraction -> copy(name = newName)
+    is WhileStartInteraction -> copy(name = newName)
+    is WhileEndInteraction -> copy(name = newName)
 }
 
 /** Moves the whole path so its first point lands on the given coordinates. */
@@ -574,64 +783,133 @@ fun DragInteraction.translatedTo(x: Float, y: Float): DragInteraction {
 fun flatten(interactions: List<Interaction>): List<Interaction> {
     val flatList = mutableListOf<Interaction>()
     interactions.forEach { interaction ->
-        if (interaction is ForLoopInteraction) {
-            flatList.add(LoopStartInteraction(interaction.repeatCount, interaction.delayBefore, interaction.name))
-            flatList.addAll(flatten(interaction.interactions))
-            flatList.add(LoopEndInteraction(0))
-        } else if (interaction is RandomSelectInteraction) {
-            flatList.add(RandomSelectStartInteraction(interaction.delayBefore, interaction.name))
-            flatList.addAll(flatten(interaction.interactions))
-            flatList.add(RandomSelectEndInteraction(0))
-        } else {
-            flatList.add(interaction)
+        when (interaction) {
+            is ForLoopInteraction -> {
+                flatList.add(LoopStartInteraction(interaction.repeatCount, interaction.delayBefore, interaction.name))
+                flatList.addAll(flatten(interaction.interactions))
+                flatList.add(LoopEndInteraction(0))
+            }
+            is RandomSelectInteraction -> {
+                flatList.add(RandomSelectStartInteraction(interaction.delayBefore, interaction.name))
+                flatList.addAll(flatten(interaction.interactions))
+                flatList.add(RandomSelectEndInteraction(0))
+            }
+            is WhileInteraction -> {
+                flatList.add(WhileStartInteraction(interaction.condition, interaction.delayBefore, interaction.name))
+                flatList.addAll(flatten(interaction.interactions))
+                flatList.add(WhileEndInteraction(0))
+            }
+            is IfInteraction -> {
+                interaction.branches.forEachIndexed { index, branch ->
+                    if (index == 0) {
+                        flatList.add(IfStartInteraction(branch.condition, interaction.delayBefore, interaction.name))
+                    } else {
+                        flatList.add(ElseIfInteraction(branch.condition))
+                    }
+                    flatList.addAll(flatten(branch.interactions))
+                }
+                if (interaction.elseBranch.isNotEmpty()) {
+                    flatList.add(ElseInteraction())
+                    flatList.addAll(flatten(interaction.elseBranch))
+                }
+                flatList.add(IfEndInteraction(0))
+            }
+            else -> flatList.add(interaction)
         }
     }
     return flatList
 }
 
-fun buildHierarchy(flatInteractions: List<Interaction>): List<Interaction> {
-    val result = mutableListOf<Interaction>()
-    var i = 0
-    while (i < flatInteractions.size) {
-        val item = flatInteractions[i]
-        if (item is LoopStartInteraction) {
-            val (children, nextIndex) = parseBlock(flatInteractions, i + 1)
-            result.add(ForLoopInteraction(item.repeatCount, children, item.delayBefore, item.name))
-            i = nextIndex
-        } else if (item is RandomSelectStartInteraction) {
-            val (children, nextIndex) = parseBlock(flatInteractions, i + 1)
-            result.add(RandomSelectInteraction(children, item.delayBefore, item.name))
-            i = nextIndex
-        } else if (item is LoopEndInteraction || item is RandomSelectEndInteraction) {
-            // Unmatched End - ignore
-            i++
-        } else {
-            result.add(item)
-            i++
+fun buildHierarchy(flatInteractions: List<Interaction>): List<Interaction> =
+    readSequence(flatInteractions, 0) { false }.children
+
+private class ParsedSequence(val children: List<Interaction>, val terminator: Interaction?, val next: Int)
+
+private fun isBlockOpener(item: Interaction): Boolean =
+    item is LoopStartInteraction || item is RandomSelectStartInteraction ||
+        item is WhileStartInteraction || item is IfStartInteraction
+
+private fun isStrayMarker(item: Interaction): Boolean =
+    item is LoopEndInteraction || item is RandomSelectEndInteraction ||
+        item is WhileEndInteraction || item is IfEndInteraction ||
+        item is ElseIfInteraction || item is ElseInteraction
+
+/**
+ * Reads interactions until [isTerminator] matches, recursing into any block it
+ * meets. Returns which terminator stopped it, which is what lets an If chain
+ * tell ElseIf from Else from End.
+ */
+private fun readSequence(
+    flat: List<Interaction>,
+    start: Int,
+    isTerminator: (Interaction) -> Boolean
+): ParsedSequence {
+    val children = mutableListOf<Interaction>()
+    var i = start
+    while (i < flat.size) {
+        val item = flat[i]
+        if (isTerminator(item)) return ParsedSequence(children, item, i + 1)
+        if (isBlockOpener(item)) {
+            val (node, next) = readBlock(flat, item, i + 1)
+            children.add(node)
+            i = next
+            continue
         }
+        // An End with no matching Start cannot be represented; drop it. The
+        // editor warns about this before saving.
+        if (isStrayMarker(item)) {
+            i++
+            continue
+        }
+        children.add(item)
+        i++
     }
-    return result
+    return ParsedSequence(children, null, i)
 }
 
-fun parseBlock(flatInteractions: List<Interaction>, startIndex: Int): Pair<List<Interaction>, Int> {
-    val children = mutableListOf<Interaction>()
-    var i = startIndex
-    while (i < flatInteractions.size) {
-        val item = flatInteractions[i]
-        if (item is LoopEndInteraction || item is RandomSelectEndInteraction) {
-            return children to (i + 1)
-        } else if (item is LoopStartInteraction) {
-            val (subChildren, nextIndex) = parseBlock(flatInteractions, i + 1)
-            children.add(ForLoopInteraction(item.repeatCount, subChildren, item.delayBefore, item.name))
-            i = nextIndex
-        } else if (item is RandomSelectStartInteraction) {
-            val (subChildren, nextIndex) = parseBlock(flatInteractions, i + 1)
-            children.add(RandomSelectInteraction(subChildren, item.delayBefore, item.name))
-            i = nextIndex
-        } else {
-            children.add(item)
-            i++
+private fun readBlock(flat: List<Interaction>, opener: Interaction, start: Int): Pair<Interaction, Int> =
+    when (opener) {
+        is LoopStartInteraction -> {
+            val body = readSequence(flat, start) { it is LoopEndInteraction || it is RandomSelectEndInteraction }
+            ForLoopInteraction(opener.repeatCount, body.children, opener.delayBefore, opener.name) to body.next
+        }
+        is RandomSelectStartInteraction -> {
+            val body = readSequence(flat, start) { it is LoopEndInteraction || it is RandomSelectEndInteraction }
+            RandomSelectInteraction(body.children, opener.delayBefore, opener.name) to body.next
+        }
+        is WhileStartInteraction -> {
+            val body = readSequence(flat, start) { it is WhileEndInteraction }
+            WhileInteraction(opener.condition, body.children, opener.delayBefore, opener.name) to body.next
+        }
+        is IfStartInteraction -> readIf(flat, opener, start)
+        else -> opener to start
+    }
+
+private fun readIf(flat: List<Interaction>, opener: IfStartInteraction, start: Int): Pair<Interaction, Int> {
+    val branches = mutableListOf<ConditionBranch>()
+    var condition = opener.condition
+    var index = start
+
+    while (true) {
+        val body = readSequence(flat, index) {
+            it is ElseIfInteraction || it is ElseInteraction || it is IfEndInteraction
+        }
+        index = body.next
+        when (val terminator = body.terminator) {
+            is ElseIfInteraction -> {
+                branches.add(ConditionBranch(condition, body.children))
+                condition = terminator.condition
+            }
+            is ElseInteraction -> {
+                branches.add(ConditionBranch(condition, body.children))
+                val elseBody = readSequence(flat, index) { it is IfEndInteraction }
+                return IfInteraction(branches, elseBody.children, opener.delayBefore, opener.name) to elseBody.next
+            }
+            // IfEnd, or the list ran out
+            else -> {
+                branches.add(ConditionBranch(condition, body.children))
+                return IfInteraction(branches, emptyList(), opener.delayBefore, opener.name) to index
+            }
         }
     }
-    return children to i // End of list reached without End tag
 }

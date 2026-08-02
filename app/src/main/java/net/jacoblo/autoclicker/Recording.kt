@@ -61,11 +61,67 @@ data class TextInteraction(
     override val name: String = ""
 ) : Interaction()
 
-// New ForLoop interaction
+// A hardware/system key, by KeyEvent name: BACK, HOME, APP_SWITCH, VOLUME_UP...
+data class KeyEventInteraction(
+    val key: String,
+    override val delayBefore: Long,
+    override val name: String = ""
+) : Interaction()
+
+data class LaunchAppInteraction(
+    val packageName: String,
+    override val delayBefore: Long,
+    override val name: String = ""
+) : Interaction()
+
+data class ShellInteraction(
+    val command: String,
+    override val delayBefore: Long,
+    override val name: String = ""
+) : Interaction()
+
+/** Does nothing but honour its delayBefore, for a pause between actions. */
+data class WaitInteraction(
+    override val delayBefore: Long,
+    override val name: String = ""
+) : Interaction()
+
+/** Assigns the result of an expression to a variable for the rest of the run. */
+data class SetVariableInteraction(
+    val variable: String,
+    val expression: String,
+    override val delayBefore: Long,
+    override val name: String = ""
+) : Interaction()
+
+// New ForLoop interaction. repeatCount <= 0 repeats until stopped or Break.
 data class ForLoopInteraction(
     val repeatCount: Int,
     val interactions: List<Interaction>,
     override val delayBefore: Long,
+    override val name: String = ""
+) : Interaction()
+
+/** One condition and the body that runs when it is the first to hold. */
+data class ConditionBranch(val condition: String, val interactions: List<Interaction>)
+
+data class IfInteraction(
+    val branches: List<ConditionBranch>,
+    val elseBranch: List<Interaction> = emptyList(),
+    override val delayBefore: Long,
+    override val name: String = ""
+) : Interaction()
+
+data class WhileInteraction(
+    val condition: String,
+    val interactions: List<Interaction>,
+    override val delayBefore: Long,
+    override val name: String = ""
+) : Interaction()
+
+/** Exits the innermost enclosing Repeat or While. */
+data class BreakInteraction(
+    override val delayBefore: Long = 0,
     override val name: String = ""
 ) : Interaction()
 
@@ -94,6 +150,39 @@ data class RandomSelectStartInteraction(
 ) : Interaction()
 
 data class RandomSelectEndInteraction(
+    override val delayBefore: Long = 0,
+    override val name: String = ""
+) : Interaction()
+
+data class IfStartInteraction(
+    val condition: String,
+    override val delayBefore: Long = 0,
+    override val name: String = ""
+) : Interaction()
+
+data class ElseIfInteraction(
+    val condition: String,
+    override val delayBefore: Long = 0,
+    override val name: String = ""
+) : Interaction()
+
+data class ElseInteraction(
+    override val delayBefore: Long = 0,
+    override val name: String = ""
+) : Interaction()
+
+data class IfEndInteraction(
+    override val delayBefore: Long = 0,
+    override val name: String = ""
+) : Interaction()
+
+data class WhileStartInteraction(
+    val condition: String,
+    override val delayBefore: Long = 0,
+    override val name: String = ""
+) : Interaction()
+
+data class WhileEndInteraction(
     override val delayBefore: Long = 0,
     override val name: String = ""
 ) : Interaction()
@@ -131,13 +220,28 @@ fun summarize(events: List<Interaction>): RecordingSummary {
                     duration += event.points.sumOf { it.dt } * repeats
                 }
                 is TextInteraction -> actions++
+                is KeyEventInteraction -> actions++
+                is LaunchAppInteraction -> actions++
+                is ShellInteraction -> actions++
+                is SetVariableInteraction -> actions++
                 is ForLoopInteraction -> {
                     loops++
-                    walk(event.interactions, repeats * event.repeatCount.coerceAtLeast(0))
+                    // An unbounded repeat has no meaningful runtime, so count
+                    // its body once rather than reporting zero.
+                    walk(event.interactions, repeats * event.repeatCount.coerceAtLeast(1))
                 }
                 is RandomSelectInteraction -> {
                     loops++
                     walk(event.interactions, repeats)
+                }
+                is WhileInteraction -> {
+                    loops++
+                    walk(event.interactions, repeats)
+                }
+                is IfInteraction -> {
+                    // Only one branch runs, so counting them all would overstate
+                    // both the action count and the estimate.
+                    event.branches.firstOrNull()?.let { walk(it.interactions, repeats) }
                 }
                 else -> {}
             }
@@ -236,26 +340,73 @@ object RecordingManager {
                 jsonObj.put("type", "text")
                 jsonObj.put("text", event.text)
             }
+            is KeyEventInteraction -> {
+                jsonObj.put("type", "key")
+                jsonObj.put("key", event.key)
+            }
+            is LaunchAppInteraction -> {
+                jsonObj.put("type", "launch")
+                jsonObj.put("package", event.packageName)
+            }
+            is ShellInteraction -> {
+                jsonObj.put("type", "shell")
+                jsonObj.put("command", event.command)
+            }
+            is WaitInteraction -> {
+                jsonObj.put("type", "wait")
+            }
+            is SetVariableInteraction -> {
+                jsonObj.put("type", "set")
+                jsonObj.put("variable", event.variable)
+                jsonObj.put("expression", event.expression)
+            }
+            is BreakInteraction -> {
+                jsonObj.put("type", "break")
+            }
+            is IfInteraction -> {
+                jsonObj.put("type", "if")
+                val branchArray = JSONArray()
+                event.branches.forEach { branch ->
+                    branchArray.put(JSONObject().apply {
+                        put("condition", branch.condition)
+                        put("events", eventsToJson(branch.interactions))
+                    })
+                }
+                jsonObj.put("branches", branchArray)
+                jsonObj.put("else", eventsToJson(event.elseBranch))
+            }
+            is WhileInteraction -> {
+                jsonObj.put("type", "while")
+                jsonObj.put("condition", event.condition)
+                jsonObj.put("events", eventsToJson(event.interactions))
+            }
             is ForLoopInteraction -> {
                 jsonObj.put("type", "loop")
                 jsonObj.put("count", event.repeatCount)
-                val eventsArray = JSONArray()
-                event.interactions.forEach { child ->
-                    eventToJson(child)?.let { eventsArray.put(it) }
-                }
-                jsonObj.put("events", eventsArray)
+                jsonObj.put("events", eventsToJson(event.interactions))
             }
             is RandomSelectInteraction -> {
                 jsonObj.put("type", "random_select")
-                val eventsArray = JSONArray()
-                event.interactions.forEach { child ->
-                    eventToJson(child)?.let { eventsArray.put(it) }
-                }
-                jsonObj.put("events", eventsArray)
+                jsonObj.put("events", eventsToJson(event.interactions))
             }
             else -> return null // Skip editor-only types
         }
         return jsonObj
+    }
+
+    private fun eventsToJson(events: List<Interaction>): JSONArray {
+        val array = JSONArray()
+        events.forEach { child -> eventToJson(child)?.let { array.put(it) } }
+        return array
+    }
+
+    private fun jsonToEvents(array: JSONArray?): List<Interaction> {
+        if (array == null) return emptyList()
+        val events = mutableListOf<Interaction>()
+        for (i in 0 until array.length()) {
+            parseEvent(array.getJSONObject(i))?.let { events.add(it) }
+        }
+        return events
     }
 
     fun getRecordings(): List<File> {
@@ -345,25 +496,50 @@ object RecordingManager {
                     name = name
                 )
             }
-            "loop" -> {
-                val count = obj.getInt("count")
-                val eventsArray = obj.getJSONArray("events")
-                val children = mutableListOf<Interaction>()
-                for (i in 0 until eventsArray.length()) {
-                    val childObj = eventsArray.getJSONObject(i)
-                    parseEvent(childObj)?.let { children.add(it) }
+            "key" -> KeyEventInteraction(obj.optString("key", "BACK"), delayBefore, name)
+            "launch" -> LaunchAppInteraction(obj.optString("package", ""), delayBefore, name)
+            "shell" -> ShellInteraction(obj.optString("command", ""), delayBefore, name)
+            "wait" -> WaitInteraction(delayBefore, name)
+            "break" -> BreakInteraction(delayBefore, name)
+            "set" -> SetVariableInteraction(
+                variable = obj.optString("variable", ""),
+                expression = obj.optString("expression", "0"),
+                delayBefore = delayBefore,
+                name = name
+            )
+            "if" -> {
+                val branches = mutableListOf<ConditionBranch>()
+                val branchArray = obj.optJSONArray("branches")
+                if (branchArray != null) {
+                    for (i in 0 until branchArray.length()) {
+                        val branchObj = branchArray.getJSONObject(i)
+                        branches.add(
+                            ConditionBranch(
+                                condition = branchObj.optString("condition", "false"),
+                                interactions = jsonToEvents(branchObj.optJSONArray("events"))
+                            )
+                        )
+                    }
                 }
-                ForLoopInteraction(count, children, delayBefore, name)
+                IfInteraction(branches, jsonToEvents(obj.optJSONArray("else")), delayBefore, name)
             }
-            "random_select" -> {
-                val eventsArray = obj.getJSONArray("events")
-                val children = mutableListOf<Interaction>()
-                for (i in 0 until eventsArray.length()) {
-                    val childObj = eventsArray.getJSONObject(i)
-                    parseEvent(childObj)?.let { children.add(it) }
-                }
-                RandomSelectInteraction(children, delayBefore, name)
-            }
+            "while" -> WhileInteraction(
+                condition = obj.optString("condition", "false"),
+                interactions = jsonToEvents(obj.optJSONArray("events")),
+                delayBefore = delayBefore,
+                name = name
+            )
+            "loop" -> ForLoopInteraction(
+                repeatCount = obj.getInt("count"),
+                interactions = jsonToEvents(obj.optJSONArray("events")),
+                delayBefore = delayBefore,
+                name = name
+            )
+            "random_select" -> RandomSelectInteraction(
+                interactions = jsonToEvents(obj.optJSONArray("events")),
+                delayBefore = delayBefore,
+                name = name
+            )
             else -> null
         }
     }

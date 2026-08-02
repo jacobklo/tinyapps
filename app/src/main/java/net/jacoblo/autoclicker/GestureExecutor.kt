@@ -5,7 +5,9 @@ import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -90,7 +92,11 @@ object GestureExecutor {
 		playJob = scope.launch {
 			acquireWakeLock()
 			try {
-				executeEvents(events, globalRandom)
+				// Variables start empty each run, so a script cannot inherit
+				// state from the previous playback.
+				executeEvents(events, globalRandom, ScriptContext())
+			} catch (stop: BreakSignal) {
+				Log.w(TAG, "break outside any loop, ending playback")
 			} finally {
 				releaseWakeLock()
 				onFinished?.invoke()
@@ -138,8 +144,16 @@ object GestureExecutor {
 		}
 	}
 
-	private suspend fun executeEvents(events: List<Interaction>, globalRandom: Int) {
+	private suspend fun executeEvents(
+		events: List<Interaction>,
+		globalRandom: Int,
+		context: ScriptContext
+	) {
 		events.forEach { event ->
+			// A loop whose body has no delay would otherwise never yield, and
+			// the stop button could not interrupt it.
+			currentCoroutineContext().ensureActive()
+
 			val randDelay = if (globalRandom > 0) Random.nextInt(0, globalRandom + 1) else 0
 			delay(event.delayBefore + randDelay)
 
@@ -150,20 +164,69 @@ object GestureExecutor {
 				)
 				is DragInteraction -> runDrag(event.points, event.randomFactorStart, event.randomFactorHighest)
 				is TextInteraction -> runText(event.text)
-				is ForLoopInteraction -> {
-					repeat(event.repeatCount) {
-						executeEvents(event.interactions, globalRandom)
+				is KeyEventInteraction -> runKeyEvent(event.key)
+				is LaunchAppInteraction -> runLaunchApp(event.packageName)
+				is ShellInteraction -> runShell(event.command)
+				is WaitInteraction -> {
+					// The delay above is the whole action.
+				}
+				is SetVariableInteraction ->
+					context.set(event.variable, context.evaluateOrZero(event.expression))
+
+				is BreakInteraction -> throw BreakSignal()
+
+				is ForLoopInteraction -> runLoop(event, globalRandom, context)
+
+				is WhileInteraction -> {
+					try {
+						while (context.condition(event.condition)) {
+							currentCoroutineContext().ensureActive()
+							executeEvents(event.interactions, globalRandom, context)
+						}
+					} catch (stop: BreakSignal) {
+						Log.d(TAG, "break out of while")
 					}
 				}
+
+				is IfInteraction -> {
+					val taken = event.branches.firstOrNull { context.condition(it.condition) }
+					if (taken != null) {
+						executeEvents(taken.interactions, globalRandom, context)
+					} else {
+						executeEvents(event.elseBranch, globalRandom, context)
+					}
+				}
+
 				is RandomSelectInteraction -> {
 					if (event.interactions.isNotEmpty()) {
-						executeEvents(listOf(event.interactions.random()), globalRandom)
+						executeEvents(listOf(event.interactions.random()), globalRandom, context)
 					}
 				}
 				else -> {
 					// Editor-only markers never reach playback
 				}
 			}
+		}
+	}
+
+	private suspend fun runLoop(
+		event: ForLoopInteraction,
+		globalRandom: Int,
+		context: ScriptContext
+	) {
+		try {
+			if (event.repeatCount <= 0) {
+				// Repeat forever, until Break or the stop button.
+				while (true) {
+					currentCoroutineContext().ensureActive()
+					executeEvents(event.interactions, globalRandom, context)
+				}
+			}
+			repeat(event.repeatCount) {
+				executeEvents(event.interactions, globalRandom, context)
+			}
+		} catch (stop: BreakSignal) {
+			Log.d(TAG, "break out of repeat")
 		}
 	}
 
@@ -248,6 +311,32 @@ object GestureExecutor {
 			return
 		}
 		service.dispatchText(text)
+	}
+
+	// The actions below are root-only. The accessibility backend has no
+	// equivalent for launching an app or running a command, and offering half
+	// of them would make a script silently behave differently per backend.
+	private suspend fun runKeyEvent(key: String) {
+		if (!requireRoot("key event")) return
+		withContext(Dispatchers.IO) { RootShell.exec("input keyevent ${key.trim()}") }
+	}
+
+	private suspend fun runLaunchApp(packageName: String) {
+		if (packageName.isBlank() || !requireRoot("launch app")) return
+		withContext(Dispatchers.IO) {
+			RootShell.exec("monkey -p ${packageName.trim()} -c android.intent.category.LAUNCHER 1")
+		}
+	}
+
+	private suspend fun runShell(command: String) {
+		if (command.isBlank() || !requireRoot("shell")) return
+		withContext(Dispatchers.IO) { RootShell.exec(command) }
+	}
+
+	private fun requireRoot(what: String): Boolean {
+		if (AppSettings.useRoot && RootShell.isOpen) return true
+		Log.w(TAG, "$what needs root, skipping")
+		return false
 	}
 
 	private suspend fun awaitDispatch(dispatch: (() -> Unit) -> Unit) =
