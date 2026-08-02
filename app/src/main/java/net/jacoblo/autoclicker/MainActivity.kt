@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MoreVert
@@ -71,6 +72,11 @@ class MainActivity : ComponentActivity() {
                             TopAppBar(
                                 title = { Text("Auto Clicker") },
                                 actions = {
+                                    IconButton(onClick = {
+                                        startActivity(Intent(this@MainActivity, TriggersActivity::class.java))
+                                    }) {
+                                        Icon(Icons.Default.Bolt, contentDescription = "Triggers")
+                                    }
                                     IconButton(onClick = {
                                         startActivity(Intent(this@MainActivity, ScreenshotsActivity::class.java))
                                     }) {

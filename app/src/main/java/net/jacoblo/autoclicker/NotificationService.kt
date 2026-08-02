@@ -16,6 +16,7 @@ private const val NOTIFICATION_ID = 1
 class NotificationService : Service() {
 
     private var bubble: Bubble? = null
+    private var triggers: TriggerRunner? = null
 
     override fun onBind(intent: Intent?): IBinder? {
         return null
@@ -25,6 +26,8 @@ class NotificationService : Service() {
         super.onCreate()
         createNotificationChannel()
         bubble = Bubble(this)
+        // Hosted here so triggers keep watching for as long as the bubble does.
+        triggers = TriggerRunner(this).apply { start() }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -35,6 +38,7 @@ class NotificationService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        triggers?.stop()
         bubble?.remove()
     }
 

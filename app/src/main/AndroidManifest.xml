@@ -49,6 +49,11 @@
             android:exported="false"
             android:theme="@style/Theme.AutoClicker" />
 
+        <activity
+            android:name=".TriggersActivity"
+            android:exported="false"
+            android:theme="@style/Theme.AutoClicker" />
+
         <service
             android:name=".NotificationService"
             android:enabled="true"
