@@ -1,6 +1,8 @@
 package net.jacoblo.autoclicker
 
 import android.util.Log
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.random.Random
 
 private const val TAG = "autoclicker.script.context"
@@ -33,7 +35,31 @@ class ScriptContext : EvalContext {
 			val high = args.getOrNull(1)?.asNum() ?: 0L
 			Value.Num(if (high <= low) low else Random.nextLong(low, high + 1))
 		}
+
+		// image(name[, threshold]) -- is the saved area on screen right now
+		"image" -> {
+			val area = args.getOrNull(0)?.asText().orEmpty()
+			val threshold = thresholdArg(args.getOrNull(1))
+			Value.Bool(withContext(Dispatchers.IO) { ScreenConditions.matches(area, threshold) })
+		}
+
+		// waitImage(name, ms[, threshold]) -- poll until it appears or time runs out
+		"waitImage" -> {
+			val area = args.getOrNull(0)?.asText().orEmpty()
+			val timeout = args.getOrNull(1)?.asNum() ?: 0L
+			val threshold = thresholdArg(args.getOrNull(2))
+			Value.Bool(ScreenConditions.waitFor(area, timeout, threshold))
+		}
+
 		else -> throw ExpressionException("unknown function '$name'")
+	}
+
+	// Accepts either a fraction (0.9) or a percentage (90), since both read
+	// naturally in a condition.
+	private fun thresholdArg(value: Value?): Float {
+		val raw = value?.asNum() ?: return DEFAULT_MATCH_THRESHOLD
+		if (raw <= 0L) return DEFAULT_MATCH_THRESHOLD
+		return if (raw > 1L) (raw / 100f).coerceAtMost(1f) else raw.toFloat()
 	}
 
 	/**
