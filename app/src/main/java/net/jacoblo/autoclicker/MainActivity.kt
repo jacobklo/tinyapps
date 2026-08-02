@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
@@ -70,6 +71,11 @@ class MainActivity : ComponentActivity() {
                             TopAppBar(
                                 title = { Text("Auto Clicker") },
                                 actions = {
+                                    IconButton(onClick = {
+                                        startActivity(Intent(this@MainActivity, ScreenshotsActivity::class.java))
+                                    }) {
+                                        Icon(Icons.Default.Image, contentDescription = "Screen areas")
+                                    }
                                     IconButton(onClick = {
                                         startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
                                     }) {

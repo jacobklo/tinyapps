@@ -44,6 +44,11 @@
             android:exported="false"
             android:theme="@style/Theme.AutoClicker" />
 
+        <activity
+            android:name=".ScreenshotsActivity"
+            android:exported="false"
+            android:theme="@style/Theme.AutoClicker" />
+
         <service
             android:name=".NotificationService"
             android:enabled="true"

@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.graphics.drawable.ShapeDrawable
 import android.graphics.drawable.shapes.OvalShape
 import android.os.Build
@@ -21,6 +22,9 @@ import android.widget.LinearLayout
 import android.widget.Toast
 import kotlin.math.pow
 import kotlin.math.sqrt
+
+// Long enough for the hidden bubble to actually leave the composited frame.
+private const val CAPTURE_HIDE_DELAY_MS = 150L
 
 class Bubble(private val context: Context) {
 
@@ -46,6 +50,7 @@ class Bubble(private val context: Context) {
     private var recordButtonView: View? = null
     private var recordButtonIcon: ImageView? = null
     private var playButtonIcon: ImageView? = null
+    private var areaOverlay: AreaSelectOverlay? = null
 
     @SuppressLint("ClickableViewAccessibility")
     fun show() {
@@ -153,7 +158,25 @@ class Bubble(private val context: Context) {
             }
             addView(playButton, paramsPlay)
 
-            // Button 4: for dragging all these buttons
+            // Button 4: Capture a screen area (Yellow)
+            val screenshotButton = FrameLayout(context).apply {
+                background = ShapeDrawable(OvalShape()).apply {
+                    paint.color = 0xFFFFC107.toInt() // Material Amber
+                }
+                val icon = ImageView(context)
+                icon.setImageResource(R.drawable.ic_crop)
+                icon.setColorFilter(Color.WHITE)
+                icon.setPadding(22, 22, 22, 22)
+                addView(icon, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+
+                setOnClickListener { startAreaCapture() }
+            }
+            val paramsShot = LinearLayout.LayoutParams(bubbleSize, bubbleSize).apply {
+                leftMargin = 10
+            }
+            addView(screenshotButton, paramsShot)
+
+            // Button 5: for dragging all these buttons
             val dragButton = FrameLayout(context).apply {
                 background = ShapeDrawable(OvalShape()).apply {
                     paint.color = 0x000000F3.toInt() // Material Blue
@@ -310,6 +333,59 @@ class Bubble(private val context: Context) {
      * Starts passive touchscreen capture. Returns false when root evdev is not
      * available, so the caller falls back to the overlay recorder.
      */
+    /**
+     * Drag out a region, then capture it.
+     *
+     * Both the selection overlay and the bubble itself have to be off screen
+     * before screencap runs, or they end up baked into the saved image. The
+     * overlay removes itself on release; the bubble is hidden here and restored
+     * once the capture has been read.
+     */
+    private fun startAreaCapture() {
+        if (!AppSettings.useRoot || !RootShell.isOpen) {
+            Toast.makeText(context, "Screen capture needs root", Toast.LENGTH_LONG).show()
+            return
+        }
+        if (areaOverlay != null) return
+
+        areaOverlay = AreaSelectOverlay(
+            context = context,
+            onSelected = { rect ->
+                areaOverlay = null
+                captureRegion(rect)
+            },
+            onCancelled = {
+                areaOverlay = null
+                Toast.makeText(context, "Capture cancelled", Toast.LENGTH_SHORT).show()
+            }
+        )
+        areaOverlay?.show()
+        Toast.makeText(context, "Drag to select an area", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun captureRegion(rect: Rect) {
+        bubbleView?.visibility = View.INVISIBLE
+        closeAreaView?.visibility = View.INVISIBLE
+
+        // One frame is not always enough for the compositor to drop the hidden
+        // windows, so give it a short beat before grabbing the screen.
+        bubbleView?.postDelayed({
+            Thread {
+                val screen = ScreenGeometry.current(context)
+                val frame = ScreenCapture.capture()
+                val bitmap = frame?.let { ScreenCapture.crop(it, rect) }
+                val saved = bitmap?.let { ScreenshotStore.save(it, rect, screen) }
+
+                bubbleView?.post {
+                    bubbleView?.visibility = View.VISIBLE
+                    closeAreaView?.visibility = View.VISIBLE
+                    val message = if (saved == null) "Capture failed" else "Saved ${saved.name}"
+                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                }
+            }.start()
+        }, CAPTURE_HIDE_DELAY_MS)
+    }
+
     /** Playback can end on its own, so the icon is reset from a callback. */
     private fun showPlayIdle() {
         playButtonIcon?.post {
