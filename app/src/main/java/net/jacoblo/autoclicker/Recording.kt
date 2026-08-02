@@ -1,6 +1,5 @@
 package net.jacoblo.autoclicker
 
-import android.os.Environment
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,6 +19,9 @@ sealed class Interaction {
     abstract val name: String
 }
 
+// Coordinates are fractions of screen width/height (0.0..1.0), not pixels, so
+// a script survives a different screen size or orientation. Conversion happens
+// only at the executor boundary and in the editor's fields.
 data class ClickInteraction(
     val x: Float,
     val y: Float,
@@ -157,13 +159,7 @@ object RecordingManager {
     val revision: StateFlow<Int> = _revision.asStateFlow()
 
     private val recordingsDir: File
-        get() {
-            val dir = File(Environment.getExternalStorageDirectory(), "Recordings")
-            if (!dir.exists()) {
-                dir.mkdirs()
-            }
-            return dir
-        }
+        get() = Storage.recordingsDir
 
     fun saveRecording(events: List<Interaction>, globalRandom: Int = 0) {
         // ':' is rejected by the FUSE layer that apps write external storage

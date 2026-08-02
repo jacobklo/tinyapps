@@ -1,5 +1,6 @@
 package net.jacoblo.autoclicker
 
+import android.os.PowerManager
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -14,6 +15,9 @@ import kotlin.math.roundToInt
 import kotlin.random.Random
 
 private const val TAG = "autoclicker.gesture.executor"
+
+// Safety net so a runaway script cannot hold the CPU awake indefinitely.
+private const val WAKE_LOCK_TIMEOUT_MS = 30 * 60 * 1000L
 
 /**
  * Replays recorded interactions through whichever backend the user selected.
@@ -66,8 +70,53 @@ object GestureExecutor {
 	fun isReady(): Boolean =
 		if (AppSettings.useRoot) RootShell.isOpen else RecorderService.instance != null
 
-	fun playRecording(events: List<Interaction>, globalRandom: Int = 0) {
-		scope.launch { executeEvents(events, globalRandom) }
+	private var playJob: Job? = null
+	private var wakeLock: PowerManager.WakeLock? = null
+
+	val isPlaying: Boolean
+		get() = playJob?.isActive == true
+
+	/**
+	 * [onFinished] runs on the main thread whether playback completed, was
+	 * stopped or threw, so callers can restore a play/stop button without
+	 * polling.
+	 */
+	fun playRecording(
+		events: List<Interaction>,
+		globalRandom: Int = 0,
+		onFinished: (() -> Unit)? = null
+	) {
+		stop()
+		playJob = scope.launch {
+			acquireWakeLock()
+			try {
+				executeEvents(events, globalRandom)
+			} finally {
+				releaseWakeLock()
+				onFinished?.invoke()
+			}
+		}
+	}
+
+	fun stop() {
+		playJob?.cancel()
+		playJob = null
+	}
+
+	// Playback is mostly delay(), so without this the CPU can sleep mid-script
+	// and the remaining steps fire late or not at all.
+	private fun acquireWakeLock() {
+		if (wakeLock != null) return
+		val power = AppSettings.appContext.getSystemService(PowerManager::class.java) ?: return
+		wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "autoclicker:playback").apply {
+			setReferenceCounted(false)
+			acquire(WAKE_LOCK_TIMEOUT_MS)
+		}
+	}
+
+	private fun releaseWakeLock() {
+		wakeLock?.let { if (it.isHeld) it.release() }
+		wakeLock = null
 	}
 
 	fun click(x: Float, y: Float, duration: Long, randomFactor: Int, onDone: (() -> Unit)? = null) {
@@ -125,8 +174,11 @@ object GestureExecutor {
 		randomFactor: Int,
 		sample: TouchSample = TouchSample(0, 0, 0)
 	) {
-		val finalX = x + jitter(randomFactor)
-		val finalY = y + jitter(randomFactor)
+		// Interactions store fractions of the screen; everything downstream of
+		// here works in pixels for the current display.
+		val screen = ScreenGeometry.current(AppSettings.appContext)
+		val finalX = x * screen.width + jitter(randomFactor)
+		val finalY = y * screen.height + jitter(randomFactor)
 
 		if (AppSettings.useRoot) {
 			if (evdevReady) {
@@ -150,7 +202,9 @@ object GestureExecutor {
 
 	private suspend fun runDrag(points: List<DragPoint>, randomFactorStart: Int, randomFactorHighest: Int) {
 		if (points.isEmpty()) return
-		val randomized = randomizePath(points, randomFactorStart, randomFactorHighest)
+		val screen = ScreenGeometry.current(AppSettings.appContext)
+		val pixels = points.map { it.copy(x = it.x * screen.width, y = it.y * screen.height) }
+		val randomized = randomizePath(pixels, randomFactorStart, randomFactorHighest)
 
 		if (AppSettings.useRoot) {
 			if (evdevReady) {

@@ -1,34 +1,58 @@
 package net.jacoblo.autoclicker
 
 import android.content.Context
-import android.content.SharedPreferences
-import androidx.core.content.edit
+import android.util.Log
+import org.json.JSONObject
+
+private const val TAG = "autoclicker.settings"
 
 /**
  * Persisted user settings, initialised once from [AutoClickerApp].
+ *
+ * Stored as JSON next to the recordings rather than in SharedPreferences, so
+ * everything the app owns lives together and can be edited by hand.
  */
 object AppSettings {
 
-	private const val PREFS_NAME = "autoclicker_settings"
-	private const val KEY_USE_ROOT = "use_root"
-	private const val KEY_JITTER_POSITION = "jitter_position_px"
-	private const val KEY_JITTER_PRESSURE = "jitter_pressure_pct"
-	private const val KEY_JITTER_TIMING = "jitter_timing_pct"
-	private const val KEY_JITTER_SIZE = "jitter_size_pct"
-
-	private lateinit var prefs: SharedPreferences
+	private var values = JSONObject()
 
 	lateinit var appContext: Context
 		private set
 
 	fun init(context: Context) {
 		appContext = context.applicationContext
-		prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+		reload()
+	}
+
+	/**
+	 * Settings live on shared storage, which is unreadable until all-files
+	 * access is granted, so the first load can legitimately come up empty and
+	 * has to be repeated once permission arrives.
+	 */
+	fun reload() {
+		values = try {
+			val file = Storage.settingsFile
+			if (file.exists()) JSONObject(file.readText()) else JSONObject()
+		} catch (e: Exception) {
+			Log.w(TAG, "cannot read settings, using defaults", e)
+			JSONObject()
+		}
+	}
+
+	private fun save() {
+		try {
+			Storage.settingsFile.writeText(values.toString(4))
+		} catch (e: Exception) {
+			Log.w(TAG, "cannot write settings", e)
+		}
 	}
 
 	var useRoot: Boolean
-		get() = prefs.getBoolean(KEY_USE_ROOT, false)
-		set(value) = prefs.edit { putBoolean(KEY_USE_ROOT, value) }
+		get() = values.optBoolean("useRoot", false)
+		set(value) {
+			values.put("useRoot", value)
+			save()
+		}
 
 	/**
 	 * Humanization applied to every replayed evdev sample. Distinct from the
@@ -37,16 +61,17 @@ object AppSettings {
 	 */
 	var jitter: JitterConfig
 		get() = JitterConfig(
-			positionPx = prefs.getInt(KEY_JITTER_POSITION, 2),
-			pressurePct = prefs.getInt(KEY_JITTER_PRESSURE, 8),
-			timingPct = prefs.getInt(KEY_JITTER_TIMING, 5),
-			sizePct = prefs.getInt(KEY_JITTER_SIZE, 10)
+			positionPx = values.optInt("jitterPositionPx", 2),
+			pressurePct = values.optInt("jitterPressurePct", 8),
+			timingPct = values.optInt("jitterTimingPct", 5),
+			sizePct = values.optInt("jitterSizePct", 10)
 		)
-		set(value) = prefs.edit {
-			putInt(KEY_JITTER_POSITION, value.positionPx)
-			putInt(KEY_JITTER_PRESSURE, value.pressurePct)
-			putInt(KEY_JITTER_TIMING, value.timingPct)
-			putInt(KEY_JITTER_SIZE, value.sizePct)
+		set(value) {
+			values.put("jitterPositionPx", value.positionPx)
+			values.put("jitterPressurePct", value.pressurePct)
+			values.put("jitterTimingPct", value.timingPct)
+			values.put("jitterSizePct", value.sizePct)
+			save()
 		}
 }
 

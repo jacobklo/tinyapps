@@ -57,6 +57,9 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         if (arePermissionsGranted()) {
+            // Settings live on shared storage, so the load at process start may
+            // have run before all-files access was granted.
+            AppSettings.reload()
             startBubbleService()
 
             setContent {

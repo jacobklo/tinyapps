@@ -45,6 +45,7 @@ class Bubble(private val context: Context) {
 
     private var recordButtonView: View? = null
     private var recordButtonIcon: ImageView? = null
+    private var playButtonIcon: ImageView? = null
 
     @SuppressLint("ClickableViewAccessibility")
     fun show() {
@@ -112,18 +113,24 @@ class Bubble(private val context: Context) {
             }
             addView(recordButtonView, LinearLayout.LayoutParams(bubbleSize, bubbleSize))
 
-            // Button 3: Play Recorded (Blue)
+            // Button 3: Play / Stop (Blue)
             val playButton = FrameLayout(context).apply {
                 background = ShapeDrawable(OvalShape()).apply {
                     paint.color = 0xFF2196F3.toInt() // Material Blue
                 }
-                val icon = ImageView(context)
-                icon.setImageResource(R.drawable.ic_play)
-                icon.setColorFilter(Color.WHITE)
-                icon.setPadding(20, 20, 20, 20)
-                addView(icon, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+                playButtonIcon = ImageView(context)
+                playButtonIcon?.setImageResource(R.drawable.ic_play)
+                playButtonIcon?.setColorFilter(Color.WHITE)
+                playButtonIcon?.setPadding(20, 20, 20, 20)
+                addView(playButtonIcon, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
 
                 setOnClickListener {
+                    if (GestureExecutor.isPlaying) {
+                        GestureExecutor.stop()
+                        showPlayIdle()
+                        Toast.makeText(context, "Stopped", Toast.LENGTH_SHORT).show()
+                        return@setOnClickListener
+                    }
                     val file = RecordingManager.currentSelectedFile
                     if (file == null) {
                         Toast.makeText(context, "Select a recording first", Toast.LENGTH_SHORT).show()
@@ -131,7 +138,12 @@ class Bubble(private val context: Context) {
                         Toast.makeText(context, "Gesture backend not ready", Toast.LENGTH_SHORT).show()
                     } else {
                         val data = RecordingManager.loadRecording(file)
-                        GestureExecutor.playRecording(data.events, data.globalRandom)
+                        playButtonIcon?.setImageResource(R.drawable.ic_stop)
+                        // Restores the icon however playback ends, including
+                        // when it finishes on its own rather than being stopped.
+                        GestureExecutor.playRecording(data.events, data.globalRandom) {
+                            showPlayIdle()
+                        }
                         Toast.makeText(context, "Playing ${file.name}", Toast.LENGTH_SHORT).show()
                     }
                 }
@@ -298,6 +310,13 @@ class Bubble(private val context: Context) {
      * Starts passive touchscreen capture. Returns false when root evdev is not
      * available, so the caller falls back to the overlay recorder.
      */
+    /** Playback can end on its own, so the icon is reset from a callback. */
+    private fun showPlayIdle() {
+        playButtonIcon?.post {
+            playButtonIcon?.setImageResource(R.drawable.ic_play)
+        }
+    }
+
     private fun startEvdevRecording(): Boolean {
         if (!AppSettings.useRoot) return false
         val device = GestureExecutor.evdevDevice ?: return false
@@ -426,10 +445,16 @@ class Bubble(private val context: Context) {
                     }
                 }
 
+                // The overlay reports pixels; interactions are stored and
+                // replayed as fractions of the screen.
+                val screen = ScreenGeometry.current(context)
+
                 if (distance < 20) {
                     // Click
-                    recordedEvents.add(ClickInteraction(startX, startY, duration, 0, delayBefore = delay))
-                    GestureExecutor.click(startX, startY, duration, 0, completionCallback)
+                    val fx = startX / screen.width
+                    val fy = startY / screen.height
+                    recordedEvents.add(ClickInteraction(fx, fy, duration, 0, delayBefore = delay))
+                    GestureExecutor.click(fx, fy, duration, 0, completionCallback)
                 } else {
                     // Drag
                     // Add last point
@@ -438,7 +463,9 @@ class Bubble(private val context: Context) {
                         currentDragPoints.add(DragPoint(endX, endY, dt))
                     }
 
-                    val points = ArrayList(currentDragPoints)
+                    val points = currentDragPoints.map {
+                        it.copy(x = it.x / screen.width, y = it.y / screen.height)
+                    }
                     recordedEvents.add(DragInteraction(points, 0,0,delay))
                     GestureExecutor.drag(points, 0,0,completionCallback)
                 }

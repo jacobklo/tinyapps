@@ -255,6 +255,7 @@ fun InteractionRow(
     modifier: Modifier = Modifier
 ) {
     val accent = blockAccent(depth)
+    val screen = remember { ScreenGeometry.current(AppSettings.appContext) }
     val background =
         if (dragging) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
 
@@ -284,7 +285,7 @@ fun InteractionRow(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = describeInteraction(interaction),
+                    text = describeInteraction(interaction, screen),
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (interaction.isBlockMarker()) accent else MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f)
@@ -306,6 +307,10 @@ fun InteractionRow(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun InteractionFields(interaction: Interaction, onUpdate: (Interaction) -> Unit) {
+    // Coordinates are stored as fractions of the screen so scripts stay
+    // portable, but they are shown and edited as pixels for this display.
+    val screen = remember { ScreenGeometry.current(AppSettings.appContext) }
+
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -324,15 +329,15 @@ private fun InteractionFields(interaction: Interaction, onUpdate: (Interaction) 
         when (interaction) {
             is ClickInteraction -> {
                 NumberField(
-                    value = interaction.x.toLong(),
-                    onValueChange = { onUpdate(interaction.copy(x = it.toFloat())) },
-                    label = "X",
+                    value = (interaction.x * screen.width).toLong(),
+                    onValueChange = { onUpdate(interaction.copy(x = it / screen.width.toFloat())) },
+                    label = "X px",
                     modifier = Modifier.width(90.dp)
                 )
                 NumberField(
-                    value = interaction.y.toLong(),
-                    onValueChange = { onUpdate(interaction.copy(y = it.toFloat())) },
-                    label = "Y",
+                    value = (interaction.y * screen.height).toLong(),
+                    onValueChange = { onUpdate(interaction.copy(y = it / screen.height.toFloat())) },
+                    label = "Y px",
                     modifier = Modifier.width(90.dp)
                 )
                 NumberField(
@@ -354,16 +359,20 @@ private fun InteractionFields(interaction: Interaction, onUpdate: (Interaction) 
                     // Editing the start translates the whole path, which is what
                     // you want when a recorded gesture landed slightly off.
                     NumberField(
-                        value = start.x.toLong(),
-                        onValueChange = { onUpdate(interaction.translatedTo(it.toFloat(), start.y)) },
-                        label = "Start X",
-                        modifier = Modifier.width(100.dp)
+                        value = (start.x * screen.width).toLong(),
+                        onValueChange = {
+                            onUpdate(interaction.translatedTo(it / screen.width.toFloat(), start.y))
+                        },
+                        label = "Start X px",
+                        modifier = Modifier.width(110.dp)
                     )
                     NumberField(
-                        value = start.y.toLong(),
-                        onValueChange = { onUpdate(interaction.translatedTo(start.x, it.toFloat())) },
-                        label = "Start Y",
-                        modifier = Modifier.width(100.dp)
+                        value = (start.y * screen.height).toLong(),
+                        onValueChange = {
+                            onUpdate(interaction.translatedTo(start.x, it / screen.height.toFloat()))
+                        },
+                        label = "Start Y px",
+                        modifier = Modifier.width(110.dp)
                     )
                 }
                 NumberField(
@@ -463,18 +472,20 @@ private fun Interaction.isBlockMarker(): Boolean =
 private fun Interaction.isBlockEnd(): Boolean =
     this is LoopEndInteraction || this is RandomSelectEndInteraction
 
-private fun describeInteraction(interaction: Interaction): String {
+private fun describeInteraction(interaction: Interaction, screen: ScreenGeometry): String {
+    fun px(x: Float, y: Float) = "(${(x * screen.width).toInt()}, ${(y * screen.height).toInt()})"
+
     val wait = if (interaction.delayBefore > 0) "wait ${interaction.delayBefore}ms  " else ""
     val label = when (interaction) {
         is ClickInteraction ->
-            "Click (${interaction.x.toInt()}, ${interaction.y.toInt()})  ${interaction.duration}ms"
+            "Click ${px(interaction.x, interaction.y)}  ${interaction.duration}ms"
         is DragInteraction -> {
             val start = interaction.points.firstOrNull()
             val end = interaction.points.lastOrNull()
             if (start == null || end == null) {
                 "Drag (empty)"
             } else {
-                "Drag (${start.x.toInt()}, ${start.y.toInt()}) to (${end.x.toInt()}, ${end.y.toInt()})  ${interaction.points.size} pts"
+                "Drag ${px(start.x, start.y)} to ${px(end.x, end.y)}  ${interaction.points.size} pts"
             }
         }
         is TextInteraction ->
