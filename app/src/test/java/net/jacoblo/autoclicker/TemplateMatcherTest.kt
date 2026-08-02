@@ -166,6 +166,60 @@ class TemplateMatcherTest {
         )
     }
 
+    /**
+     * The app-drawer case: a screen full of short dark captions on white, one of
+     * which is the saved area. Every caption reduces to nearly the same handful
+     * of grey cells, so this is where a too-coarse reduction stopped being able
+     * to tell them apart and reported nothing at all.
+     */
+    @Test
+    fun findsOneCaptionAmongManySimilarOnes() {
+        val builder = FrameBuilder(1080, 1920)
+        builder.fill(255, 255, 255)
+
+        val width = 178
+        val height = 38
+        // Off-grid on purpose: the position the device actually failed at.
+        val targetX = 457
+        val targetY = 833
+
+        fun caption(seed: Int): TemplateMatcher.Template {
+            val random = Random(seed)
+            val pixels = IntArray(width * height) { (0xFF shl 24) or 0xFFFFFF }
+            var x = 4 + random.nextInt(10)
+            while (x < width - 12) {
+                val strokeWidth = 3 + random.nextInt(5)
+                val top = 8 + random.nextInt(6)
+                val bottom = height - 8 - random.nextInt(6)
+                for (y in top until bottom) {
+                    for (dx in 0 until strokeWidth) pixels[y * width + x + dx] = (0xFF shl 24) or 0x202020
+                }
+                x += strokeWidth + 3 + random.nextInt(7)
+            }
+            return TemplateMatcher.Template(width, height, pixels)
+        }
+
+        // A grid of decoys on the same rows and columns a launcher would use.
+        var seed = 100
+        for (row in 0 until 8) {
+            for (column in 0 until 5) {
+                val x = 40 + column * 200
+                val y = 120 + row * 220
+                if (x + width >= 1080 || y + height >= 1920) continue
+                stamp(builder, caption(seed++), x, y)
+            }
+        }
+
+        val target = caption(7)
+        stamp(builder, target, targetX, targetY)
+
+        val match = TemplateMatcher.find(builder.build(), target, threshold = 0.90f)
+
+        assertNotNull("the saved caption must be found among the lookalikes", match)
+        assertEquals(targetX, match!!.x)
+        assertEquals(targetY, match.y)
+    }
+
     @Test
     fun templateLargerThanTheFrameIsRejected() {
         val builder = FrameBuilder(50, 50)

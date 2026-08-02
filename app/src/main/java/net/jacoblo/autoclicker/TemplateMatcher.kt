@@ -14,7 +14,7 @@ private const val MAX_PIXEL_DIFF = 255 * 3
 private const val COARSE_SLACK = 0.12f
 
 // Refining every plausible offset would cost more than the coarse pass saved.
-private const val MAX_CANDIDATES = 8
+private const val MAX_CANDIDATES = 20
 
 // Roughly how many template pixels each full-resolution pass compares. Scoring
 // every pixel of a large area is what made an early version take ~4.9s.
@@ -29,6 +29,11 @@ private const val FINAL_RADIUS = 2
 // small areas away entirely.
 private const val COARSE_WIDTH = 120
 
+// Cells the reduced template keeps across its shorter side. Four left a 38px
+// tall area as four rows, too few to tell one word from another, and it ranked
+// 9th on a screen full of similar labels.
+private const val MIN_COARSE_CELLS = 6
+
 /**
  * Finds a saved region anywhere on screen.
  *
@@ -36,12 +41,20 @@ private const val COARSE_WIDTH = 120
  * work happens on an averaged downscale first and only the best few offsets are
  * re-scored at full resolution.
  *
- * The coarse pass must *average* rather than point-sample. Point sampling on a
- * grid looked much cheaper, but an offset that misses the true position by a
- * few pixels then scores terribly for detailed content and barely changes for
- * flat content, so blank regions outranked the real match and the real match
- * never reached the candidate list. Averaging makes the coarse score tolerant
- * of sub-block misalignment, which is the whole point of the pass.
+ * Three things decide whether the real match survives the coarse pass, and all
+ * three were learned by getting them wrong:
+ *
+ * 1. The reduction must average *every* pixel of a block. Point sampling on a
+ *    grid looked much cheaper, but an offset that misses the true position by a
+ *    few pixels then scores terribly for detailed content and barely changes for
+ *    flat content, so blank regions outranked the real match. Sampling a subset
+ *    of each block is the same failure in milder form.
+ * 2. Blocks must stay small enough to be distinctive. Coarse scores bunch up --
+ *    a blank stretch of a white screen scored 0.934 against a word, and the word
+ *    itself only 0.933 -- so once the template blurs to a handful of cells the
+ *    ranking is close to arbitrary.
+ * 3. Candidates must be spread out. The best offset and its neighbours all score
+ *    alike, so an unsuppressed top-N spent the whole refine budget on one place.
  */
 object TemplateMatcher {
 
@@ -117,40 +130,39 @@ object TemplateMatcher {
 
 	private fun reduceFactor(frame: ScreenCapture.Frame, template: Template): Int {
 		val byWidth = frame.width / COARSE_WIDTH
-		// Keep at least a few cells across the template, or it blurs to nothing.
-		val byTemplate = min(template.width, template.height) / 4
+		// Keep enough cells across the template, or it blurs into every other
+		// area of roughly the same brightness.
+		val byTemplate = min(template.width, template.height) / MIN_COARSE_CELLS
 		return max(1, min(byWidth, byTemplate))
 	}
 
 	/**
-	 * Averages each factor-sized block. Only a 2x2 sub-sample of each block is
-	 * read: enough to smooth out misalignment without touching every pixel of
-	 * an 8 megabyte frame.
+	 * Mean of each factor-sized block.
+	 *
+	 * This reads every pixel of the frame exactly once, which sounds expensive
+	 * for 8 megabytes but is the only part of the search whose cost does not
+	 * depend on the factor, and a partial sample of each block ranks a real
+	 * match no better than chance.
 	 */
 	private fun reduceFrame(frame: ScreenCapture.Frame, factor: Int): Reduced {
 		val width = frame.width / factor
 		val height = frame.height / factor
 		val rgb = IntArray(width * height)
-		val half = max(1, factor / 2)
+		val n = factor * factor
 
 		for (y in 0 until height) {
 			for (x in 0 until width) {
 				var r = 0
 				var g = 0
 				var b = 0
-				var n = 0
-				var dy = 0
-				while (dy < factor) {
-					var dx = 0
-					while (dx < factor) {
-						val i = ((y * factor + dy) * frame.width + (x * factor + dx)) * 4
+				for (dy in 0 until factor) {
+					var i = ((y * factor + dy) * frame.width + x * factor) * 4
+					for (dx in 0 until factor) {
 						r += frame.pixels[i].toInt() and 0xFF
 						g += frame.pixels[i + 1].toInt() and 0xFF
 						b += frame.pixels[i + 2].toInt() and 0xFF
-						n++
-						dx += half
+						i += 4
 					}
-					dy += half
 				}
 				rgb[y * width + x] = ((r / n) shl 16) or ((g / n) shl 8) or (b / n)
 			}
@@ -162,26 +174,22 @@ object TemplateMatcher {
 		val width = template.width / factor
 		val height = template.height / factor
 		val rgb = IntArray(max(0, width * height))
-		val half = max(1, factor / 2)
+		val n = factor * factor
 
 		for (y in 0 until height) {
 			for (x in 0 until width) {
 				var r = 0
 				var g = 0
 				var b = 0
-				var n = 0
-				var dy = 0
-				while (dy < factor) {
-					var dx = 0
-					while (dx < factor) {
-						val p = template.pixels[(y * factor + dy) * template.width + (x * factor + dx)]
+				for (dy in 0 until factor) {
+					var i = (y * factor + dy) * template.width + x * factor
+					for (dx in 0 until factor) {
+						val p = template.pixels[i]
 						r += (p shr 16) and 0xFF
 						g += (p shr 8) and 0xFF
 						b += p and 0xFF
-						n++
-						dx += half
+						i++
 					}
-					dy += half
 				}
 				rgb[y * width + x] = ((r / n) shl 16) or ((g / n) shl 8) or (b / n)
 			}
@@ -204,12 +212,18 @@ object TemplateMatcher {
 		if (samples == 0) return emptyList()
 		val budget = ((1f - floor) * samples * MAX_PIXEL_DIFF).toInt()
 
-		val scored = mutableListOf<Triple<Int, Int, Float>>()
+		val firstX = minX / factor
+		val firstY = minY / factor
 		val lastX = min(frame.width - template.width, maxX / factor)
 		val lastY = min(frame.height - template.height, maxY / factor)
+		if (lastX < firstX || lastY < firstY) return emptyList()
 
-		for (y in (minY / factor)..lastY) {
-			for (x in (minX / factor)..lastX) {
+		val cols = lastX - firstX + 1
+		val rows = lastY - firstY + 1
+		val scores = FloatArray(cols * rows)
+
+		for (y in firstY..lastY) {
+			for (x in firstX..lastX) {
 				var total = 0
 				var aborted = false
 				loop@ for (ty in 0 until template.height) {
@@ -227,16 +241,45 @@ object TemplateMatcher {
 						}
 					}
 				}
-				if (!aborted) {
-					val similarity = 1f - total.toFloat() / (samples * MAX_PIXEL_DIFF)
-					scored.add(Triple(x * factor, y * factor, similarity))
-				}
+				scores[(y - firstY) * cols + (x - firstX)] =
+					if (aborted) 0f else 1f - total.toFloat() / (samples * MAX_PIXEL_DIFF)
 			}
 		}
 
-		return scored.sortedByDescending { it.third }
-			.take(MAX_CANDIDATES)
-			.map { it.first to it.second }
+		return peaks(scores, cols, rows, template.width, template.height)
+			.map { (x, y) -> (firstX + x) * factor to (firstY + y) * factor }
+	}
+
+	/**
+	 * Best offsets, at most one per template-sized neighbourhood.
+	 *
+	 * An offset and its neighbours score almost identically, so a plain top-N
+	 * would hand the refine stage several views of the same place and leave the
+	 * rest of the screen unexamined.
+	 */
+	private fun peaks(scores: FloatArray, cols: Int, rows: Int, spanX: Int, spanY: Int): List<Pair<Int, Int>> {
+		val found = mutableListOf<Pair<Int, Int>>()
+		repeat(MAX_CANDIDATES) {
+			var bestIndex = -1
+			var bestScore = 0f
+			for (i in scores.indices) {
+				if (scores[i] > bestScore) {
+					bestScore = scores[i]
+					bestIndex = i
+				}
+			}
+			if (bestIndex < 0) return found
+
+			val x = bestIndex % cols
+			val y = bestIndex / cols
+			found.add(x to y)
+			for (sy in max(0, y - spanY + 1)..min(rows - 1, y + spanY - 1)) {
+				for (sx in max(0, x - spanX + 1)..min(cols - 1, x + spanX - 1)) {
+					scores[sy * cols + sx] = 0f
+				}
+			}
+		}
+		return found
 	}
 
 	private fun bestInWindow(
