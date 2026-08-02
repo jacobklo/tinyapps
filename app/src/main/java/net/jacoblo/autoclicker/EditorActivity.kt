@@ -8,6 +8,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -23,6 +24,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -56,6 +58,116 @@ private val STEP_OPTIONS = listOf(
     StepOption("Random block") { listOf(RandomSelectStartInteraction(), RandomSelectEndInteraction()) },
     StepOption("Break") { listOf(BreakInteraction()) }
 )
+
+/**
+ * What a step does and what can be typed into it, shown while it is expanded.
+ *
+ * Conditions, expressions and key names are the parts that cannot be guessed
+ * from the field labels alone, so the examples concentrate there.
+ */
+private class StepHelp(val summary: String, val examples: List<String> = emptyList())
+
+private fun helpFor(interaction: Interaction): StepHelp = when (interaction) {
+    is ClickInteraction -> StepHelp(
+        "Taps one point. X/Y are pixels on this screen but are stored as a " +
+            "fraction of it, so the script still works on another screen size. " +
+            "Hold ms is how long the finger stays down; Rand px scatters the " +
+            "point a little on every replay."
+    )
+
+    is DragInteraction -> StepHelp(
+        "Replays a recorded swipe with its original path, pressure and timing. " +
+            "Editing Start X/Y moves the whole path so it begins there. Rand " +
+            "start scatters the ends, Rand mid the middle."
+    )
+
+    is TextInteraction -> StepHelp(
+        "Types into whatever field currently has focus. Tap the field first " +
+            "with a Click step."
+    )
+
+    is WaitInteraction -> StepHelp("Pauses. The Wait ms field is the whole action.")
+
+    is ToastInteraction -> StepHelp(
+        "Shows a short message on screen. Plain text is shown as written; " +
+            "anything in braces is worked out first.",
+        listOf(
+            "Finished",
+            "attempt {count} of 3",
+            "{total - done} left to go"
+        )
+    )
+
+    is SetVariableInteraction -> StepHelp(
+        "Stores a value under a name for the rest of this run. Variables start " +
+            "at 0 and are forgotten when playback ends.",
+        listOf(
+            "0",
+            "count + 1",
+            "random(2, 5)",
+            "\"page \" + count",
+            "count % 3"
+        )
+    )
+
+    is KeyEventInteraction -> StepHelp(
+        "Presses a system or hardware key, by its Android key name.",
+        listOf(
+            "BACK",
+            "HOME",
+            "APP_SWITCH  (recent apps)",
+            "ENTER, TAB, DEL",
+            "VOLUME_UP, VOLUME_DOWN, POWER"
+        )
+    )
+
+    is LaunchAppInteraction -> StepHelp(
+        "Opens an app by package name. Find one with a Shell step running " +
+            "\"pm list packages\".",
+        listOf(
+            "com.android.settings",
+            "com.android.chrome"
+        )
+    )
+
+    is ShellInteraction -> StepHelp(
+        "Runs a command as root. Output is not shown, only logged.",
+        listOf(
+            "am force-stop com.example.app",
+            "pm clear com.example.app",
+            "svc wifi disable"
+        )
+    )
+
+    is IfStartInteraction, is ElseIfInteraction, is WhileStartInteraction -> StepHelp(
+        "Runs the steps inside when the condition holds. While repeats them " +
+            "for as long as it holds. Compare with == != < > <= >=, combine " +
+            "with && || !, and ask about the screen with image() or " +
+            "waitImage(), which waits up to the given milliseconds.",
+        listOf(
+            "count < 3",
+            "image(\"start_button\")",
+            "waitImage(\"popup\", 5000)",
+            "!image(\"error\") && count > 0",
+            "image(\"button\", 95)   (needs 95% match)"
+        )
+    )
+
+    is LoopStartInteraction -> StepHelp(
+        "Repeats the steps inside a set number of times. Set the count to 0 to " +
+            "repeat until Break or the stop button."
+    )
+
+    is RandomSelectStartInteraction -> StepHelp(
+        "Runs exactly one of the steps inside, chosen at random each time."
+    )
+
+    is BreakInteraction -> StepHelp("Leaves the innermost Repeat or While immediately.")
+
+    is ElseInteraction -> StepHelp("Runs when none of the conditions above it held.")
+
+    else -> StepHelp("Marks the end of the block above it.")
+}
 
 /** An interaction plus a stable id, so reordering can key rows by identity. */
 private data class EditorRow(val id: Long, val interaction: Interaction)
@@ -351,6 +463,41 @@ fun InteractionRow(
             if (expanded) {
                 Spacer(modifier = Modifier.height(8.dp))
                 InteractionFields(interaction = interaction, onUpdate = onUpdate)
+                Spacer(modifier = Modifier.height(8.dp))
+                StepHelpPanel(helpFor(interaction))
+            }
+        }
+    }
+}
+
+@Composable
+private fun StepHelpPanel(help: StepHelp) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(6.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            Text(
+                text = help.summary,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (help.examples.isEmpty()) return@Column
+
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "Examples",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            help.examples.forEach { example ->
+                Text(
+                    text = example,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
             }
         }
     }
