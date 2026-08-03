@@ -42,7 +42,29 @@ private val INDENT_PER_LEVEL = 20.dp
  */
 private class StepOption(val label: String, val create: () -> List<Interaction>)
 
+// New gestures start in the middle of the screen, which is always somewhere
+// real; a corner default would look like the step was broken.
+private const val NEW_GESTURE_MS = 300L
+
+private fun swipe(fromX: Float, fromY: Float, toX: Float, toY: Float) = listOf(
+    DragInteraction(
+        points = listOf(DragPoint(fromX, fromY, 0), DragPoint(toX, toY, NEW_GESTURE_MS)),
+        delayBefore = 0
+    )
+)
+
 private val STEP_OPTIONS = listOf(
+    StepOption("Tap") { listOf(ClickInteraction(0.5f, 0.5f, duration = 50, delayBefore = 0)) },
+    StepOption("Double tap") {
+        listOf(ClickInteraction(0.5f, 0.5f, duration = 50, taps = 2, delayBefore = 0))
+    },
+    StepOption("Long press") { listOf(ClickInteraction(0.5f, 0.5f, duration = 800, delayBefore = 0)) },
+    // Named by which way the finger travels, because "scroll down" means the
+    // opposite thing to different people.
+    StepOption("Swipe up") { swipe(0.5f, 0.7f, 0.5f, 0.3f) },
+    StepOption("Swipe down") { swipe(0.5f, 0.3f, 0.5f, 0.7f) },
+    StepOption("Swipe left") { swipe(0.7f, 0.5f, 0.3f, 0.5f) },
+    StepOption("Swipe right") { swipe(0.3f, 0.5f, 0.7f, 0.5f) },
     StepOption("Wait") { listOf(WaitInteraction(delayBefore = 1000)) },
     StepOption("Toast") { listOf(ToastInteraction("", 0)) },
     StepOption("Text input") { listOf(TextInteraction(text = "", delayBefore = 0)) },
@@ -67,18 +89,35 @@ private val STEP_OPTIONS = listOf(
  */
 private class StepHelp(val summary: String, val examples: List<String> = emptyList())
 
+// Shared by every gesture, since the anchor works the same way for all of them.
+private const val RELATIVE_HELP =
+    "Relative to picks what the coordinates are measured from. On Screen they " +
+        "are a place on the display; on a saved area they are pixels from " +
+        "wherever that area is found when the step runs, and may be negative. " +
+        "The area is searched for each time, which needs root and costs about " +
+        "half a second, and the gesture is skipped if it is not on screen."
+
 private fun helpFor(interaction: Interaction): StepHelp = when (interaction) {
     is ClickInteraction -> StepHelp(
-        "Taps one point. X/Y are pixels on this screen but are stored as a " +
-            "fraction of it, so the script still works on another screen size. " +
-            "Hold ms is how long the finger stays down; Rand px scatters the " +
-            "point a little on every replay."
+        "Taps one point. Hold ms is how long the finger stays down, so 800 or " +
+            "more is a long press; Taps repeats the press, so 2 is a double " +
+            "tap. Rand px scatters the point a little on every replay. " +
+            RELATIVE_HELP,
+        listOf(
+            "Hold 50, Taps 1     a normal tap",
+            "Hold 50, Taps 2     a double tap",
+            "Hold 800, Taps 1    a long press",
+            "Relative to \"calc\", dX 20, dY 15    inside the found image",
+            "Relative to \"calc\", dX 0, dY -60    above it"
+        )
     )
 
     is DragInteraction -> StepHelp(
-        "Replays a recorded swipe with its original path, pressure and timing. " +
-            "Editing Start X/Y moves the whole path so it begins there. Rand " +
-            "start scatters the ends, Rand mid the middle."
+        "Swipes from one point to another. A swipe up scrolls the page down. " +
+            "Swipe ms is how long the finger takes to travel -- slower reads as " +
+            "a drag, faster as a fling. Rand start scatters the ends, Rand mid " +
+            "the middle. A recorded swipe keeps its original path, pressure and " +
+            "timing, and only its start can be moved. " + RELATIVE_HELP
     )
 
     is TextInteraction -> StepHelp(
@@ -527,23 +566,36 @@ private fun InteractionFields(interaction: Interaction, onUpdate: (Interaction) 
 
         when (interaction) {
             is ClickInteraction -> {
-                NumberField(
-                    value = (interaction.x * screen.width).toLong(),
-                    onValueChange = { onUpdate(interaction.copy(x = it / screen.width.toFloat())) },
-                    label = "X px",
-                    modifier = Modifier.width(90.dp)
+                val anchored = interaction.anchor.isNotBlank()
+                AnchorPicker(
+                    selected = interaction.anchor,
+                    onSelected = { onUpdate(interaction.copy(anchor = it)) }
                 )
-                NumberField(
-                    value = (interaction.y * screen.height).toLong(),
-                    onValueChange = { onUpdate(interaction.copy(y = it / screen.height.toFloat())) },
-                    label = "Y px",
-                    modifier = Modifier.width(90.dp)
+                CoordField(
+                    value = interaction.x,
+                    onValueChange = { onUpdate(interaction.copy(x = it)) },
+                    label = if (anchored) "dX px" else "X px",
+                    screenSize = screen.width,
+                    anchored = anchored
+                )
+                CoordField(
+                    value = interaction.y,
+                    onValueChange = { onUpdate(interaction.copy(y = it)) },
+                    label = if (anchored) "dY px" else "Y px",
+                    screenSize = screen.height,
+                    anchored = anchored
                 )
                 NumberField(
                     value = interaction.duration,
                     onValueChange = { onUpdate(interaction.copy(duration = it)) },
                     label = "Hold ms",
                     modifier = Modifier.width(100.dp)
+                )
+                NumberField(
+                    value = interaction.taps.toLong(),
+                    onValueChange = { onUpdate(interaction.copy(taps = it.toInt().coerceAtLeast(1))) },
+                    label = "Taps",
+                    modifier = Modifier.width(80.dp)
                 )
                 NumberField(
                     value = interaction.randomFactor.toLong(),
@@ -553,24 +605,58 @@ private fun InteractionFields(interaction: Interaction, onUpdate: (Interaction) 
                 )
             }
             is DragInteraction -> {
+                val anchored = interaction.anchor.isNotBlank()
                 val start = interaction.points.firstOrNull()
+                val end = interaction.points.lastOrNull()
+                // A recorded path has many points and only its start is
+                // meaningful to edit; a two-point swipe is defined by its ends.
+                val simple = interaction.points.size == 2
+
+                AnchorPicker(
+                    selected = interaction.anchor,
+                    onSelected = { onUpdate(interaction.copy(anchor = it)) }
+                )
                 if (start != null) {
                     // Editing the start translates the whole path, which is what
                     // you want when a recorded gesture landed slightly off.
-                    NumberField(
-                        value = (start.x * screen.width).toLong(),
-                        onValueChange = {
-                            onUpdate(interaction.translatedTo(it / screen.width.toFloat(), start.y))
-                        },
-                        label = "Start X px",
-                        modifier = Modifier.width(110.dp)
+                    CoordField(
+                        value = start.x,
+                        onValueChange = { onUpdate(interaction.translatedTo(it, start.y)) },
+                        label = if (anchored) "Start dX" else "Start X px",
+                        screenSize = screen.width,
+                        anchored = anchored,
+                        width = 110.dp
+                    )
+                    CoordField(
+                        value = start.y,
+                        onValueChange = { onUpdate(interaction.translatedTo(start.x, it)) },
+                        label = if (anchored) "Start dY" else "Start Y px",
+                        screenSize = screen.height,
+                        anchored = anchored,
+                        width = 110.dp
+                    )
+                }
+                if (simple && end != null) {
+                    CoordField(
+                        value = end.x,
+                        onValueChange = { onUpdate(interaction.withEnd(it, end.y)) },
+                        label = if (anchored) "End dX" else "End X px",
+                        screenSize = screen.width,
+                        anchored = anchored,
+                        width = 110.dp
+                    )
+                    CoordField(
+                        value = end.y,
+                        onValueChange = { onUpdate(interaction.withEnd(end.x, it)) },
+                        label = if (anchored) "End dY" else "End Y px",
+                        screenSize = screen.height,
+                        anchored = anchored,
+                        width = 110.dp
                     )
                     NumberField(
-                        value = (start.y * screen.height).toLong(),
-                        onValueChange = {
-                            onUpdate(interaction.translatedTo(start.x, it / screen.height.toFloat()))
-                        },
-                        label = "Start Y px",
+                        value = end.dt,
+                        onValueChange = { onUpdate(interaction.withSwipeDuration(it)) },
+                        label = "Swipe ms",
                         modifier = Modifier.width(110.dp)
                     )
                 }
@@ -700,6 +786,75 @@ private fun TextFieldEntry(
 }
 
 /**
+ * Chooses what a gesture's coordinates are measured from: the screen, or a
+ * saved area found on screen when the step runs.
+ *
+ * A dropdown rather than a text box because a mistyped area name would look
+ * identical to one that simply is not on screen -- both just skip the gesture.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AnchorPicker(selected: AnchorImage, onSelected: (AnchorImage) -> Unit) {
+    val revision by ScreenshotStore.revision.collectAsState()
+    val areas = remember(revision) { ScreenshotStore.list().map { it.name } }
+    var expanded by remember { mutableStateOf(false) }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded },
+        modifier = Modifier.width(200.dp)
+    ) {
+        OutlinedTextField(
+            value = selected.ifBlank { ABSOLUTE_LABEL },
+            onValueChange = {},
+            readOnly = true,
+            singleLine = true,
+            label = { Text("Relative to") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            (listOf(ABSOLUTE_LABEL) + areas).forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option) },
+                    onClick = {
+                        onSelected(if (option == ABSOLUTE_LABEL) "" else option)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+private const val ABSOLUTE_LABEL = "Screen (absolute)"
+
+/**
+ * One coordinate, always shown in pixels.
+ *
+ * Absolute coordinates are stored as a fraction of the screen and converted
+ * here; anchored ones are already pixels from the anchor and can be negative,
+ * for a point above or left of the image.
+ */
+@Composable
+private fun CoordField(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    label: String,
+    screenSize: Int,
+    anchored: Boolean,
+    width: Dp = 90.dp
+) {
+    NumberField(
+        value = if (anchored) value.toLong() else (value * screenSize).toLong(),
+        onValueChange = { onValueChange(if (anchored) it.toFloat() else it / screenSize.toFloat()) },
+        label = label,
+        allowNegative = anchored,
+        modifier = Modifier.width(width)
+    )
+}
+
+/**
  * Expression entry that reports a parse error as you type, so a broken
  * condition is caught in the editor rather than silently evaluating false at
  * playback time.
@@ -741,7 +896,8 @@ private fun NumberField(
     value: Long,
     onValueChange: (Long) -> Unit,
     label: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    allowNegative: Boolean = false
 ) {
     var text by remember { mutableStateOf(value.toString()) }
     // Resync when the value changed from outside this field (row reuse, reorder).
@@ -753,8 +909,10 @@ private fun NumberField(
         value = text,
         onValueChange = { input ->
             val digits = input.filter { it.isDigit() }.take(9)
-            text = digits
-            onValueChange(digits.toLongOrNull() ?: 0L)
+            // A lone "-" is kept so the sign can be typed before the number.
+            val cleaned = if (allowNegative && input.startsWith("-")) "-$digits" else digits
+            text = cleaned
+            onValueChange(cleaned.toLongOrNull() ?: 0L)
         },
         label = { Text(label) },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -786,19 +944,34 @@ private fun Interaction.isBlockMarker(): Boolean =
 private fun Interaction.isBlockEnd(): Boolean = closesBlock(this) || isMidBlock(this)
 
 private fun describeInteraction(interaction: Interaction, screen: ScreenGeometry): String {
-    fun px(x: Float, y: Float) = "(${(x * screen.width).toInt()}, ${(y * screen.height).toInt()})"
+    // Anchored coordinates are already pixels, and are an offset rather than a
+    // place, so they are shown signed to make that obvious.
+    fun px(x: Float, y: Float, anchor: AnchorImage) =
+        if (anchor.isBlank()) "(${(x * screen.width).toInt()}, ${(y * screen.height).toInt()})"
+        else "(%+d, %+d)".format(x.toInt(), y.toInt())
+
+    fun from(anchor: AnchorImage) = if (anchor.isBlank()) "" else "  from \"$anchor\""
 
     val wait = if (interaction.delayBefore > 0) "wait ${interaction.delayBefore}ms  " else ""
     val label = when (interaction) {
-        is ClickInteraction ->
-            "Click ${px(interaction.x, interaction.y)}  ${interaction.duration}ms"
+        is ClickInteraction -> {
+            val what = when {
+                interaction.taps > 1 -> "Tap x${interaction.taps}"
+                interaction.duration >= 500 -> "Long press"
+                else -> "Click"
+            }
+            "$what ${px(interaction.x, interaction.y, interaction.anchor)}" +
+                "  ${interaction.duration}ms${from(interaction.anchor)}"
+        }
         is DragInteraction -> {
             val start = interaction.points.firstOrNull()
             val end = interaction.points.lastOrNull()
             if (start == null || end == null) {
                 "Drag (empty)"
             } else {
-                "Drag ${px(start.x, start.y)} to ${px(end.x, end.y)}  ${interaction.points.size} pts"
+                "Drag ${px(start.x, start.y, interaction.anchor)} to " +
+                    "${px(end.x, end.y, interaction.anchor)}  ${interaction.points.size} pts" +
+                    from(interaction.anchor)
             }
         }
         is TextInteraction ->
@@ -938,6 +1111,22 @@ fun DragInteraction.translatedTo(x: Float, y: Float): DragInteraction {
     val dx = x - start.x
     val dy = y - start.y
     return copy(points = points.map { it.copy(x = it.x + dx, y = it.y + dy) })
+}
+
+/** Moves only the last point, which for a two-point swipe is its destination. */
+fun DragInteraction.withEnd(x: Float, y: Float): DragInteraction {
+    if (points.isEmpty()) return this
+    return copy(points = points.mapIndexed { index, point ->
+        if (index == points.lastIndex) point.copy(x = x, y = y) else point
+    })
+}
+
+/** How long the finger takes to travel; the last point carries the whole gap. */
+fun DragInteraction.withSwipeDuration(ms: Long): DragInteraction {
+    if (points.isEmpty()) return this
+    return copy(points = points.mapIndexed { index, point ->
+        if (index == points.lastIndex) point.copy(dt = ms) else point
+    })
 }
 
 // ---------------------------------------------------------------------------

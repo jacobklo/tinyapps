@@ -17,6 +17,20 @@ const val DEFAULT_MATCH_THRESHOLD = 0.90f
 private const val POLL_INTERVAL_MS = 250L
 
 /**
+ * A search that can say why it failed.
+ *
+ * A condition only cares whether the area is there, but a gesture positioned
+ * relative to one has to be abandoned when it is not, and "nothing happened" is
+ * indistinguishable from a typo in the area name unless the reason is reported.
+ */
+sealed class AreaSearch {
+    data class Found(val match: TemplateMatcher.Match) : AreaSearch()
+
+    /** Phrased for showing to the user, so it names the thing to fix. */
+    data class Missing(val reason: String) : AreaSearch()
+}
+
+/**
  * The screen-reading half of the expression language: whether a saved area is
  * currently visible.
  *
@@ -41,14 +55,29 @@ object ScreenConditions {
 		name: String,
 		threshold: Float = DEFAULT_MATCH_THRESHOLD,
 		roi: Rect? = null
-	): TemplateMatcher.Match? {
-		val template = template(name) ?: return null
+	): TemplateMatcher.Match? = (search(name, threshold, roi) as? AreaSearch.Found)?.match
+
+	/** Blocks on capture; callers run it off the main thread. */
+	fun search(
+		name: String,
+		threshold: Float = DEFAULT_MATCH_THRESHOLD,
+		roi: Rect? = null
+	): AreaSearch {
+		val template = template(name)
+		if (template == null) {
+			// The second lookup only happens on this failure path, and telling a
+			// misspelled name from an unreadable file is worth it.
+			val reason =
+				if (ScreenshotStore.find(name) == null) "no saved area named \"$name\""
+				else "cannot read the image for \"$name\""
+			return AreaSearch.Missing(reason)
+		}
 		val started = System.currentTimeMillis()
 
 		val frame = ScreenCapture.capture()
 		if (frame == null) {
 			Log.w(TAG, "no frame captured, '$name' cannot be evaluated")
-			return null
+			return AreaSearch.Missing("cannot read the screen, which needs root")
 		}
 		val captured = System.currentTimeMillis()
 
@@ -60,7 +89,8 @@ object ScreenConditions {
 			"'$name' ${if (match == null) "miss" else "hit at ${match.x},${match.y} (%.3f)".format(match.similarity)}" +
 				" capture=${captured - started}ms search=${finished - captured}ms"
 		)
-		return match
+		return if (match == null) AreaSearch.Missing("\"$name\" is not on screen")
+		else AreaSearch.Found(match)
 	}
 
 	/** Polls until the area shows up or [timeoutMs] elapses. */

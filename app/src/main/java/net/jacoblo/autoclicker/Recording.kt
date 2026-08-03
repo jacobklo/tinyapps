@@ -19,14 +19,31 @@ sealed class Interaction {
     abstract val name: String
 }
 
-// Coordinates are fractions of screen width/height (0.0..1.0), not pixels, so
-// a script survives a different screen size or orientation. Conversion happens
-// only at the executor boundary and in the editor's fields.
+/**
+ * Where a gesture's coordinates are measured from.
+ *
+ * Blank means the screen corner, and x/y are fractions of screen width/height
+ * (0.0..1.0) so the script survives a different screen size. Otherwise it names
+ * a saved area, x/y are *pixels* from wherever that area is found at playback
+ * time, and the gesture is skipped when it is not on screen.
+ *
+ * The unit differs on purpose. A saved area only matches at the resolution it
+ * was captured at, so an offset from it expressed as a fraction of some other
+ * screen would be wrong precisely when the anchor was right.
+ */
+typealias AnchorImage = String
+
+// Conversion between fractions and pixels happens only at the executor boundary
+// and in the editor's fields.
 data class ClickInteraction(
     val x: Float,
     val y: Float,
     val duration: Long,
     val randomFactor: Int = 0, // Added randomFactor
+    // Two taps in quick succession read as a double tap; anything above one
+    // repeats the same press.
+    val taps: Int = 1,
+    val anchor: AnchorImage = "",
     // Captured from the digitizer when recorded under root; 0 means "not
     // captured", and the evdev injector substitutes a device-typical value.
     val pressure: Int = 0,
@@ -50,6 +67,9 @@ data class DragInteraction(
     val points: List<DragPoint>,
     val randomFactorStart: Int = 0, // Added randomFactorStart
     val randomFactorHighest: Int = 0, // Added randomFactorHighest
+    // Anchoring moves the whole path with the image, so a swipe that starts on
+    // a list item keeps starting on it wherever the list has scrolled to.
+    val anchor: AnchorImage = "",
     override val delayBefore: Long,
     override val name: String = ""
 ) : Interaction()
@@ -224,7 +244,7 @@ fun summarize(events: List<Interaction>): RecordingSummary {
             when (event) {
                 is ClickInteraction -> {
                     actions++
-                    duration += event.duration * repeats
+                    duration += event.duration * event.taps.coerceAtLeast(1) * repeats
                 }
                 is DragInteraction -> {
                     actions++
@@ -319,6 +339,12 @@ object RecordingManager {
         target.put("min", touchMinor)
     }
 
+    // Absent means absolute, which is what every recorded gesture is.
+    private fun putAnchor(target: JSONObject, anchor: AnchorImage) {
+        if (anchor.isBlank()) return
+        target.put("anchor", anchor)
+    }
+
     private fun eventToJson(event: Interaction): JSONObject? {
         val jsonObj = JSONObject()
         jsonObj.put("delayBefore", event.delayBefore)
@@ -331,6 +357,8 @@ object RecordingManager {
                 jsonObj.put("y", event.y)
                 jsonObj.put("duration", event.duration)
                 jsonObj.put("randomFactor", event.randomFactor) // Save randomFactor
+                if (event.taps > 1) jsonObj.put("taps", event.taps)
+                putAnchor(jsonObj, event.anchor)
                 putTouch(jsonObj, event.pressure, event.touchMajor, event.touchMinor)
             }
             is DragInteraction -> {
@@ -347,6 +375,7 @@ object RecordingManager {
                 jsonObj.put("points", pointsArray)
                 jsonObj.put("randomFactorStart", event.randomFactorStart) // Save randomFactorStart
                 jsonObj.put("randomFactorHighest", event.randomFactorHighest) // Save randomFactorHighest
+                putAnchor(jsonObj, event.anchor)
             }
             is TextInteraction -> {
                 jsonObj.put("type", "text")
@@ -464,6 +493,8 @@ object RecordingManager {
                     y = obj.getDouble("y").toFloat(),
                     duration = obj.getLong("duration"),
                     randomFactor = obj.optInt("randomFactor", 0), // Load randomFactor
+                    taps = obj.optInt("taps", 1),
+                    anchor = obj.optString("anchor", ""),
                     pressure = obj.optInt("p", 0),
                     touchMajor = obj.optInt("maj", 0),
                     touchMinor = obj.optInt("min", 0),
@@ -501,6 +532,7 @@ object RecordingManager {
                     points = points,
                     randomFactorStart = obj.optInt("randomFactorStart", 0), // Load randomFactorStart
                     randomFactorHighest = obj.optInt("randomFactorHighest", 0), // Load randomFactorHighest
+                    anchor = obj.optString("anchor", ""),
                     delayBefore = delayBefore,
                     name = name
                 )

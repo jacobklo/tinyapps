@@ -22,6 +22,15 @@ private const val TAG = "autoclicker.gesture.executor"
 // Safety net so a runaway script cannot hold the CPU awake indefinitely.
 private const val WAKE_LOCK_TIMEOUT_MS = 30 * 60 * 1000L
 
+// Gap between the taps of a multi-tap. Android treats presses more than about
+// 300ms apart as separate taps, so this has to stay well under that to read as
+// a double tap rather than two single ones.
+private const val TAP_GAP_MS = 60L
+
+// Long enough that a repeating failure shows once rather than once per attempt,
+// short enough that a second, separate failure is not swallowed.
+private const val ERROR_REPEAT_MS = 5000L
+
 /**
  * Replays recorded interactions through whichever backend the user selected.
  *
@@ -90,6 +99,9 @@ object GestureExecutor {
 		onFinished: (() -> Unit)? = null
 	) {
 		stop()
+		// Pressing play again after a failure must show the error again, even
+		// though nothing about it has changed.
+		lastError = null
 		playJob = scope.launch {
 			acquireWakeLock()
 			try {
@@ -161,9 +173,11 @@ object GestureExecutor {
 			when (event) {
 				is ClickInteraction -> runClick(
 					event.x, event.y, event.duration, event.randomFactor,
-					TouchSample(event.pressure, event.touchMajor, event.touchMinor)
+					TouchSample(event.pressure, event.touchMajor, event.touchMinor),
+					event.anchor, event.taps
 				)
-				is DragInteraction -> runDrag(event.points, event.randomFactorStart, event.randomFactorHighest)
+				is DragInteraction ->
+					runDrag(event.points, event.randomFactorStart, event.randomFactorHighest, event.anchor)
 				is TextInteraction -> runText(event.text)
 				is KeyEventInteraction -> runKeyEvent(event.key)
 				is LaunchAppInteraction -> runLaunchApp(event.packageName)
@@ -232,18 +246,81 @@ object GestureExecutor {
 		}
 	}
 
+	/**
+	 * Pixel origin that a gesture's coordinates are measured from.
+	 *
+	 * Null means the gesture cannot be placed: an anchor image was named but is
+	 * not on screen. Falling back to the raw coordinates would put the touch
+	 * somewhere arbitrary, which is worse than not touching at all -- but a
+	 * gesture that silently does nothing looks the same as a broken script, so
+	 * the reason is shown as well as logged.
+	 */
+	private suspend fun anchorOrigin(anchor: AnchorImage): Pair<Float, Float>? {
+		if (anchor.isBlank()) return 0f to 0f
+		return when (val result = withContext(Dispatchers.IO) { ScreenConditions.search(anchor) }) {
+			is AreaSearch.Found -> result.match.x.toFloat() to result.match.y.toFloat()
+			is AreaSearch.Missing -> {
+				Log.w(TAG, "anchor '$anchor' unusable: ${result.reason}, skipping gesture")
+				reportError(result.reason)
+				null
+			}
+		}
+	}
+
+	/**
+	 * Shows an error once, then holds the same one back for a while.
+	 *
+	 * Toasts queue rather than replace, so an anchored gesture inside a loop
+	 * would otherwise leave minutes of identical messages playing out long
+	 * after the script stopped.
+	 */
+	private var lastError: String? = null
+	private var lastErrorAt = 0L
+
+	private suspend fun reportError(reason: String) {
+		val now = System.currentTimeMillis()
+		if (reason == lastError && now - lastErrorAt < ERROR_REPEAT_MS) return
+		lastError = reason
+		lastErrorAt = now
+		runToast("ERROR: $reason")
+	}
+
+	// Fractions of the screen when absolute, pixels from the anchor when not.
+	private fun place(value: Float, screenSize: Int, origin: Float, anchored: Boolean): Float =
+		if (anchored) origin + value else value * screenSize
+
 	private suspend fun runClick(
 		x: Float,
 		y: Float,
 		duration: Long,
 		randomFactor: Int,
-		sample: TouchSample = TouchSample(0, 0, 0)
+		sample: TouchSample = TouchSample(0, 0, 0),
+		anchor: AnchorImage = "",
+		taps: Int = 1
 	) {
-		// Interactions store fractions of the screen; everything downstream of
-		// here works in pixels for the current display.
+		val (originX, originY) = anchorOrigin(anchor) ?: return
+		repeat(taps.coerceAtLeast(1)) { index ->
+			if (index > 0) delay(TAP_GAP_MS)
+			// Re-jittered per tap, so a double tap does not land twice on the
+			// exact same pixel.
+			tap(x, y, duration, randomFactor, sample, originX, originY, anchor.isNotBlank())
+		}
+	}
+
+	private suspend fun tap(
+		x: Float,
+		y: Float,
+		duration: Long,
+		randomFactor: Int,
+		sample: TouchSample,
+		originX: Float,
+		originY: Float,
+		anchored: Boolean
+	) {
+		// Everything downstream of here works in pixels for the current display.
 		val screen = ScreenGeometry.current(AppSettings.appContext)
-		val finalX = x * screen.width + jitter(randomFactor)
-		val finalY = y * screen.height + jitter(randomFactor)
+		val finalX = place(x, screen.width, originX, anchored) + jitter(randomFactor)
+		val finalY = place(y, screen.height, originY, anchored) + jitter(randomFactor)
 
 		if (AppSettings.useRoot) {
 			if (evdevReady) {
@@ -265,10 +342,22 @@ object GestureExecutor {
 		awaitDispatch { done -> service.dispatchClick(finalX, finalY, duration, done) }
 	}
 
-	private suspend fun runDrag(points: List<DragPoint>, randomFactorStart: Int, randomFactorHighest: Int) {
+	private suspend fun runDrag(
+		points: List<DragPoint>,
+		randomFactorStart: Int,
+		randomFactorHighest: Int,
+		anchor: AnchorImage = ""
+	) {
 		if (points.isEmpty()) return
+		val (originX, originY) = anchorOrigin(anchor) ?: return
+		val anchored = anchor.isNotBlank()
 		val screen = ScreenGeometry.current(AppSettings.appContext)
-		val pixels = points.map { it.copy(x = it.x * screen.width, y = it.y * screen.height) }
+		val pixels = points.map {
+			it.copy(
+				x = place(it.x, screen.width, originX, anchored),
+				y = place(it.y, screen.height, originY, anchored)
+			)
+		}
 		val randomized = randomizePath(pixels, randomFactorStart, randomFactorHighest)
 
 		if (AppSettings.useRoot) {

@@ -542,7 +542,7 @@ class Bubble(private val context: Context) {
                     val points = currentDragPoints.map {
                         it.copy(x = it.x / screen.width, y = it.y / screen.height)
                     }
-                    recordedEvents.add(DragInteraction(points, 0,0,delay))
+                    recordedEvents.add(DragInteraction(points, 0, 0, delayBefore = delay))
                     GestureExecutor.drag(points, 0,0,completionCallback)
                 }
 
