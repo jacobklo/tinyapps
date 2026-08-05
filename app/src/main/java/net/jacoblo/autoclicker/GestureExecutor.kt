@@ -178,7 +178,10 @@ object GestureExecutor {
 				)
 				is DragInteraction ->
 					runDrag(event.points, event.randomFactorStart, event.randomFactorHighest, event.anchor)
-				is TextInteraction -> runText(event.text)
+				// Braces are worked out the same way a Toast does, which is the
+				// only way a script can type something it looked up rather than
+				// something that was written into it.
+				is TextInteraction -> runText(context.interpolate(event.text))
 				is KeyEventInteraction -> runKeyEvent(event.key)
 				is LaunchAppInteraction -> runLaunchApp(event.packageName)
 				is ShellInteraction -> runShell(event.command)
@@ -188,6 +191,8 @@ object GestureExecutor {
 				is ToastInteraction -> runToast(context.interpolate(event.message))
 				is SetVariableInteraction ->
 					context.set(event.variable, context.evaluateOrZero(event.expression))
+
+				is WaitCodeInteraction -> runWaitCode(event, context)
 
 				is BreakInteraction -> throw BreakSignal()
 
@@ -402,6 +407,27 @@ object GestureExecutor {
 			return
 		}
 		service.dispatchText(text)
+	}
+
+	/**
+	 * Leaves the variable holding an empty list when no code arrives, so a
+	 * script can branch on count() instead of typing whatever was there before.
+	 */
+	private suspend fun runWaitCode(event: WaitCodeInteraction, context: ScriptContext) {
+		val variable = event.variable.ifBlank { "codes" }
+		when (val result = withContext(Dispatchers.IO) {
+			CodeServer.waitForCodes(event.maxAgeSeconds, event.timeoutMs)
+		}) {
+			is CodeServer.Result.Found -> {
+				context.set(variable, Value.Arr(result.codes.map { Value.Str(it) }))
+				Log.d(TAG, "stored ${result.codes.size} code(s) in '$variable'")
+			}
+			is CodeServer.Result.Failed -> {
+				context.set(variable, Value.Arr(emptyList()))
+				Log.w(TAG, "no codes: ${result.reason}")
+				reportError(result.reason)
+			}
+		}
 	}
 
 	// Deliberately not root-gated: a toast is the script telling you what it is

@@ -16,22 +16,32 @@ sealed interface Value {
 	data class Str(val value: String) : Value
 	data class Bool(val value: Boolean) : Value
 
+	/** Named Arr rather than List so the element type below stays readable. */
+	data class Arr(val items: List<Value>) : Value
+
 	fun asBool(): Boolean = when (this) {
 		is Bool -> value
 		is Num -> value != 0L
 		is Str -> value.isNotEmpty()
+		// So `if codes` reads as "if there are any".
+		is Arr -> items.isNotEmpty()
 	}
 
 	fun asNum(): Long = when (this) {
 		is Bool -> if (value) 1L else 0L
 		is Num -> value
 		is Str -> value.toLongOrNull() ?: 0L
+		// Deliberately not the size: count() says that, and a list quietly
+		// behaving as its own length makes `codes > 2` look meaningful.
+		is Arr -> 0L
 	}
 
 	fun asText(): String = when (this) {
 		is Bool -> value.toString()
 		is Num -> value.toString()
 		is Str -> value
+		// Readable in a toast, which is the only place a whole list is shown.
+		is Arr -> items.joinToString(", ") { it.asText() }
 	}
 }
 
@@ -41,6 +51,7 @@ sealed interface Expr {
 	data class Unary(val op: String, val operand: Expr) : Expr
 	data class Binary(val op: String, val left: Expr, val right: Expr) : Expr
 	data class Call(val name: String, val args: List<Expr>) : Expr
+	data class Index(val target: Expr, val index: Expr) : Expr
 }
 
 /** Supplies variables and built-in functions to [evaluate]. */
@@ -53,7 +64,7 @@ interface EvalContext {
 // Lexer
 // ---------------------------------------------------------------------------
 
-private enum class TokenType { NUMBER, STRING, IDENT, OP, LPAREN, RPAREN, COMMA, EOF }
+private enum class TokenType { NUMBER, STRING, IDENT, OP, LPAREN, RPAREN, LBRACKET, RBRACKET, COMMA, EOF }
 
 private data class Token(val type: TokenType, val text: String)
 
@@ -106,6 +117,12 @@ private fun lex(source: String): List<Token> {
 		}
 		if (c == ')') {
 			tokens.add(Token(TokenType.RPAREN, ")")); i++; continue
+		}
+		if (c == '[') {
+			tokens.add(Token(TokenType.LBRACKET, "[")); i++; continue
+		}
+		if (c == ']') {
+			tokens.add(Token(TokenType.RBRACKET, "]")); i++; continue
 		}
 		if (c == ',') {
 			tokens.add(Token(TokenType.COMMA, ",")); i++; continue
@@ -171,7 +188,22 @@ private class Parser(private val tokens: List<Token>) {
 			advance()
 			return Expr.Unary(token.text, parseUnary())
 		}
-		return parsePrimary()
+		return parsePostfix()
+	}
+
+	/**
+	 * Indexing binds tighter than any operator, so -codes[0] negates the element
+	 * rather than indexing a negated list, and codes[i][0] chains left to right.
+	 */
+	private fun parsePostfix(): Expr {
+		var expr = parsePrimary()
+		while (peek().type == TokenType.LBRACKET) {
+			advance()
+			val index = parseBinary(0)
+			if (advance().type != TokenType.RBRACKET) throw ExpressionException("expected ']'")
+			expr = Expr.Index(expr, index)
+		}
+		return expr
 	}
 
 	private fun parsePrimary(): Expr {
@@ -227,6 +259,21 @@ suspend fun evaluate(expr: Expr, context: EvalContext): Value = when (expr) {
 		"!" -> Value.Bool(!evaluate(expr.operand, context).asBool())
 		"-" -> Value.Num(-evaluate(expr.operand, context).asNum())
 		else -> throw ExpressionException("unknown operator '${expr.op}'")
+	}
+
+	/**
+	 * An index outside the list is empty text rather than an error, matching the
+	 * way an unset variable reads as 0: a script that walks one entry too far
+	 * should type nothing, not abandon the run.
+	 */
+	is Expr.Index -> {
+		val target = evaluate(expr.target, context)
+		val index = evaluate(expr.index, context).asNum()
+		if (target is Value.Arr && index >= 0 && index < target.items.size) {
+			target.items[index.toInt()]
+		} else {
+			Value.Str("")
+		}
 	}
 
 	is Expr.Binary -> evaluateBinary(expr, context)

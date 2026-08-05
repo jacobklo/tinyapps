@@ -12,10 +12,16 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <!-- Permission required for drawing over other apps -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- Reaches the gmail-six-digit service on the local network -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- usesCleartextTraffic: the code service is plain HTTP on a LAN address,
+         which Android has blocked by default since API 28. There is no hostname
+         to scope it to, because the address is a user setting. -->
     <application
         android:name=".AutoClickerApp"
         android:allowBackup="true"
+        android:usesCleartextTraffic="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"

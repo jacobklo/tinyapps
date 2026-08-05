@@ -13,6 +13,14 @@ import java.util.Locale
 // Data holder for recording and its metadata
 data class RecordingData(val events: List<Interaction>, val globalRandom: Int = 0)
 
+// Two minutes covers a code that was requested moments ago while still ruling
+// out the one from the previous login.
+const val DEFAULT_CODE_MAX_AGE_S = 120L
+
+// The service polls Gmail every 50 seconds, so anything shorter than that can
+// time out before a code that has already arrived is even visible.
+const val DEFAULT_CODE_TIMEOUT_MS = 90000L
+
 // 1) Separate data classes for Click and Drag
 sealed class Interaction {
     abstract val delayBefore: Long
@@ -113,6 +121,22 @@ data class ToastInteraction(
 
 /** Does nothing but honour its delayBefore, for a pause between actions. */
 data class WaitInteraction(
+    override val delayBefore: Long,
+    override val name: String = ""
+) : Interaction()
+
+/**
+ * Waits for six-digit codes from the gmail-six-digit service and stores them,
+ * ranked best-first, as a list in [variable].
+ *
+ * [maxAgeSeconds] is what makes this a wait rather than a read: the service
+ * keeps ten minutes of history, so without it the step would hand back the code
+ * from the previous login the instant it was asked.
+ */
+data class WaitCodeInteraction(
+    val variable: String,
+    val maxAgeSeconds: Long,
+    val timeoutMs: Long,
     override val delayBefore: Long,
     override val name: String = ""
 ) : Interaction()
@@ -256,6 +280,12 @@ fun summarize(events: List<Interaction>): RecordingSummary {
                 is LaunchAppInteraction -> actions++
                 is ShellInteraction -> actions++
                 is SetVariableInteraction -> actions++
+                is WaitCodeInteraction -> {
+                    actions++
+                    // Its real cost is however long the code takes to arrive;
+                    // the timeout is the only bound the editor can show.
+                    duration += event.timeoutMs * repeats
+                }
                 is ForLoopInteraction -> {
                     loops++
                     // An unbounded repeat has no meaningful runtime, so count
@@ -405,6 +435,12 @@ object RecordingManager {
                 jsonObj.put("variable", event.variable)
                 jsonObj.put("expression", event.expression)
             }
+            is WaitCodeInteraction -> {
+                jsonObj.put("type", "wait_code")
+                jsonObj.put("variable", event.variable)
+                jsonObj.put("maxAgeSeconds", event.maxAgeSeconds)
+                jsonObj.put("timeoutMs", event.timeoutMs)
+            }
             is BreakInteraction -> {
                 jsonObj.put("type", "break")
             }
@@ -553,6 +589,13 @@ object RecordingManager {
             "set" -> SetVariableInteraction(
                 variable = obj.optString("variable", ""),
                 expression = obj.optString("expression", "0"),
+                delayBefore = delayBefore,
+                name = name
+            )
+            "wait_code" -> WaitCodeInteraction(
+                variable = obj.optString("variable", "codes"),
+                maxAgeSeconds = obj.optLong("maxAgeSeconds", DEFAULT_CODE_MAX_AGE_S),
+                timeoutMs = obj.optLong("timeoutMs", DEFAULT_CODE_TIMEOUT_MS),
                 delayBefore = delayBefore,
                 name = name
             )

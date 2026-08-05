@@ -30,6 +30,9 @@ class ScriptContext : EvalContext {
 		"contains" -> Value.Bool(
 			args.getOrNull(0)?.asText().orEmpty().contains(args.getOrNull(1)?.asText().orEmpty())
 		)
+		// Only a list has a length worth asking about; anything else is 0 so a
+		// While guarded by count() ends immediately rather than looping forever.
+		"count" -> Value.Num((args.getOrNull(0) as? Value.Arr)?.items?.size?.toLong() ?: 0L)
 		"random" -> {
 			val low = args.getOrNull(0)?.asNum() ?: 0L
 			val high = args.getOrNull(1)?.asNum() ?: 0L

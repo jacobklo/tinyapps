@@ -69,6 +69,16 @@ private val STEP_OPTIONS = listOf(
     StepOption("Toast") { listOf(ToastInteraction("", 0)) },
     StepOption("Text input") { listOf(TextInteraction(text = "", delayBefore = 0)) },
     StepOption("Set variable") { listOf(SetVariableInteraction("count", "0", 0)) },
+    StepOption("Wait for code") {
+        listOf(
+            WaitCodeInteraction(
+                variable = "codes",
+                maxAgeSeconds = DEFAULT_CODE_MAX_AGE_S,
+                timeoutMs = DEFAULT_CODE_TIMEOUT_MS,
+                delayBefore = 0
+            )
+        )
+    },
     StepOption("Key event") { listOf(KeyEventInteraction("BACK", 0)) },
     StepOption("Launch app") { listOf(LaunchAppInteraction("", 0)) },
     StepOption("Shell command") { listOf(ShellInteraction("", 0)) },
@@ -122,7 +132,14 @@ private fun helpFor(interaction: Interaction): StepHelp = when (interaction) {
 
     is TextInteraction -> StepHelp(
         "Types into whatever field currently has focus. Tap the field first " +
-            "with a Click step."
+            "with a Click step. Plain text is typed as written; anything in " +
+            "braces is worked out first, which is how a code that was looked up " +
+            "gets typed.",
+        listOf(
+            "hello world",
+            "{codes[0]}",
+            "user{count}@example.com"
+        )
     )
 
     is WaitInteraction -> StepHelp("Pauses. The Wait ms field is the whole action.")
@@ -146,6 +163,22 @@ private fun helpFor(interaction: Interaction): StepHelp = when (interaction) {
             "random(2, 5)",
             "\"page \" + count",
             "count % 3"
+        )
+    )
+
+    is WaitCodeInteraction -> StepHelp(
+        "Waits for six-digit verification codes from the gmail-six-digit " +
+            "service, then stores them in the variable as a list, best guess " +
+            "first. Max age s is what makes it a wait: the service keeps ten " +
+            "minutes of history, so without it you would get the code from your " +
+            "last login straight away. Set the service address in Settings. If " +
+            "nothing arrives before the timeout the variable is left empty and " +
+            "an error is shown.",
+        listOf(
+            "{codes[0]}          in a Text step, types the best code",
+            "count(codes)        how many arrived",
+            "count(codes) == 0   nothing came, use in an If",
+            "{codes}             all of them, for a Toast"
         )
     )
 
@@ -735,6 +768,26 @@ private fun InteractionFields(interaction: Interaction, onUpdate: (Interaction) 
                     label = "= expression"
                 )
             }
+            is WaitCodeInteraction -> {
+                TextFieldEntry(
+                    value = interaction.variable,
+                    onValueChange = { onUpdate(interaction.copy(variable = it)) },
+                    label = "Variable",
+                    width = 140.dp
+                )
+                NumberField(
+                    value = interaction.maxAgeSeconds,
+                    onValueChange = { onUpdate(interaction.copy(maxAgeSeconds = it)) },
+                    label = "Max age s",
+                    modifier = Modifier.width(120.dp)
+                )
+                NumberField(
+                    value = interaction.timeoutMs,
+                    onValueChange = { onUpdate(interaction.copy(timeoutMs = it)) },
+                    label = "Timeout ms",
+                    modifier = Modifier.width(120.dp)
+                )
+            }
             is IfStartInteraction -> {
                 ExpressionField(
                     value = interaction.condition,
@@ -982,6 +1035,8 @@ private fun describeInteraction(interaction: Interaction, screen: ScreenGeometry
         is WaitInteraction -> "Wait"
         is ToastInteraction -> "Toast: ${interaction.message.ifBlank { "(empty)" }}"
         is SetVariableInteraction -> "Set ${interaction.variable} = ${interaction.expression}"
+        is WaitCodeInteraction ->
+            "Wait for code -> ${interaction.variable}  max age ${interaction.maxAgeSeconds}s"
         is BreakInteraction -> "Break"
         is LoopStartInteraction -> repeatLabel(interaction.repeatCount)
         is LoopEndInteraction -> "End repeat"
@@ -1061,6 +1116,7 @@ fun Interaction.withDelay(delay: Long): Interaction = when (this) {
     is WaitInteraction -> copy(delayBefore = delay)
     is ToastInteraction -> copy(delayBefore = delay)
     is SetVariableInteraction -> copy(delayBefore = delay)
+    is WaitCodeInteraction -> copy(delayBefore = delay)
     is BreakInteraction -> copy(delayBefore = delay)
     is ForLoopInteraction -> copy(delayBefore = delay)
     is RandomSelectInteraction -> copy(delayBefore = delay)
@@ -1088,6 +1144,7 @@ fun Interaction.withName(newName: String): Interaction = when (this) {
     is WaitInteraction -> copy(name = newName)
     is ToastInteraction -> copy(name = newName)
     is SetVariableInteraction -> copy(name = newName)
+    is WaitCodeInteraction -> copy(name = newName)
     is BreakInteraction -> copy(name = newName)
     is ForLoopInteraction -> copy(name = newName)
     is RandomSelectInteraction -> copy(name = newName)
