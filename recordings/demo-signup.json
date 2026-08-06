@@ -59,7 +59,7 @@
             "delayBefore": 300,
             "name": "3-4. type the email address",
             "type": "text",
-            "text": "abc@example.com"
+            "text": "{email}"
         },
         {
             "delayBefore": 800,
@@ -395,7 +395,7 @@
             "delayBefore": 300,
             "name": "13-14. type the name",
             "type": "text",
-            "text": "ABCD"
+            "text": "{name}"
         },
         {
             "delayBefore": 800,
@@ -454,7 +454,7 @@
             "delayBefore": 300,
             "name": "17-19. replace the preset username",
             "type": "text",
-            "text": "abcdefg"
+            "text": "{username}"
         },
         {
             "delayBefore": 800,
@@ -513,7 +513,7 @@
             "delayBefore": 300,
             "name": "22-23. type the password, 8 chars because the fixture rejects 7",
             "type": "text",
-            "text": "abcdefgh"
+            "text": "{password}"
         },
         {
             "delayBefore": 500,
