@@ -122,12 +122,18 @@ object EvdevInjector {
 		writeEvent(EV_ABS, ABS_MT_POSITION_X, rawX)
 		writeEvent(EV_ABS, ABS_MT_POSITION_Y, rawY)
 		writeSample(target, jitter, sample)
+		// Without this the contacts arrive but TouchInputMapper reads them as
+		// hovering, so a target highlights under the touch and is never clicked.
+		// The kernel drops the code on a device that does not declare it, so it
+		// costs nothing where it is not needed.
+		writeEvent(EV_KEY, BTN_TOUCH, 1)
 		return syncNow()
 	}
 
 	private fun touchUp() {
 		writeEvent(EV_ABS, ABS_MT_SLOT, 0)
 		writeEvent(EV_ABS, ABS_MT_TRACKING_ID, -1)
+		writeEvent(EV_KEY, BTN_TOUCH, 0)
 		syncNow()
 	}
 

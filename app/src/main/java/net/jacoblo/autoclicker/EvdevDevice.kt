@@ -11,8 +11,10 @@ private const val TAG = "autoclicker.evdev.device"
 
 // Linux input event types and ABS_MT codes, from <linux/input-event-codes.h>.
 const val EV_SYN = 0x00
+const val EV_KEY = 0x01
 const val EV_ABS = 0x03
 const val SYN_REPORT = 0x00
+const val BTN_TOUCH = 0x14a
 const val ABS_MT_TOUCH_MAJOR = 0x30
 const val ABS_MT_TOUCH_MINOR = 0x31
 const val ABS_MT_POSITION_X = 0x35
