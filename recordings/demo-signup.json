@@ -23,26 +23,38 @@
             "expression": "waitImage(\"d-enter-email\", 15000)"
         },
         {
-            "delayBefore": 300,
-            "name": "3. click the field under the heading",
-            "type": "click",
-            "x": 496,
-            "y": 461,
-            "duration": 120,
-            "randomFactor": 6,
-            "anchor": "d-enter-email",
-            "p": 45,
-            "maj": 130,
-            "min": 120
+            "delayBefore": 500,
+            "name": "3. focus the email field",
+            "type": "key",
+            "key": "TAB TAB"
         },
         {
-            "delayBefore": 600,
+            "delayBefore": 300,
+            "name": "3b. select all",
+            "type": "shell",
+            "command": "input keycombination KEYCODE_CTRL_LEFT KEYCODE_A"
+        },
+        {
+            "delayBefore": 200,
+            "name": "  and delete the selection",
+            "type": "key",
+            "key": "DEL"
+        },
+        {
+            "delayBefore": 300,
             "name": "4. type the email address",
             "type": "text",
             "text": "abc@example.com"
         },
         {
-            "delayBefore": 600,
+            "delayBefore": 0,
+            "name": "5a. wait for Continue to light up",
+            "type": "set",
+            "variable": "ready",
+            "expression": "waitImage(\"d-continue\", 10000)"
+        },
+        {
+            "delayBefore": 500,
             "name": "5. click Continue",
             "type": "click",
             "x": 120,
@@ -66,7 +78,7 @@
             "name": "7. wait up to a minute for the codes",
             "type": "wait_code",
             "variable": "codes",
-            "maxAgeSeconds": 120,
+            "maxAgeSeconds": 900,
             "timeoutMs": 60000
         },
         {
@@ -83,26 +95,38 @@
             "condition": "i < count(codes)",
             "events": [
                 {
-                    "delayBefore": 400,
-                    "name": "8.1 click the leftmost square",
-                    "type": "click",
-                    "x": 71,
-                    "y": 73,
-                    "duration": 120,
-                    "randomFactor": 4,
-                    "anchor": "d-code-square",
-                    "p": 45,
-                    "maj": 130,
-                    "min": 120
+                    "delayBefore": 500,
+                    "name": "8.1 focus the code boxes",
+                    "type": "key",
+                    "key": "TAB TAB"
                 },
                 {
-                    "delayBefore": 600,
+                    "delayBefore": 300,
+                    "name": "8.1b select all",
+                    "type": "shell",
+                    "command": "input keycombination KEYCODE_CTRL_LEFT KEYCODE_A"
+                },
+                {
+                    "delayBefore": 200,
+                    "name": "  and delete the selection",
+                    "type": "key",
+                    "key": "DEL"
+                },
+                {
+                    "delayBefore": 300,
                     "name": "8.2 type this code",
                     "type": "text",
                     "text": "{codes[i]}"
                 },
                 {
-                    "delayBefore": 600,
+                    "delayBefore": 0,
+                    "name": "8.3a wait for Continue to light up",
+                    "type": "set",
+                    "variable": "ready",
+                    "expression": "waitImage(\"d-continue\", 10000)"
+                },
+                {
+                    "delayBefore": 500,
                     "name": "8.3 click Continue",
                     "type": "click",
                     "x": 120,
@@ -319,26 +343,38 @@
             "expression": "waitImage(\"d-what-name\", 15000)"
         },
         {
-            "delayBefore": 300,
-            "name": "13. click the field under the heading",
-            "type": "click",
-            "x": 497,
-            "y": 461,
-            "duration": 120,
-            "randomFactor": 6,
-            "anchor": "d-what-name",
-            "p": 45,
-            "maj": 130,
-            "min": 120
+            "delayBefore": 500,
+            "name": "13. focus the name field",
+            "type": "key",
+            "key": "TAB TAB"
         },
         {
-            "delayBefore": 600,
+            "delayBefore": 300,
+            "name": "13b. select all",
+            "type": "shell",
+            "command": "input keycombination KEYCODE_CTRL_LEFT KEYCODE_A"
+        },
+        {
+            "delayBefore": 200,
+            "name": "  and delete the selection",
+            "type": "key",
+            "key": "DEL"
+        },
+        {
+            "delayBefore": 300,
             "name": "14. type the name",
             "type": "text",
             "text": "ABCD"
         },
         {
-            "delayBefore": 600,
+            "delayBefore": 0,
+            "name": "15a. wait for Continue to light up",
+            "type": "set",
+            "variable": "ready",
+            "expression": "waitImage(\"d-continue\", 10000)"
+        },
+        {
+            "delayBefore": 500,
             "name": "15. click Continue",
             "type": "click",
             "x": 120,
@@ -358,32 +394,38 @@
             "expression": "waitImage(\"d-username\", 15000)"
         },
         {
-            "delayBefore": 300,
-            "name": "17. click the field under the heading",
-            "type": "click",
-            "x": 494,
-            "y": 462,
-            "duration": 120,
-            "randomFactor": 6,
-            "anchor": "d-username",
-            "p": 45,
-            "maj": 130,
-            "min": 120
-        },
-        {
             "delayBefore": 500,
-            "name": "18. clear the preset username",
+            "name": "17. focus the username field",
             "type": "key",
-            "key": "MOVE_END DEL DEL DEL DEL DEL DEL DEL DEL DEL DEL DEL DEL DEL DEL DEL DEL DEL DEL DEL DEL"
+            "key": "TAB TAB"
         },
         {
-            "delayBefore": 600,
+            "delayBefore": 300,
+            "name": "18. select the preset username",
+            "type": "shell",
+            "command": "input keycombination KEYCODE_CTRL_LEFT KEYCODE_A"
+        },
+        {
+            "delayBefore": 200,
+            "name": "  and delete the selection",
+            "type": "key",
+            "key": "DEL"
+        },
+        {
+            "delayBefore": 300,
             "name": "19. type the username",
             "type": "text",
             "text": "abcdefg"
         },
         {
-            "delayBefore": 600,
+            "delayBefore": 0,
+            "name": "20a. wait for Continue to light up",
+            "type": "set",
+            "variable": "ready",
+            "expression": "waitImage(\"d-continue\", 10000)"
+        },
+        {
+            "delayBefore": 500,
             "name": "20. click Continue",
             "type": "click",
             "x": 120,
@@ -403,8 +445,39 @@
             "expression": "waitImage(\"d-password\", 15000)"
         },
         {
-            "delayBefore": 1200,
-            "name": "22. click the show-password eye",
+            "delayBefore": 500,
+            "name": "22. focus the password field",
+            "type": "key",
+            "key": "TAB TAB"
+        },
+        {
+            "delayBefore": 300,
+            "name": "22b. select all",
+            "type": "shell",
+            "command": "input keycombination KEYCODE_CTRL_LEFT KEYCODE_A"
+        },
+        {
+            "delayBefore": 200,
+            "name": "  and delete the selection",
+            "type": "key",
+            "key": "DEL"
+        },
+        {
+            "delayBefore": 300,
+            "name": "23. type the password, 8 chars because the fixture rejects 7",
+            "type": "text",
+            "text": "abcdefgh"
+        },
+        {
+            "delayBefore": 0,
+            "name": "23b. wait for the show-password eye",
+            "type": "set",
+            "variable": "ready",
+            "expression": "waitImage(\"d-show-password\", 10000)"
+        },
+        {
+            "delayBefore": 300,
+            "name": "22c. reveal the password",
             "type": "click",
             "x": 40,
             "y": 31,
@@ -416,26 +489,14 @@
             "min": 120
         },
         {
-            "delayBefore": 400,
-            "name": "22b. focus the password field, which the eye does not",
-            "type": "click",
-            "x": 355,
-            "y": 461,
-            "duration": 120,
-            "randomFactor": 6,
-            "anchor": "d-password",
-            "p": 45,
-            "maj": 130,
-            "min": 120
+            "delayBefore": 0,
+            "name": "24a. wait for Continue to light up",
+            "type": "set",
+            "variable": "ready",
+            "expression": "waitImage(\"d-continue\", 10000)"
         },
         {
-            "delayBefore": 600,
-            "name": "23. type the password, 8 chars because the fixture rejects 7",
-            "type": "text",
-            "text": "abcdefgh"
-        },
-        {
-            "delayBefore": 600,
+            "delayBefore": 500,
             "name": "24. click Continue",
             "type": "click",
             "x": 120,
@@ -462,7 +523,7 @@
             "expression": "waitImage(\"d-not-now\", 12000)"
         },
         {
-            "delayBefore": 300,
+            "delayBefore": 1200,
             "name": "26. click Not now",
             "type": "click",
             "x": 100,
@@ -489,7 +550,7 @@
             "expression": "waitImage(\"d-skip\", 12000)"
         },
         {
-            "delayBefore": 300,
+            "delayBefore": 1200,
             "name": "28. click Skip",
             "type": "click",
             "x": 53,
@@ -516,7 +577,7 @@
             "expression": "waitImage(\"d-tech\", 12000)"
         },
         {
-            "delayBefore": 300,
+            "delayBefore": 1200,
             "name": "30. pick Technology",
             "type": "click",
             "x": 173,
@@ -555,7 +616,14 @@
             "min": 120
         },
         {
-            "delayBefore": 600,
+            "delayBefore": 0,
+            "name": "31a. wait for Continue to light up",
+            "type": "set",
+            "variable": "ready",
+            "expression": "waitImage(\"d-continue\", 10000)"
+        },
+        {
+            "delayBefore": 500,
             "name": "31. click Continue",
             "type": "click",
             "x": 120,
