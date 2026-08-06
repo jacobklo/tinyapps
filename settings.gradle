@@ -21,3 +21,6 @@ dependencyResolutionManagement {
 
 rootProject.name = "AutoClicker"
 include ':app'
+// Fixture app the automation is tested against, so a failing test means the
+// automation broke rather than some real target having changed under it.
+include ':demo'
