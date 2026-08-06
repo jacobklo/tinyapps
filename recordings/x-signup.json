@@ -1,0 +1,620 @@
+{
+    "timestamp": 1785712303303,
+    "globalRandom": 0,
+    "events": [
+        {
+            "delayBefore": 500,
+            "name": "1. click the email icon",
+            "type": "click",
+            "x": 22,
+            "y": 20,
+            "duration": 120,
+            "randomFactor": 6,
+            "anchor": "email",
+            "p": 45,
+            "maj": 130,
+            "min": 120
+        },
+        {
+            "delayBefore": 0,
+            "name": "2. wait for the email screen",
+            "type": "set",
+            "variable": "ready",
+            "expression": "waitImage(\"enter-email\", 15000)"
+        },
+        {
+            "delayBefore": 300,
+            "name": "3. click the field under the heading",
+            "type": "click",
+            "x": 389,
+            "y": 146,
+            "duration": 120,
+            "randomFactor": 6,
+            "anchor": "enter-email",
+            "p": 45,
+            "maj": 130,
+            "min": 120
+        },
+        {
+            "delayBefore": 600,
+            "name": "4. type the email address",
+            "type": "text",
+            "text": "abc@example.com"
+        },
+        {
+            "delayBefore": 0,
+            "name": "5a. wait for Continue to light up",
+            "type": "set",
+            "variable": "ready",
+            "expression": "waitImage(\"continue-button\", 10000)"
+        },
+        {
+            "delayBefore": 400,
+            "name": "5. click Continue",
+            "type": "click",
+            "x": 126,
+            "y": 38,
+            "duration": 120,
+            "randomFactor": 6,
+            "anchor": "continue-button",
+            "p": 45,
+            "maj": 130,
+            "min": 120
+        },
+        {
+            "delayBefore": 0,
+            "name": "6. wait for the verification code screen",
+            "type": "set",
+            "variable": "ready",
+            "expression": "waitImage(\"enter-verify-code\", 15000)"
+        },
+        {
+            "delayBefore": 0,
+            "name": "7. wait up to a minute for the codes",
+            "type": "wait_code",
+            "variable": "codes",
+            "maxAgeSeconds": 120,
+            "timeoutMs": 60000
+        },
+        {
+            "delayBefore": 0,
+            "name": "8. start at the best code",
+            "type": "set",
+            "variable": "i",
+            "expression": "0"
+        },
+        {
+            "delayBefore": 0,
+            "name": "8. try every code until one is accepted",
+            "type": "while",
+            "condition": "i < count(codes)",
+            "events": [
+                {
+                    "delayBefore": 400,
+                    "name": "8.1 click the leftmost code box",
+                    "type": "click",
+                    "x": -166,
+                    "y": 537,
+                    "duration": 120,
+                    "randomFactor": 4,
+                    "anchor": "enter-verify-code",
+                    "p": 45,
+                    "maj": 130,
+                    "min": 120
+                },
+                {
+                    "delayBefore": 600,
+                    "name": "8.2 type this code",
+                    "type": "text",
+                    "text": "{codes[i]}"
+                },
+                {
+                    "delayBefore": 0,
+                    "name": "8.3a wait for Continue to light up",
+                    "type": "set",
+                    "variable": "ready",
+                    "expression": "waitImage(\"continue-button\", 10000)"
+                },
+                {
+                    "delayBefore": 600,
+                    "name": "8.3 click Continue",
+                    "type": "click",
+                    "x": 126,
+                    "y": 38,
+                    "duration": 120,
+                    "randomFactor": 6,
+                    "anchor": "continue-button",
+                    "p": 45,
+                    "maj": 130,
+                    "min": 120
+                },
+                {
+                    "delayBefore": 1200,
+                    "name": "8.4 stop if the birthday screen arrived",
+                    "type": "if",
+                    "branches": [
+                        {
+                            "condition": "image(\"birthday\")",
+                            "events": [
+                                {
+                                    "delayBefore": 0,
+                                    "name": "code accepted",
+                                    "type": "break"
+                                }
+                            ]
+                        }
+                    ],
+                    "else": []
+                },
+                {
+                    "delayBefore": 0,
+                    "name": "8.5 next code",
+                    "type": "set",
+                    "variable": "i",
+                    "expression": "i + 1"
+                }
+            ]
+        },
+        {
+            "delayBefore": 0,
+            "name": "9. wait for the birthday screen",
+            "type": "set",
+            "variable": "ready",
+            "expression": "waitImage(\"birthday\", 15000)"
+        },
+        {
+            "delayBefore": 500,
+            "name": "10. flick the day wheel",
+            "type": "drag",
+            "points": [
+                {
+                    "x": 185,
+                    "y": 1752,
+                    "dt": 0,
+                    "p": 45,
+                    "maj": 130,
+                    "min": 120
+                },
+                {
+                    "x": 185,
+                    "y": 1674,
+                    "dt": 40,
+                    "p": 45,
+                    "maj": 130,
+                    "min": 120
+                },
+                {
+                    "x": 185,
+                    "y": 1578,
+                    "dt": 40,
+                    "p": 45,
+                    "maj": 130,
+                    "min": 120
+                },
+                {
+                    "x": 185,
+                    "y": 1511,
+                    "dt": 40,
+                    "p": 45,
+                    "maj": 130,
+                    "min": 120
+                },
+                {
+                    "x": 185,
+                    "y": 1472,
+                    "dt": 40,
+                    "p": 45,
+                    "maj": 130,
+                    "min": 120
+                }
+            ],
+            "randomFactorStart": 12,
+            "randomFactorHighest": 30,
+            "anchor": "birthday"
+        },
+        {
+            "delayBefore": 500,
+            "name": "10. flick the month wheel",
+            "type": "drag",
+            "points": [
+                {
+                    "x": 525,
+                    "y": 1762,
+                    "dt": 0,
+                    "p": 45,
+                    "maj": 130,
+                    "min": 120
+                },
+                {
+                    "x": 525,
+                    "y": 1672,
+                    "dt": 40,
+                    "p": 45,
+                    "maj": 130,
+                    "min": 120
+                },
+                {
+                    "x": 525,
+                    "y": 1564,
+                    "dt": 40,
+                    "p": 45,
+                    "maj": 130,
+                    "min": 120
+                },
+                {
+                    "x": 525,
+                    "y": 1487,
+                    "dt": 40,
+                    "p": 45,
+                    "maj": 130,
+                    "min": 120
+                },
+                {
+                    "x": 525,
+                    "y": 1442,
+                    "dt": 40,
+                    "p": 45,
+                    "maj": 130,
+                    "min": 120
+                }
+            ],
+            "randomFactorStart": 12,
+            "randomFactorHighest": 30,
+            "anchor": "birthday"
+        },
+        {
+            "delayBefore": 500,
+            "name": "10. flick the year wheel",
+            "type": "drag",
+            "points": [
+                {
+                    "x": 865,
+                    "y": 1742,
+                    "dt": 0,
+                    "p": 45,
+                    "maj": 130,
+                    "min": 120
+                },
+                {
+                    "x": 865,
+                    "y": 1647,
+                    "dt": 40,
+                    "p": 45,
+                    "maj": 130,
+                    "min": 120
+                },
+                {
+                    "x": 865,
+                    "y": 1531,
+                    "dt": 40,
+                    "p": 45,
+                    "maj": 130,
+                    "min": 120
+                },
+                {
+                    "x": 865,
+                    "y": 1450,
+                    "dt": 40,
+                    "p": 45,
+                    "maj": 130,
+                    "min": 120
+                },
+                {
+                    "x": 865,
+                    "y": 1402,
+                    "dt": 40,
+                    "p": 45,
+                    "maj": 130,
+                    "min": 120
+                }
+            ],
+            "randomFactorStart": 12,
+            "randomFactorHighest": 30,
+            "anchor": "birthday"
+        },
+        {
+            "delayBefore": 800,
+            "name": "11. click Continue",
+            "type": "click",
+            "x": 126,
+            "y": 38,
+            "duration": 120,
+            "randomFactor": 6,
+            "anchor": "continue-button",
+            "p": 45,
+            "maj": 130,
+            "min": 120
+        },
+        {
+            "delayBefore": 0,
+            "name": "12. wait for the name screen",
+            "type": "set",
+            "variable": "ready",
+            "expression": "waitImage(\"what-name\", 15000)"
+        },
+        {
+            "delayBefore": 300,
+            "name": "13. click the field under the heading",
+            "type": "click",
+            "x": 509,
+            "y": 188,
+            "duration": 120,
+            "randomFactor": 6,
+            "anchor": "what-name",
+            "p": 45,
+            "maj": 130,
+            "min": 120
+        },
+        {
+            "delayBefore": 600,
+            "name": "14. type the name",
+            "type": "text",
+            "text": "ABCD"
+        },
+        {
+            "delayBefore": 0,
+            "name": "15a. wait for Continue to light up",
+            "type": "set",
+            "variable": "ready",
+            "expression": "waitImage(\"continue-button\", 10000)"
+        },
+        {
+            "delayBefore": 400,
+            "name": "15. click Continue",
+            "type": "click",
+            "x": 126,
+            "y": 38,
+            "duration": 120,
+            "randomFactor": 6,
+            "anchor": "continue-button",
+            "p": 45,
+            "maj": 130,
+            "min": 120
+        },
+        {
+            "delayBefore": 0,
+            "name": "16. wait for the username screen",
+            "type": "set",
+            "variable": "ready",
+            "expression": "waitImage(\"username\", 15000)"
+        },
+        {
+            "delayBefore": 300,
+            "name": "17. click the field under the heading",
+            "type": "click",
+            "x": 511,
+            "y": 305,
+            "duration": 120,
+            "randomFactor": 6,
+            "anchor": "username",
+            "p": 45,
+            "maj": 130,
+            "min": 120
+        },
+        {
+            "delayBefore": 500,
+            "name": "18. clear the suggested username",
+            "type": "key",
+            "key": "MOVE_END DEL DEL DEL DEL DEL DEL DEL DEL DEL DEL DEL DEL DEL DEL DEL DEL DEL DEL DEL DEL DEL DEL DEL DEL"
+        },
+        {
+            "delayBefore": 600,
+            "name": "19. type the username",
+            "type": "text",
+            "text": "abcdefg"
+        },
+        {
+            "delayBefore": 0,
+            "name": "20a. wait for Continue to light up",
+            "type": "set",
+            "variable": "ready",
+            "expression": "waitImage(\"continue-button\", 10000)"
+        },
+        {
+            "delayBefore": 400,
+            "name": "20. click Continue",
+            "type": "click",
+            "x": 126,
+            "y": 38,
+            "duration": 120,
+            "randomFactor": 6,
+            "anchor": "continue-button",
+            "p": 45,
+            "maj": 130,
+            "min": 120
+        },
+        {
+            "delayBefore": 0,
+            "name": "21. wait for the password screen",
+            "type": "set",
+            "variable": "ready",
+            "expression": "waitImage(\"password\", 15000)"
+        },
+        {
+            "delayBefore": 0,
+            "name": "22a. wait for the show-password eye",
+            "type": "set",
+            "variable": "ready",
+            "expression": "waitImage(\"show-password\", 10000)"
+        },
+        {
+            "delayBefore": 400,
+            "name": "22. click the show-password eye",
+            "type": "click",
+            "x": 34,
+            "y": 33,
+            "duration": 120,
+            "randomFactor": 4,
+            "anchor": "show-password",
+            "p": 45,
+            "maj": 130,
+            "min": 120
+        },
+        {
+            "delayBefore": 400,
+            "name": "22b. focus the password field",
+            "type": "click",
+            "x": 372,
+            "y": 393,
+            "duration": 120,
+            "randomFactor": 6,
+            "anchor": "password",
+            "p": 45,
+            "maj": 130,
+            "min": 120
+        },
+        {
+            "delayBefore": 600,
+            "name": "23. type the password",
+            "type": "text",
+            "text": "abcdefg"
+        },
+        {
+            "delayBefore": 0,
+            "name": "24a. wait for Continue to light up",
+            "type": "set",
+            "variable": "ready",
+            "expression": "waitImage(\"continue-button\", 10000)"
+        },
+        {
+            "delayBefore": 400,
+            "name": "24. click Continue",
+            "type": "click",
+            "x": 126,
+            "y": 38,
+            "duration": 120,
+            "randomFactor": 6,
+            "anchor": "continue-button",
+            "p": 45,
+            "maj": 130,
+            "min": 120
+        },
+        {
+            "delayBefore": 0,
+            "name": "25. wait for the find-friends screen",
+            "type": "set",
+            "variable": "ready",
+            "expression": "waitImage(\"find-friends\", 15000)"
+        },
+        {
+            "delayBefore": 0,
+            "name": "25b. wait for the Not now button",
+            "type": "set",
+            "variable": "ready",
+            "expression": "waitImage(\"not-now-button\", 12000)"
+        },
+        {
+            "delayBefore": 300,
+            "name": "26. click Not now",
+            "type": "click",
+            "x": 495,
+            "y": 98,
+            "duration": 120,
+            "randomFactor": 6,
+            "anchor": "not-now-button",
+            "p": 45,
+            "maj": 130,
+            "min": 120
+        },
+        {
+            "delayBefore": 0,
+            "name": "27. wait for the profile-picture screen",
+            "type": "set",
+            "variable": "ready",
+            "expression": "waitImage(\"set-profile-pic\", 15000)"
+        },
+        {
+            "delayBefore": 0,
+            "name": "27b. wait for the Skip button",
+            "type": "set",
+            "variable": "ready",
+            "expression": "waitImage(\"skip\", 12000)"
+        },
+        {
+            "delayBefore": 300,
+            "name": "28. click Skip",
+            "type": "click",
+            "x": 62,
+            "y": 40,
+            "duration": 120,
+            "randomFactor": 6,
+            "anchor": "skip",
+            "p": 45,
+            "maj": 130,
+            "min": 120
+        },
+        {
+            "delayBefore": 0,
+            "name": "29. wait for the interests screen",
+            "type": "set",
+            "variable": "ready",
+            "expression": "waitImage(\"pick-interests\", 15000)"
+        },
+        {
+            "delayBefore": 0,
+            "name": "29b. wait for the interest rows",
+            "type": "set",
+            "variable": "ready",
+            "expression": "waitImage(\"tech\", 12000)"
+        },
+        {
+            "delayBefore": 300,
+            "name": "30. pick Tech",
+            "type": "click",
+            "x": 113,
+            "y": 35,
+            "duration": 120,
+            "randomFactor": 6,
+            "anchor": "tech",
+            "p": 45,
+            "maj": 130,
+            "min": 120
+        },
+        {
+            "delayBefore": 400,
+            "name": "30. pick Finance",
+            "type": "click",
+            "x": 265,
+            "y": 29,
+            "duration": 120,
+            "randomFactor": 6,
+            "anchor": "finance",
+            "p": 45,
+            "maj": 130,
+            "min": 120
+        },
+        {
+            "delayBefore": 400,
+            "name": "30. pick Memes",
+            "type": "click",
+            "x": 74,
+            "y": 30,
+            "duration": 120,
+            "randomFactor": 6,
+            "anchor": "memes",
+            "p": 45,
+            "maj": 130,
+            "min": 120
+        },
+        {
+            "delayBefore": 0,
+            "name": "31a. wait for Continue to light up",
+            "type": "set",
+            "variable": "ready",
+            "expression": "waitImage(\"continue-button\", 10000)"
+        },
+        {
+            "delayBefore": 600,
+            "name": "31. click Continue",
+            "type": "click",
+            "x": 126,
+            "y": 38,
+            "duration": 120,
+            "randomFactor": 6,
+            "anchor": "continue-button",
+            "p": 45,
+            "maj": 130,
+            "min": 120
+        }
+    ]
+}
