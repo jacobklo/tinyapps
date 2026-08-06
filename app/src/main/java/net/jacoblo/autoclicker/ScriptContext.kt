@@ -54,8 +54,29 @@ class ScriptContext : EvalContext {
 			Value.Bool(ScreenConditions.waitFor(area, timeout, threshold))
 		}
 
+		// textAppear(phrase[, matchCase]) -- is the phrase readable on screen
+		"textAppear" -> {
+			val phrase = args.getOrNull(0)?.asText().orEmpty()
+			val matchCase = matchCaseArg(args.getOrNull(1))
+			Value.Bool(withContext(Dispatchers.IO) { ScreenText.find(phrase, matchCase) } is TextSearch.Found)
+		}
+
+		// waitTextAppear(phrase, ms[, matchCase]) -- poll until it is readable
+		"waitTextAppear" -> {
+			val phrase = args.getOrNull(0)?.asText().orEmpty()
+			val timeout = args.getOrNull(1)?.asNum() ?: 0L
+			val matchCase = matchCaseArg(args.getOrNull(2))
+			Value.Bool(ScreenText.waitFor(phrase, timeout, matchCase))
+		}
+
 		else -> throw ExpressionException("unknown function '$name'")
 	}
+
+	/**
+	 * Capitals count unless the script says otherwise, so a phrase copied off
+	 * the screen matches what is on it and nothing looser.
+	 */
+	private fun matchCaseArg(value: Value?): Boolean = value?.asBool() ?: true
 
 	// Accepts either a fraction (0.9) or a percentage (90), since both read
 	// naturally in a condition.
