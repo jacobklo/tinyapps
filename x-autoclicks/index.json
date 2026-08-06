@@ -1,0 +1,202 @@
+[
+    {
+        "name": "calc",
+        "file": "calc.png",
+        "left": 457,
+        "top": 833,
+        "width": 178,
+        "height": 38,
+        "screenWidth": 1080,
+        "screenHeight": 1920
+    },
+    {
+        "name": "email",
+        "file": "email.png",
+        "left": 610,
+        "top": 1573,
+        "width": 45,
+        "height": 41,
+        "screenWidth": 1080,
+        "screenHeight": 2400
+    },
+    {
+        "name": "enter-email",
+        "file": "enter-email.png",
+        "left": 151,
+        "top": 555,
+        "width": 584,
+        "height": 51,
+        "screenWidth": 1080,
+        "screenHeight": 2400
+    },
+    {
+        "name": "enter-verify-code",
+        "file": "enter-verify-code.png",
+        "left": 279,
+        "top": 283,
+        "width": 748,
+        "height": 125,
+        "screenWidth": 1080,
+        "screenHeight": 2400
+    },
+    {
+        "name": "birthday",
+        "file": "birthday.png",
+        "left": 35,
+        "top": 288,
+        "width": 977,
+        "height": 131,
+        "screenWidth": 1080,
+        "screenHeight": 2400
+    },
+    {
+        "name": "show-password",
+        "file": "show-password.png",
+        "left": 972,
+        "top": 649,
+        "width": 68,
+        "height": 67,
+        "screenWidth": 1080,
+        "screenHeight": 2400
+    },
+    {
+        "name": "find-friends",
+        "file": "find-friends.png",
+        "left": 197,
+        "top": 1240,
+        "width": 690,
+        "height": 118,
+        "screenWidth": 1080,
+        "screenHeight": 2400
+    },
+    {
+        "name": "not-now-button",
+        "file": "not-now-button.png",
+        "left": 57,
+        "top": 1915,
+        "width": 990,
+        "height": 196,
+        "screenWidth": 1080,
+        "screenHeight": 2400
+    },
+    {
+        "name": "tech",
+        "file": "tech.png",
+        "left": 129,
+        "top": 905,
+        "width": 227,
+        "height": 71,
+        "screenWidth": 1080,
+        "screenHeight": 2400
+    },
+    {
+        "name": "finance",
+        "file": "finance.png",
+        "left": 125,
+        "top": 1413,
+        "width": 530,
+        "height": 59,
+        "screenWidth": 1080,
+        "screenHeight": 2400
+    },
+    {
+        "name": "follow-button",
+        "file": "follow-button.png",
+        "left": 76,
+        "top": 788,
+        "width": 509,
+        "height": 137,
+        "screenWidth": 1080,
+        "screenHeight": 2400
+    },
+    {
+        "name": "continue-button",
+        "file": "continue-button.png",
+        "left": 415,
+        "top": 2180,
+        "width": 252,
+        "height": 76,
+        "screenWidth": 1080,
+        "screenHeight": 2400
+    },
+    {
+        "name": "what-name",
+        "file": "what-name.png",
+        "left": 31,
+        "top": 304,
+        "width": 840,
+        "height": 97,
+        "screenWidth": 1080,
+        "screenHeight": 2400
+    },
+    {
+        "name": "username",
+        "file": "username.png",
+        "left": 29,
+        "top": 301,
+        "width": 661,
+        "height": 109,
+        "screenWidth": 1080,
+        "screenHeight": 2400
+    },
+    {
+        "name": "password",
+        "file": "password.png",
+        "left": 28,
+        "top": 290,
+        "width": 849,
+        "height": 116,
+        "screenWidth": 1080,
+        "screenHeight": 2400
+    },
+    {
+        "name": "set-profile-pic",
+        "file": "set-profile-pic.png",
+        "left": 32,
+        "top": 294,
+        "width": 863,
+        "height": 111,
+        "screenWidth": 1080,
+        "screenHeight": 2400
+    },
+    {
+        "name": "skip",
+        "file": "skip.png",
+        "left": 475,
+        "top": 1992,
+        "width": 125,
+        "height": 80,
+        "screenWidth": 1080,
+        "screenHeight": 2400
+    },
+    {
+        "name": "pick-interests",
+        "file": "pick-interests.png",
+        "left": 45,
+        "top": 250,
+        "width": 808,
+        "height": 92,
+        "screenWidth": 1080,
+        "screenHeight": 2400
+    },
+    {
+        "name": "memes",
+        "file": "memes.png",
+        "left": 130,
+        "top": 1156,
+        "width": 149,
+        "height": 60,
+        "screenWidth": 1080,
+        "screenHeight": 2400
+    },
+    {
+        "name": "follow-top",
+        "file": "follow-top.png",
+        "left": 39,
+        "top": 304,
+        "width": 948,
+        "height": 97,
+        "screenWidth": 1080,
+        "screenHeight": 2400
+    }
+]
