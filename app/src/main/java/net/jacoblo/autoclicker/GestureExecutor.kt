@@ -31,6 +31,12 @@ private const val TAP_GAP_MS = 60L
 // short enough that a second, separate failure is not swallowed.
 private const val ERROR_REPEAT_MS = 5000L
 
+// Gap between typed characters. Unhurried touch typing sits around 150-250ms
+// per character, and the spread matters as much as the mean: a fixed interval
+// is as unlike a person as no interval at all.
+private const val MIN_KEY_GAP_MS = 90L
+private const val MAX_KEY_GAP_MS = 240L
+
 /**
  * Replays recorded interactions through whichever backend the user selected.
  *
@@ -397,7 +403,14 @@ object GestureExecutor {
 		if (text.isEmpty()) return
 
 		if (AppSettings.useRoot) {
-			withContext(Dispatchers.IO) { RootShell.text(text) }
+			// One character at a time with a varying gap. A whole field arriving
+			// in a single frame is not something a person can produce, and the
+			// per-character cost is only about 40ms, so the pacing is the delay
+			// rather than the command.
+			for (character in text) {
+				withContext(Dispatchers.IO) { RootShell.text(character.toString()) }
+				delay(Random.nextLong(MIN_KEY_GAP_MS, MAX_KEY_GAP_MS + 1))
+			}
 			return
 		}
 
