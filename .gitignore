@@ -17,3 +17,8 @@ release/
 **/build/reports/
 
 *.apk
+
+# Full screens and the areas cropped from the fixture. Both are captures of a
+# running app rather than sources, and are re-cropped whenever it changes.
+/design-mockup/
+/demo-autoclicks/
