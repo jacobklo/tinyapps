@@ -23,26 +23,41 @@
             "expression": "waitImage(\"d-enter-email\", 15000)"
         },
         {
-            "delayBefore": 500,
-            "name": "3. focus the email field",
-            "type": "key",
-            "key": "TAB TAB"
-        },
-        {
-            "delayBefore": 300,
-            "name": "3b. select all",
-            "type": "shell",
-            "command": "input keycombination KEYCODE_CTRL_LEFT KEYCODE_A"
+            "delayBefore": 400,
+            "name": "3-4. type the email address: find the field",
+            "type": "focus_field",
+            "variable": "chars"
         },
         {
             "delayBefore": 200,
-            "name": "  and delete the selection",
+            "name": "  cursor to the end",
             "type": "key",
-            "key": "DEL"
+            "key": "MOVE_END"
+        },
+        {
+            "delayBefore": 0,
+            "name": "  backspace over what is there",
+            "type": "while",
+            "condition": "chars > 0",
+            "events": [
+                {
+                    "delayBefore": 60,
+                    "name": "",
+                    "type": "key",
+                    "key": "DEL"
+                },
+                {
+                    "delayBefore": 0,
+                    "name": "",
+                    "type": "set",
+                    "variable": "chars",
+                    "expression": "chars - 1"
+                }
+            ]
         },
         {
             "delayBefore": 300,
-            "name": "4. type the email address",
+            "name": "3-4. type the email address",
             "type": "text",
             "text": "abc@example.com"
         },
@@ -95,26 +110,41 @@
             "condition": "i < count(codes)",
             "events": [
                 {
-                    "delayBefore": 500,
-                    "name": "8.1 focus the code boxes",
-                    "type": "key",
-                    "key": "TAB TAB"
-                },
-                {
-                    "delayBefore": 300,
-                    "name": "8.1b select all",
-                    "type": "shell",
-                    "command": "input keycombination KEYCODE_CTRL_LEFT KEYCODE_A"
+                    "delayBefore": 400,
+                    "name": "8.1-8.2 type this code: find the field",
+                    "type": "focus_field",
+                    "variable": "chars"
                 },
                 {
                     "delayBefore": 200,
-                    "name": "  and delete the selection",
+                    "name": "  cursor to the end",
                     "type": "key",
-                    "key": "DEL"
+                    "key": "MOVE_END"
+                },
+                {
+                    "delayBefore": 0,
+                    "name": "  backspace over what is there",
+                    "type": "while",
+                    "condition": "chars > 0",
+                    "events": [
+                        {
+                            "delayBefore": 60,
+                            "name": "",
+                            "type": "key",
+                            "key": "DEL"
+                        },
+                        {
+                            "delayBefore": 0,
+                            "name": "",
+                            "type": "set",
+                            "variable": "chars",
+                            "expression": "chars - 1"
+                        }
+                    ]
                 },
                 {
                     "delayBefore": 300,
-                    "name": "8.2 type this code",
+                    "name": "8.1-8.2 type this code",
                     "type": "text",
                     "text": "{codes[i]}"
                 },
@@ -343,26 +373,41 @@
             "expression": "waitImage(\"d-what-name\", 15000)"
         },
         {
-            "delayBefore": 500,
-            "name": "13. focus the name field",
-            "type": "key",
-            "key": "TAB TAB"
-        },
-        {
-            "delayBefore": 300,
-            "name": "13b. select all",
-            "type": "shell",
-            "command": "input keycombination KEYCODE_CTRL_LEFT KEYCODE_A"
+            "delayBefore": 400,
+            "name": "13-14. type the name: find the field",
+            "type": "focus_field",
+            "variable": "chars"
         },
         {
             "delayBefore": 200,
-            "name": "  and delete the selection",
+            "name": "  cursor to the end",
             "type": "key",
-            "key": "DEL"
+            "key": "MOVE_END"
+        },
+        {
+            "delayBefore": 0,
+            "name": "  backspace over what is there",
+            "type": "while",
+            "condition": "chars > 0",
+            "events": [
+                {
+                    "delayBefore": 60,
+                    "name": "",
+                    "type": "key",
+                    "key": "DEL"
+                },
+                {
+                    "delayBefore": 0,
+                    "name": "",
+                    "type": "set",
+                    "variable": "chars",
+                    "expression": "chars - 1"
+                }
+            ]
         },
         {
             "delayBefore": 300,
-            "name": "14. type the name",
+            "name": "13-14. type the name",
             "type": "text",
             "text": "ABCD"
         },
@@ -394,26 +439,41 @@
             "expression": "waitImage(\"d-username\", 15000)"
         },
         {
-            "delayBefore": 500,
-            "name": "17. focus the username field",
-            "type": "key",
-            "key": "TAB TAB"
-        },
-        {
-            "delayBefore": 300,
-            "name": "18. select the preset username",
-            "type": "shell",
-            "command": "input keycombination KEYCODE_CTRL_LEFT KEYCODE_A"
+            "delayBefore": 400,
+            "name": "17-19. replace the preset username: find the field",
+            "type": "focus_field",
+            "variable": "chars"
         },
         {
             "delayBefore": 200,
-            "name": "  and delete the selection",
+            "name": "  cursor to the end",
             "type": "key",
-            "key": "DEL"
+            "key": "MOVE_END"
+        },
+        {
+            "delayBefore": 0,
+            "name": "  backspace over what is there",
+            "type": "while",
+            "condition": "chars > 0",
+            "events": [
+                {
+                    "delayBefore": 60,
+                    "name": "",
+                    "type": "key",
+                    "key": "DEL"
+                },
+                {
+                    "delayBefore": 0,
+                    "name": "",
+                    "type": "set",
+                    "variable": "chars",
+                    "expression": "chars - 1"
+                }
+            ]
         },
         {
             "delayBefore": 300,
-            "name": "19. type the username",
+            "name": "17-19. replace the preset username",
             "type": "text",
             "text": "abcdefg"
         },
@@ -445,26 +505,41 @@
             "expression": "waitImage(\"d-password\", 15000)"
         },
         {
-            "delayBefore": 500,
-            "name": "22. focus the password field",
-            "type": "key",
-            "key": "TAB TAB"
-        },
-        {
-            "delayBefore": 300,
-            "name": "22b. select all",
-            "type": "shell",
-            "command": "input keycombination KEYCODE_CTRL_LEFT KEYCODE_A"
+            "delayBefore": 400,
+            "name": "22-23. type the password, 8 chars because the fixture rejects 7: find the field",
+            "type": "focus_field",
+            "variable": "chars"
         },
         {
             "delayBefore": 200,
-            "name": "  and delete the selection",
+            "name": "  cursor to the end",
             "type": "key",
-            "key": "DEL"
+            "key": "MOVE_END"
+        },
+        {
+            "delayBefore": 0,
+            "name": "  backspace over what is there",
+            "type": "while",
+            "condition": "chars > 0",
+            "events": [
+                {
+                    "delayBefore": 60,
+                    "name": "",
+                    "type": "key",
+                    "key": "DEL"
+                },
+                {
+                    "delayBefore": 0,
+                    "name": "",
+                    "type": "set",
+                    "variable": "chars",
+                    "expression": "chars - 1"
+                }
+            ]
         },
         {
             "delayBefore": 300,
-            "name": "23. type the password, 8 chars because the fixture rejects 7",
+            "name": "22-23. type the password, 8 chars because the fixture rejects 7",
             "type": "text",
             "text": "abcdefgh"
         },
