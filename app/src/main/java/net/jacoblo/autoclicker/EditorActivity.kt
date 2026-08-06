@@ -103,13 +103,13 @@ private class StepHelp(val summary: String, val examples: List<String> = emptyLi
 // Shared by every gesture, since the anchor works the same way for all of them.
 private const val RELATIVE_HELP =
     "Relative to picks what the coordinates are measured from. On Screen they " +
-        "are a place on the display; on a saved area they are pixels from " +
-        "wherever that area is found when the step runs, and may be negative. " +
-        "on a phrase they are pixels from wherever those words are read on " +
-        "screen. Either is looked for each time, which needs root, and the " +
-        "gesture is skipped if it is not there. A saved area costs about half a " +
-        "second and matches only the pixels it was cropped from; a phrase costs " +
-        "a little more and survives the words moving or being restyled."
+        "are a place on the display; on a saved area or a phrase they are " +
+        "pixels from wherever that area is found or those words are read when " +
+        "the step runs, and may be negative. Either is looked for each time, " +
+        "which needs root, and the gesture is skipped if it is not there. A " +
+        "saved area costs about half a second and matches only the pixels it " +
+        "was cropped from; a phrase costs a little more and survives the words " +
+        "moving or being restyled."
 
 private fun helpFor(interaction: Interaction): StepHelp = when (interaction) {
     is ClickInteraction -> StepHelp(
@@ -617,12 +617,16 @@ private fun InteractionFields(interaction: Interaction, onUpdate: (Interaction) 
 
         when (interaction) {
             is ClickInteraction -> {
-                val anchored = interaction.anchor.isNotBlank() || interaction.anchorText.isNotBlank()
+                var byText by remember { mutableStateOf(interaction.anchorText.isNotBlank()) }
+                val anchored = interaction.anchor.isNotBlank() || byText
                 AnchorPicker(
                     selected = interaction.anchor,
                     selectedText = interaction.anchorText,
-                    onSelected = { onUpdate(interaction.copy(anchor = it)) },
-                    onTextSelected = { onUpdate(interaction.copy(anchorText = it)) }
+                    byText = byText,
+                    onByTextChange = { byText = it },
+                    onAnchor = { image, phrase ->
+                        onUpdate(interaction.copy(anchor = image, anchorText = phrase))
+                    }
                 )
                 CoordField(
                     value = interaction.x,
@@ -658,7 +662,8 @@ private fun InteractionFields(interaction: Interaction, onUpdate: (Interaction) 
                 )
             }
             is DragInteraction -> {
-                val anchored = interaction.anchor.isNotBlank()
+                var byText by remember { mutableStateOf(interaction.anchorText.isNotBlank()) }
+                val anchored = interaction.anchor.isNotBlank() || byText
                 val start = interaction.points.firstOrNull()
                 val end = interaction.points.lastOrNull()
                 // A recorded path has many points and only its start is
@@ -668,8 +673,11 @@ private fun InteractionFields(interaction: Interaction, onUpdate: (Interaction) 
                 AnchorPicker(
                     selected = interaction.anchor,
                     selectedText = interaction.anchorText,
-                    onSelected = { onUpdate(interaction.copy(anchor = it)) },
-                    onTextSelected = { onUpdate(interaction.copy(anchorText = it)) }
+                    byText = byText,
+                    onByTextChange = { byText = it },
+                    onAnchor = { image, phrase ->
+                        onUpdate(interaction.copy(anchor = image, anchorText = phrase))
+                    }
                 )
                 if (start != null) {
                     // Editing the start translates the whole path, which is what
@@ -880,15 +888,20 @@ private fun TextFieldEntry(
 private fun AnchorPicker(
     selected: AnchorImage,
     selectedText: String,
-    onSelected: (AnchorImage) -> Unit,
-    onTextSelected: (String) -> Unit
+    // Both origins move together in one update. Setting them through separate
+    // callbacks meant the second copied the step as it was before the first,
+    // so picking an area cleared the very anchor it had just set.
+    // Which kind is being edited, rather than which is set. It is held by the
+    // caller because the coordinates depend on it too: a phrase that has been
+    // chosen but not yet typed is still an offset, and letting it read as
+    // absolute rewrites dX 100 into 108000 on the way past.
+    byText: Boolean,
+    onByTextChange: (Boolean) -> Unit,
+    onAnchor: (AnchorImage, String) -> Unit
 ) {
     val revision by ScreenshotStore.revision.collectAsState()
     val areas = remember(revision) { ScreenshotStore.list().map { it.name } }
     var expanded by remember { mutableStateOf(false) }
-    // Which kind is being edited, rather than which is set: the phrase field
-    // has to stay on screen while it is still empty and being typed into.
-    var byText by remember { mutableStateOf(selectedText.isNotBlank()) }
 
     ExposedDropdownMenuBox(
         expanded = expanded,
@@ -909,9 +922,14 @@ private fun AnchorPicker(
                 DropdownMenuItem(
                     text = { Text(option) },
                     onClick = {
-                        byText = option == TEXT_LABEL
-                        onSelected(if (option == ABSOLUTE_LABEL || byText) "" else option)
-                        if (!byText) onTextSelected("")
+                        onByTextChange(option == TEXT_LABEL)
+                        when (option) {
+                            // Whatever phrase was already typed is kept, so
+                            // going away and back does not lose it.
+                            TEXT_LABEL -> onAnchor("", selectedText)
+                            ABSOLUTE_LABEL -> onAnchor("", "")
+                            else -> onAnchor(option, "")
+                        }
                         expanded = false
                     }
                 )
@@ -922,7 +940,7 @@ private fun AnchorPicker(
     if (byText) {
         TextFieldEntry(
             value = selectedText,
-            onValueChange = onTextSelected,
+            onValueChange = { onAnchor("", it) },
             label = "Phrase",
             width = 200.dp
         )
