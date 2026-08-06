@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="app_name">Bulb</string>
+  <string name="tile_label">Bulb</string>
+  <string name="color">Color</string>
+  <string name="white">White</string>
+  <string name="bright">Bright</string>
+  <string name="ip_label">Bulb IP address</string>
+  <string name="save">Save</string>
+</resources>
