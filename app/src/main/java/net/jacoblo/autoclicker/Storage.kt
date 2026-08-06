@@ -28,6 +28,9 @@ object Storage {
 	val triggersFile: File
 		get() = File(ensure(root), "triggers.json")
 
+	val globalsFile: File
+		get() = File(ensure(root), "globals.json")
+
 	val screenshotIndexFile: File
 		get() = File(screenshotsDir, "index.json")
 

@@ -3,6 +3,7 @@ package net.jacoblo.autoclicker
 import android.os.PowerManager
 import android.util.Log
 import android.widget.Toast
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -41,6 +42,20 @@ private const val FIELD_TAP_JITTER_PX = 6
 // is as unlike a person as no interval at all.
 private const val MIN_KEY_GAP_MS = 90L
 private const val MAX_KEY_GAP_MS = 240L
+
+/**
+ * How a playback ended.
+ *
+ * [Completed.degraded] counts the steps that ran but could not do what they were
+ * asked -- an anchor that was not on screen, a field that could not be focused, a
+ * verification code that never arrived. Those are skipped rather than fatal, so
+ * without a count a half-working script reports exactly like a clean one.
+ */
+sealed class PlaybackResult {
+	data class Completed(val degraded: Int) : PlaybackResult()
+	data object Stopped : PlaybackResult()
+	data class Failed(val reason: String) : PlaybackResult()
+}
 
 /**
  * Replays recorded interactions through whichever backend the user selected.
@@ -107,23 +122,33 @@ object GestureExecutor {
 	fun playRecording(
 		events: List<Interaction>,
 		globalRandom: Int = 0,
-		onFinished: (() -> Unit)? = null
+		onFinished: ((PlaybackResult) -> Unit)? = null
 	) {
 		stop()
 		// Pressing play again after a failure must show the error again, even
 		// though nothing about it has changed.
 		lastError = null
+		degraded = 0
 		playJob = scope.launch {
 			acquireWakeLock()
+			var result: PlaybackResult = PlaybackResult.Stopped
 			try {
-				// Variables start empty each run, so a script cannot inherit
-				// state from the previous playback.
+				// A run starts from the globals rather than from nothing, so the
+				// same script can be driven with different values.
 				executeEvents(events, globalRandom, ScriptContext())
+				result = PlaybackResult.Completed(degraded)
 			} catch (stop: BreakSignal) {
 				Log.w(TAG, "break outside any loop, ending playback")
+				result = PlaybackResult.Completed(degraded)
+			} catch (cancel: CancellationException) {
+				Log.i(TAG, "playback stopped")
+				throw cancel
+			} catch (e: Exception) {
+				Log.e(TAG, "playback failed", e)
+				result = PlaybackResult.Failed(e.message ?: e.javaClass.simpleName)
 			} finally {
 				releaseWakeLock()
-				onFinished?.invoke()
+				onFinished?.invoke(result)
 			}
 		}
 	}
@@ -308,8 +333,12 @@ object GestureExecutor {
 	 */
 	private var lastError: String? = null
 	private var lastErrorAt = 0L
+	private var degraded = 0
 
 	private suspend fun reportError(reason: String) {
+		// Counted before the throttle below, so a step failing the same way once
+		// per loop iteration is reported as the many skips it actually was.
+		degraded++
 		val now = System.currentTimeMillis()
 		if (reason == lastError && now - lastErrorAt < ERROR_REPEAT_MS) return
 		lastError = reason

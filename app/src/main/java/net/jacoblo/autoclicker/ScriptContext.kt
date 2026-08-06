@@ -13,12 +13,14 @@ class BreakSignal : Exception(null, null, false, false)
 /**
  * Variables and built-in functions for one playback run.
  *
- * A fresh instance per run, so a script cannot be influenced by values left
- * over from the previous one.
+ * A fresh instance per run, seeded from [GlobalStore] so a script can be driven
+ * with values chosen from outside it. Everything after that is local: a Set step
+ * shadows a global for the rest of the run without writing it back, so nothing a
+ * script does to a variable can be inherited by the next playback.
  */
 class ScriptContext : EvalContext {
 
-	private val variables = mutableMapOf<String, Value>()
+	private val variables = GlobalStore.all().toMutableMap()
 
 	override fun variable(name: String): Value? = variables[name]
 

@@ -6,6 +6,10 @@ import org.json.JSONObject
 
 private const val TAG = "autoclicker.settings"
 
+// Droidvate's own control server sits on 8127; this is the neighbouring port so
+// the two are recognisable as a pair.
+private const val DEFAULT_CONTROL_PORT = 8128
+
 /**
  * Persisted user settings, initialised once from [AutoClickerApp].
  *
@@ -64,6 +68,18 @@ object AppSettings {
 		get() = values.optString("codeServer", "")
 		set(value) {
 			values.put("codeServer", value.trim())
+			save()
+		}
+
+	/**
+	 * Loopback port the control server binds, for driving playback from another
+	 * app on the device. Read once at service start, so a change needs the
+	 * bubble restarted.
+	 */
+	var controlPort: Int
+		get() = values.optInt("controlPort", DEFAULT_CONTROL_PORT)
+		set(value) {
+			values.put("controlPort", value)
 			save()
 		}
 

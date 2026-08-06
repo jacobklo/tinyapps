@@ -9,6 +9,10 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat // Added for better compatibility
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 
 private const val CHANNEL_ID = "Calendar"
 private const val NOTIFICATION_ID = 1
@@ -17,6 +21,8 @@ class NotificationService : Service() {
 
     private var bubble: Bubble? = null
     private var triggers: TriggerRunner? = null
+    private var control: ControlServer? = null
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onBind(intent: Intent?): IBinder? {
         return null
@@ -28,6 +34,9 @@ class NotificationService : Service() {
         bubble = Bubble(this)
         // Hosted here so triggers keep watching for as long as the bubble does.
         triggers = TriggerRunner(this).apply { start() }
+        // Likewise the control server: playback needs the bubble's backend, so
+        // there is nothing to drive when this service is not running.
+        control = ControlServer(AppSettings.controlPort, scope).apply { start() }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -39,6 +48,8 @@ class NotificationService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         triggers?.stop()
+        control?.stop()
+        scope.cancel()
         bubble?.remove()
     }
 
