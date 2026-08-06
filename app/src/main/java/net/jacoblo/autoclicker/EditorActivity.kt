@@ -53,43 +53,75 @@ private fun swipe(fromX: Float, fromY: Float, toX: Float, toY: Float) = listOf(
     )
 )
 
-private val STEP_OPTIONS = listOf(
-    StepOption("Tap") { listOf(ClickInteraction(0.5f, 0.5f, duration = 50, delayBefore = 0)) },
-    StepOption("Double tap") {
-        listOf(ClickInteraction(0.5f, 0.5f, duration = 50, taps = 2, delayBefore = 0))
-    },
-    StepOption("Long press") { listOf(ClickInteraction(0.5f, 0.5f, duration = 800, delayBefore = 0)) },
-    // Named by which way the finger travels, because "scroll down" means the
-    // opposite thing to different people.
-    StepOption("Swipe up") { swipe(0.5f, 0.7f, 0.5f, 0.3f) },
-    StepOption("Swipe down") { swipe(0.5f, 0.3f, 0.5f, 0.7f) },
-    StepOption("Swipe left") { swipe(0.7f, 0.5f, 0.3f, 0.5f) },
-    StepOption("Swipe right") { swipe(0.3f, 0.5f, 0.7f, 0.5f) },
-    StepOption("Wait") { listOf(WaitInteraction(delayBefore = 1000)) },
-    StepOption("Toast") { listOf(ToastInteraction("", 0)) },
-    StepOption("Text input") { listOf(TextInteraction(text = "", delayBefore = 0)) },
-    StepOption("Set variable") { listOf(SetVariableInteraction("count", "0", 0)) },
-    StepOption("Focus field") { listOf(FocusFieldInteraction("field", 0)) },
-    StepOption("Wait for code") {
+/** A named set of steps, so the picker is two short lists instead of one long one. */
+private class StepGroup(val label: String, val options: List<StepOption>)
+
+/**
+ * What can be inserted, grouped by what you are trying to do.
+ *
+ * There is one step per *kind* of thing, not one per setting of it. A double
+ * tap is a tap with Taps 2 and a long press is a tap with a longer Hold, so
+ * they were three entries that all built the same step and then hid the field
+ * that actually distinguished them. The four swipes were the same: a direction
+ * is where the coordinates start and end, which the step already shows.
+ */
+private val STEP_GROUPS = listOf(
+    StepGroup(
+        "Touch",
         listOf(
-            WaitCodeInteraction(
-                variable = "codes",
-                maxAgeSeconds = DEFAULT_CODE_MAX_AGE_S,
-                timeoutMs = DEFAULT_CODE_TIMEOUT_MS,
-                delayBefore = 0
-            )
+            // Taps and Hold ms turn this one step into a double tap, a triple
+            // tap or a long press.
+            StepOption("Tap") { listOf(ClickInteraction(0.5f, 0.5f, duration = 50, delayBefore = 0)) },
+            // Starts as a swipe up, which scrolls a page down; the ends are
+            // editable and are what make it any other direction.
+            StepOption("Swipe") { swipe(0.5f, 0.7f, 0.5f, 0.3f) }
         )
-    },
-    StepOption("Key event") { listOf(KeyEventInteraction("BACK", 0)) },
-    StepOption("Launch app") { listOf(LaunchAppInteraction("", 0)) },
-    StepOption("Shell command") { listOf(ShellInteraction("", 0)) },
-    StepOption("Repeat block") { listOf(LoopStartInteraction(repeatCount = 2), LoopEndInteraction()) },
-    StepOption("While block") { listOf(WhileStartInteraction("1 == 1"), WhileEndInteraction()) },
-    StepOption("If block") { listOf(IfStartInteraction("1 == 1"), IfEndInteraction()) },
-    StepOption("Else if") { listOf(ElseIfInteraction("1 == 1")) },
-    StepOption("Else") { listOf(ElseInteraction()) },
-    StepOption("Random block") { listOf(RandomSelectStartInteraction(), RandomSelectEndInteraction()) },
-    StepOption("Break") { listOf(BreakInteraction()) }
+    ),
+    StepGroup(
+        "Typing",
+        listOf(
+            StepOption("Type text") { listOf(TextInteraction(text = "", delayBefore = 0)) },
+            StepOption("Focus field") { listOf(FocusFieldInteraction("field", 0)) },
+            StepOption("Key press") { listOf(KeyEventInteraction("BACK", 0)) }
+        )
+    ),
+    StepGroup(
+        "Waiting",
+        listOf(
+            StepOption("Wait") { listOf(WaitInteraction(delayBefore = 1000)) },
+            StepOption("Wait for code") {
+                listOf(
+                    WaitCodeInteraction(
+                        variable = "codes",
+                        maxAgeSeconds = DEFAULT_CODE_MAX_AGE_S,
+                        timeoutMs = DEFAULT_CODE_TIMEOUT_MS,
+                        delayBefore = 0
+                    )
+                )
+            }
+        )
+    ),
+    StepGroup(
+        "Logic",
+        listOf(
+            StepOption("Set variable") { listOf(SetVariableInteraction("count", "0", 0)) },
+            StepOption("If block") { listOf(IfStartInteraction("1 == 1"), IfEndInteraction()) },
+            StepOption("Else if") { listOf(ElseIfInteraction("1 == 1")) },
+            StepOption("Else") { listOf(ElseInteraction()) },
+            StepOption("Repeat block") { listOf(LoopStartInteraction(repeatCount = 2), LoopEndInteraction()) },
+            StepOption("While block") { listOf(WhileStartInteraction("1 == 1"), WhileEndInteraction()) },
+            StepOption("Random block") { listOf(RandomSelectStartInteraction(), RandomSelectEndInteraction()) },
+            StepOption("Break") { listOf(BreakInteraction()) }
+        )
+    ),
+    StepGroup(
+        "System",
+        listOf(
+            StepOption("Launch app") { listOf(LaunchAppInteraction("", 0)) },
+            StepOption("Shell command") { listOf(ShellInteraction("", 0)) },
+            StepOption("Toast") { listOf(ToastInteraction("", 0)) }
+        )
+    )
 )
 
 /**
@@ -113,107 +145,127 @@ private const val RELATIVE_HELP =
 
 private fun helpFor(interaction: Interaction): StepHelp = when (interaction) {
     is ClickInteraction -> StepHelp(
-        "Taps one point. Hold ms is how long the finger stays down, so 800 or " +
-            "more is a long press; Taps repeats the press, so 2 is a double " +
-            "tap. Rand px scatters the point a little on every replay. " +
-            RELATIVE_HELP,
+        "Touches one point. Hold ms is how long the finger stays down and Taps " +
+            "is how many times it presses, so this one step is also a double " +
+            "tap, a triple tap and a long press. Rand px scatters the point a " +
+            "little on every replay. " + RELATIVE_HELP,
         listOf(
-            "Hold 50, Taps 1     a normal tap",
-            "Hold 50, Taps 2     a double tap",
-            "Hold 800, Taps 1    a long press",
-            "Relative to \"calc\", dX 20, dY 15    inside the found image",
-            "Relative to \"calc\", dX 0, dY -60    above it"
+            "Hold 50, Taps 1                     a normal tap",
+            "Hold 50, Taps 2                     a double tap",
+            "Hold 800, Taps 1                    a long press",
+            "Text \"Continue\", dX 90, dY 16      the middle of that word",
+            "Image \"calc\", dX 0, dY -60         just above the image"
         )
     )
 
     is DragInteraction -> StepHelp(
-        "Swipes from one point to another. A swipe up scrolls the page down. " +
-            "Swipe ms is how long the finger takes to travel -- slower reads as " +
-            "a drag, faster as a fling. Rand start scatters the ends, Rand mid " +
-            "the middle. A recorded swipe keeps its original path, pressure and " +
-            "timing, and only its start can be moved. " + RELATIVE_HELP
+        "Drags from one point to another, which is how you scroll, flick or " +
+            "move something. A swipe up scrolls the page down. Swipe ms is how " +
+            "long the finger takes to travel, so slower reads as a drag and " +
+            "faster as a fling. Rand start scatters the ends and Rand mid the " +
+            "middle. A recorded swipe keeps its own path, pressure and timing, " +
+            "and only its start can be moved. " + RELATIVE_HELP,
+        listOf(
+            "Start 540,1700 to end 540,700       swipe up, scrolls down",
+            "Start 540,700 to end 540,1700       swipe down, scrolls up",
+            "Swipe ms 120                        a fling",
+            "Swipe ms 600                        a slow drag"
+        )
     )
 
     is TextInteraction -> StepHelp(
-        "Types into whatever field currently has focus. Tap the field first " +
-            "with a Click step. Plain text is typed as written; anything in " +
-            "braces is worked out first, which is how a code that was looked up " +
-            "gets typed.",
+        "Types into whatever field has focus, one character at a time with a " +
+            "human-sized gap between them. Put a Focus field step in front of " +
+            "it unless the screen already opened with the cursor in place. " +
+            "Plain text is typed as written; anything in braces is worked out " +
+            "first, which is how a code that was looked up gets typed.",
         listOf(
             "hello world",
-            "{codes[0]}",
+            "{codes[0]}                          the best code found",
+            "{codes[i]}                          the one this loop is on",
             "user{count}@example.com"
         )
     )
 
-    is WaitInteraction -> StepHelp("Pauses. The Wait ms field is the whole action.")
+    is FocusFieldInteraction -> StepHelp(
+        "Puts the cursor in the text field on screen by asking the window " +
+            "where it is, rather than tapping a remembered spot. Touches " +
+            "nothing if the field already has focus. The variable is left " +
+            "holding how many characters the field already contains, so a " +
+            "While guarded on it clears the field exactly. Needs root. If " +
+            "there is no field, or several with none focused, nothing is " +
+            "touched and an error is shown.",
+        listOf(
+            "field       then While field > 0:  Key DEL,  Set field = field - 1",
+            "chars       any name you like"
+        )
+    )
+
+    is WaitInteraction -> StepHelp(
+        "Pauses and does nothing else. The Wait ms field is the whole step. " +
+            "Every other step has the same field, so use this one only where a " +
+            "pause is the point.",
+        listOf("1000        a second", "5000        five seconds")
+    )
 
     is ToastInteraction -> StepHelp(
-        "Shows a short message on screen. Plain text is shown as written; " +
-            "anything in braces is worked out first.",
+        "Shows a short message on screen, which is the simplest way to see " +
+            "what a run is doing. Plain text is shown as written; anything in " +
+            "braces is worked out first.",
         listOf(
             "Finished",
             "attempt {count} of 3",
+            "{codes[i]} is next",
             "{total - done} left to go"
         )
     )
 
     is SetVariableInteraction -> StepHelp(
         "Stores a value under a name for the rest of this run. Variables start " +
-            "at 0 and are forgotten when playback ends.",
+            "at 0 and are forgotten when playback ends. The same expressions " +
+            "work here as in a condition, so this is also how you ask about " +
+            "the screen and keep the answer.",
         listOf(
             "0",
             "count + 1",
-            "random(2, 5)",
+            "random(2, 5)                        a number in that range",
+            "count % 3",
             "\"page \" + count",
-            "count % 3"
-        )
-    )
-
-    is FocusFieldInteraction -> StepHelp(
-        "Puts the cursor in the text field on screen, wherever it is, by asking " +
-            "the window rather than by tapping a remembered spot. Taps nothing " +
-            "when the field already has focus. The variable is left holding how " +
-            "many characters the field already contains, so a Repeat of Key DEL " +
-            "guarded on it clears the field exactly. Needs root. If there is no " +
-            "field, or several and none focused, nothing is touched and an error " +
-            "is shown.",
-        listOf(
-            "field               then While field > 0: Key DEL, Set field = field - 1",
-            "chars               names it something else"
+            "waitTextAppear(\"Inbox\", 8000)      wait, and store whether it came"
         )
     )
 
     is WaitCodeInteraction -> StepHelp(
         "Waits for six-digit verification codes from the gmail-six-digit " +
-            "service, then stores them in the variable as a list, best guess " +
-            "first. Max age s is what makes it a wait: the service keeps ten " +
-            "minutes of history, so without it you would get the code from your " +
-            "last login straight away. Set the service address in Settings. If " +
-            "nothing arrives before the timeout the variable is left empty and " +
-            "an error is shown.",
+            "service and stores them in the variable as a list, best guess " +
+            "first. Max age s is what makes it a wait rather than a read: the " +
+            "service keeps ten minutes of history, so without it you would get " +
+            "the code from your last login straight away. Set the service " +
+            "address in Settings. If nothing arrives before the timeout the " +
+            "variable is left empty and an error is shown.",
         listOf(
-            "{codes[0]}          in a Text step, types the best code",
-            "count(codes)        how many arrived",
-            "count(codes) == 0   nothing came, use in an If",
-            "{codes}             all of them, for a Toast"
+            "{codes[0]}                          in a Type text step, the best code",
+            "count(codes)                        how many arrived",
+            "While i < count(codes)              try each in turn"
         )
     )
 
     is KeyEventInteraction -> StepHelp(
-        "Presses a system or hardware key, by its Android key name.",
+        "Presses a hardware or system key by name. Several names separated by " +
+            "spaces are pressed in order. Needs root.",
         listOf(
-            "BACK",
-            "HOME",
-            "APP_SWITCH  (recent apps)",
+            "BACK, HOME, APP_SWITCH",
             "ENTER, TAB, DEL",
+            "MOVE_END                            cursor to the end of the field",
+            "MOVE_END DEL DEL DEL                and rub out three characters",
             "VOLUME_UP, VOLUME_DOWN, POWER"
         )
     )
 
     is LaunchAppInteraction -> StepHelp(
-        "Opens an app by package name. Find one with a Shell step running " +
-            "\"pm list packages\".",
+        "Opens an app by package name, as though it were tapped on the home " +
+            "screen. Find one with a Shell step running \"pm list packages\". " +
+            "Needs root.",
         listOf(
             "com.android.settings",
             "com.android.chrome"
@@ -221,38 +273,58 @@ private fun helpFor(interaction: Interaction): StepHelp = when (interaction) {
     )
 
     is ShellInteraction -> StepHelp(
-        "Runs a command as root. Output is not shown, only logged.",
+        "Runs a command as root. Output is not shown, only logged, so this is " +
+            "for doing something rather than reading something back.",
         listOf(
-            "am force-stop com.example.app",
-            "pm clear com.example.app",
-            "svc wifi disable"
+            "am force-stop com.example.app       close an app",
+            "pm clear com.example.app            wipe its data",
+            "svc wifi disable",
+            "input keycombination KEYCODE_CTRL_LEFT KEYCODE_A     select all"
         )
     )
 
     is IfStartInteraction, is ElseIfInteraction, is WhileStartInteraction -> StepHelp(
-        "Runs the steps inside when the condition holds. While repeats them " +
-            "for as long as it holds. Compare with == != < > <= >=, combine " +
-            "with && || !, and ask about the screen with image() or " +
-            "waitImage(), which waits up to the given milliseconds.",
+        "Runs the steps inside when the condition holds; While repeats them " +
+            "for as long as it does. Compare with == != < > <= >=, combine " +
+            "with && || !, and ask about the screen with textAppear() or " +
+            "image(). The waiting forms, waitTextAppear() and waitImage(), " +
+            "poll up to the milliseconds given and answer as soon as it shows " +
+            "up. Text is read by the on-device recogniser and matches " +
+            "capitals unless a final false says otherwise; an image is matched " +
+            "against a saved area and takes an optional percentage instead.",
         listOf(
             "count < 3",
-            "image(\"start_button\")",
-            "waitImage(\"popup\", 5000)",
-            "!image(\"error\") && count > 0",
-            "image(\"button\", 95)   (needs 95% match)"
+            "textAppear(\"Continue\")             those words are on screen",
+            "textAppear(\"continue\", false)      ignoring capitals",
+            "waitTextAppear(\"Inbox\", 5000)      wait up to 5s for them",
+            "!textAppear(\"Wrong code\")          they are not there",
+            "image(\"start_button\")              a saved area is on screen",
+            "image(\"button\", 95)                needing a 95% match",
+            "i < count(codes)                    once per code found"
         )
     )
 
     is LoopStartInteraction -> StepHelp(
         "Repeats the steps inside a set number of times. Set the count to 0 to " +
-            "repeat until Break or the stop button."
+            "repeat until a Break step or the stop button.",
+        listOf(
+            "3           three times",
+            "0           until Break or stop"
+        )
     )
 
     is RandomSelectStartInteraction -> StepHelp(
-        "Runs exactly one of the steps inside, chosen at random each time."
+        "Runs exactly one of the steps inside, chosen at random each time it " +
+            "is reached. Useful for varying a run so it does not repeat itself " +
+            "identically."
     )
 
-    is BreakInteraction -> StepHelp("Leaves the innermost Repeat or While immediately.")
+    is BreakInteraction -> StepHelp(
+        "Leaves the innermost Repeat or While immediately and carries on after " +
+            "it. Usually sits inside an If, so the loop stops once something " +
+            "has worked.",
+        listOf("If textAppear(\"Welcome\") then Break      stop once it is done")
+    )
 
     is ElseInteraction -> StepHelp("Runs when none of the conditions above it held.")
 
@@ -303,7 +375,8 @@ fun EditorScreen(file: File, onBack: () -> Unit) {
     var nextRowId by remember { mutableLongStateOf(initialInteractions.size.toLong()) }
 
     var globalRandom by remember { mutableIntStateOf(recordingData.globalRandom) }
-    var stepToAdd by remember { mutableStateOf(STEP_OPTIONS.first()) }
+    var groupToAdd by remember { mutableStateOf(STEP_GROUPS.first()) }
+    var stepToAdd by remember { mutableStateOf(STEP_GROUPS.first().options.first()) }
     // Only one row is expanded at a time; collapsed rows are a single summary line.
     var expandedId by remember { mutableStateOf<Long?>(null) }
     var confirmDiscard by remember { mutableStateOf(false) }
@@ -356,22 +429,53 @@ fun EditorScreen(file: File, onBack: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                NumberField(
-                    value = globalRandom.toLong(),
-                    onValueChange = { globalRandom = it.toInt() },
-                    label = "Rand ms",
-                    modifier = Modifier.width(110.dp)
+                DropdownPicker(
+                    label = "Group",
+                    selected = groupToAdd.label,
+                    options = STEP_GROUPS.map { it.label },
+                    onSelected = { picked ->
+                        groupToAdd = STEP_GROUPS.first { it.label == picked }
+                        // The step below it has to belong to the group above, or
+                        // the button would insert whatever was left selected.
+                        stepToAdd = groupToAdd.options.first()
+                    },
+                    modifier = Modifier.weight(1f)
                 )
 
-                StepPicker(
-                    selected = stepToAdd,
-                    onSelected = { stepToAdd = it },
+                DropdownPicker(
+                    label = "Step",
+                    selected = stepToAdd.label,
+                    options = groupToAdd.options.map { it.label },
+                    onSelected = { picked ->
+                        stepToAdd = groupToAdd.options.first { it.label == picked }
+                    },
                     modifier = Modifier.weight(1f)
                 )
 
                 FilledIconButton(onClick = { stepToAdd.create().forEach { add(it) } }) {
                     Icon(Icons.Default.Add, contentDescription = "Add step")
                 }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp)
+                    .padding(bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                NumberField(
+                    value = globalRandom.toLong(),
+                    onValueChange = { globalRandom = it.toInt() },
+                    label = "Rand ms",
+                    modifier = Modifier.width(110.dp)
+                )
+                Text(
+                    "added to every step's wait, so a run is not identically timed",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
             if (!isBalanced(interactions)) {
@@ -459,11 +563,14 @@ fun EditorScreen(file: File, onBack: () -> Unit) {
     }
 }
 
+/** A read-only dropdown over a list of labels. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun StepPicker(
-    selected: StepOption,
-    onSelected: (StepOption) -> Unit,
+private fun DropdownPicker(
+    label: String,
+    selected: String,
+    options: List<String>,
+    onSelected: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -474,18 +581,18 @@ private fun StepPicker(
         modifier = modifier
     ) {
         OutlinedTextField(
-            value = selected.label,
+            value = selected,
             onValueChange = {},
             readOnly = true,
             singleLine = true,
-            label = { Text("Add step") },
+            label = { Text(label) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            STEP_OPTIONS.forEach { option ->
+            options.forEach { option ->
                 DropdownMenuItem(
-                    text = { Text(option.label) },
+                    text = { Text(option) },
                     onClick = {
                         onSelected(option)
                         expanded = false
@@ -617,13 +724,17 @@ private fun InteractionFields(interaction: Interaction, onUpdate: (Interaction) 
 
         when (interaction) {
             is ClickInteraction -> {
-                var byText by remember { mutableStateOf(interaction.anchorText.isNotBlank()) }
-                val anchored = interaction.anchor.isNotBlank() || byText
+                var mode by remember {
+                    mutableStateOf(AnchorMode.of(interaction.anchor, interaction.anchorText))
+                }
+                // A mode that is picked but not yet filled in still means the
+                // coordinates are offsets, or dX 100 would be reread as 108000.
+                val anchored = mode != AnchorMode.SCREEN
                 AnchorPicker(
                     selected = interaction.anchor,
                     selectedText = interaction.anchorText,
-                    byText = byText,
-                    onByTextChange = { byText = it },
+                    mode = mode,
+                    onModeChange = { mode = it },
                     onAnchor = { image, phrase ->
                         onUpdate(interaction.copy(anchor = image, anchorText = phrase))
                     }
@@ -662,8 +773,10 @@ private fun InteractionFields(interaction: Interaction, onUpdate: (Interaction) 
                 )
             }
             is DragInteraction -> {
-                var byText by remember { mutableStateOf(interaction.anchorText.isNotBlank()) }
-                val anchored = interaction.anchor.isNotBlank() || byText
+                var mode by remember {
+                    mutableStateOf(AnchorMode.of(interaction.anchor, interaction.anchorText))
+                }
+                val anchored = mode != AnchorMode.SCREEN
                 val start = interaction.points.firstOrNull()
                 val end = interaction.points.lastOrNull()
                 // A recorded path has many points and only its start is
@@ -673,8 +786,8 @@ private fun InteractionFields(interaction: Interaction, onUpdate: (Interaction) 
                 AnchorPicker(
                     selected = interaction.anchor,
                     selectedText = interaction.anchorText,
-                    byText = byText,
-                    onByTextChange = { byText = it },
+                    mode = mode,
+                    onModeChange = { mode = it },
                     onAnchor = { image, phrase ->
                         onUpdate(interaction.copy(anchor = image, anchorText = phrase))
                     }
@@ -883,72 +996,80 @@ private fun TextFieldEntry(
  * A dropdown rather than a text box because a mistyped area name would look
  * identical to one that simply is not on screen -- both just skip the gesture.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * What the coordinates are measured from: the screen, a saved image, or words.
+ *
+ * The three are shown as a row of choices with only the one that is picked
+ * carrying any detail below it. Folding them into a single list meant the
+ * phrase and the image name were both on screen at once even though a step can
+ * only ever use one, and "Text on screen" sat in the same list as the image
+ * names as though it were another image.
+ */
 @Composable
 private fun AnchorPicker(
     selected: AnchorImage,
     selectedText: String,
-    // Both origins move together in one update. Setting them through separate
-    // callbacks meant the second copied the step as it was before the first,
-    // so picking an area cleared the very anchor it had just set.
-    // Which kind is being edited, rather than which is set. It is held by the
-    // caller because the coordinates depend on it too: a phrase that has been
-    // chosen but not yet typed is still an offset, and letting it read as
-    // absolute rewrites dX 100 into 108000 on the way past.
-    byText: Boolean,
-    onByTextChange: (Boolean) -> Unit,
+    mode: AnchorMode,
+    onModeChange: (AnchorMode) -> Unit,
     onAnchor: (AnchorImage, String) -> Unit
 ) {
     val revision by ScreenshotStore.revision.collectAsState()
     val areas = remember(revision) { ScreenshotStore.list().map { it.name } }
-    var expanded by remember { mutableStateOf(false) }
 
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = !expanded },
-        modifier = Modifier.width(200.dp)
-    ) {
-        OutlinedTextField(
-            value = if (byText) TEXT_LABEL else selected.ifBlank { ABSOLUTE_LABEL },
-            onValueChange = {},
-            readOnly = true,
-            singleLine = true,
-            label = { Text("Relative to") },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
-        )
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            (listOf(ABSOLUTE_LABEL, TEXT_LABEL) + areas).forEach { option ->
-                DropdownMenuItem(
-                    text = { Text(option) },
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("Relative to", style = MaterialTheme.typography.labelMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AnchorMode.entries.forEach { option ->
+                FilterChip(
+                    selected = mode == option,
                     onClick = {
-                        onByTextChange(option == TEXT_LABEL)
+                        onModeChange(option)
+                        // Only ever one origin, so picking a mode clears the other.
                         when (option) {
-                            // Whatever phrase was already typed is kept, so
-                            // going away and back does not lose it.
-                            TEXT_LABEL -> onAnchor("", selectedText)
-                            ABSOLUTE_LABEL -> onAnchor("", "")
-                            else -> onAnchor(option, "")
+                            AnchorMode.SCREEN -> onAnchor("", "")
+                            AnchorMode.IMAGE -> onAnchor(selected, "")
+                            AnchorMode.TEXT -> onAnchor("", selectedText)
                         }
-                        expanded = false
-                    }
+                    },
+                    label = { Text(option.label) }
                 )
             }
         }
-    }
 
-    if (byText) {
-        TextFieldEntry(
-            value = selectedText,
-            onValueChange = { onAnchor("", it) },
-            label = "Phrase",
-            width = 200.dp
-        )
+        when (mode) {
+            AnchorMode.SCREEN -> {}
+            AnchorMode.IMAGE -> DropdownPicker(
+                label = "Saved image",
+                selected = selected.ifBlank { "Pick one" },
+                options = areas,
+                onSelected = { onAnchor(it, "") },
+                modifier = Modifier.width(220.dp)
+            )
+            AnchorMode.TEXT -> TextFieldEntry(
+                value = selectedText,
+                onValueChange = { onAnchor("", it) },
+                label = "Words on screen",
+                width = 220.dp
+            )
+        }
     }
 }
 
-private const val ABSOLUTE_LABEL = "Screen (absolute)"
-private const val TEXT_LABEL = "Text on screen"
+/** Which of the three kinds of origin a gesture is using. */
+enum class AnchorMode(val label: String) {
+    SCREEN("Screen"),
+    IMAGE("Image"),
+    TEXT("Text");
+
+    companion object {
+        fun of(anchor: AnchorImage, anchorText: String) = when {
+            anchorText.isNotBlank() -> TEXT
+            anchor.isNotBlank() -> IMAGE
+            else -> SCREEN
+        }
+    }
+}
+
 
 /**
  * One coordinate, always shown in pixels.
