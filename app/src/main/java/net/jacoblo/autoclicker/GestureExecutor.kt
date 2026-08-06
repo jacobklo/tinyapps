@@ -185,10 +185,12 @@ object GestureExecutor {
 				is ClickInteraction -> runClick(
 					event.x, event.y, event.duration, event.randomFactor,
 					TouchSample(event.pressure, event.touchMajor, event.touchMinor),
-					event.anchor, event.taps
+					event.anchor, event.anchorText, event.taps
 				)
-				is DragInteraction ->
-					runDrag(event.points, event.randomFactorStart, event.randomFactorHighest, event.anchor)
+				is DragInteraction -> runDrag(
+					event.points, event.randomFactorStart, event.randomFactorHighest,
+					event.anchor, event.anchorText
+				)
 				// Braces are worked out the same way a Toast does, which is the
 				// only way a script can type something it looked up rather than
 				// something that was written into it.
@@ -273,7 +275,19 @@ object GestureExecutor {
 	 * gesture that silently does nothing looks the same as a broken script, so
 	 * the reason is shown as well as logged.
 	 */
-	private suspend fun anchorOrigin(anchor: AnchorImage): Pair<Float, Float>? {
+	private suspend fun anchorOrigin(anchor: AnchorImage, anchorText: String): Pair<Float, Float>? {
+		// A phrase wins when both are set: it is the more specific thing to have
+		// said, and a script carrying both was written around the words.
+		if (anchorText.isNotBlank()) {
+			return when (val result = withContext(Dispatchers.IO) { ScreenText.find(anchorText) }) {
+				is TextSearch.Found -> result.box.left.toFloat() to result.box.top.toFloat()
+				is TextSearch.Missing -> {
+					Log.w(TAG, "anchor text '$anchorText' unusable: ${result.reason}, skipping gesture")
+					reportError(result.reason)
+					null
+				}
+			}
+		}
 		if (anchor.isBlank()) return 0f to 0f
 		return when (val result = withContext(Dispatchers.IO) { ScreenConditions.search(anchor) }) {
 			is AreaSearch.Found -> result.match.x.toFloat() to result.match.y.toFloat()
@@ -314,14 +328,16 @@ object GestureExecutor {
 		randomFactor: Int,
 		sample: TouchSample = TouchSample(0, 0, 0),
 		anchor: AnchorImage = "",
+		anchorText: String = "",
 		taps: Int = 1
 	) {
-		val (originX, originY) = anchorOrigin(anchor) ?: return
+		val (originX, originY) = anchorOrigin(anchor, anchorText) ?: return
+		val anchored = anchor.isNotBlank() || anchorText.isNotBlank()
 		repeat(taps.coerceAtLeast(1)) { index ->
 			if (index > 0) delay(TAP_GAP_MS)
 			// Re-jittered per tap, so a double tap does not land twice on the
 			// exact same pixel.
-			tap(x, y, duration, randomFactor, sample, originX, originY, anchor.isNotBlank())
+			tap(x, y, duration, randomFactor, sample, originX, originY, anchored)
 		}
 	}
 
@@ -364,11 +380,12 @@ object GestureExecutor {
 		points: List<DragPoint>,
 		randomFactorStart: Int,
 		randomFactorHighest: Int,
-		anchor: AnchorImage = ""
+		anchor: AnchorImage = "",
+		anchorText: String = ""
 	) {
 		if (points.isEmpty()) return
-		val (originX, originY) = anchorOrigin(anchor) ?: return
-		val anchored = anchor.isNotBlank()
+		val (originX, originY) = anchorOrigin(anchor, anchorText) ?: return
+		val anchored = anchor.isNotBlank() || anchorText.isNotBlank()
 		val screen = ScreenGeometry.current(AppSettings.appContext)
 		val pixels = points.map {
 			it.copy(

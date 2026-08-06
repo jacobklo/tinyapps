@@ -105,8 +105,11 @@ private const val RELATIVE_HELP =
     "Relative to picks what the coordinates are measured from. On Screen they " +
         "are a place on the display; on a saved area they are pixels from " +
         "wherever that area is found when the step runs, and may be negative. " +
-        "The area is searched for each time, which needs root and costs about " +
-        "half a second, and the gesture is skipped if it is not on screen."
+        "on a phrase they are pixels from wherever those words are read on " +
+        "screen. Either is looked for each time, which needs root, and the " +
+        "gesture is skipped if it is not there. A saved area costs about half a " +
+        "second and matches only the pixels it was cropped from; a phrase costs " +
+        "a little more and survives the words moving or being restyled."
 
 private fun helpFor(interaction: Interaction): StepHelp = when (interaction) {
     is ClickInteraction -> StepHelp(
@@ -614,10 +617,12 @@ private fun InteractionFields(interaction: Interaction, onUpdate: (Interaction) 
 
         when (interaction) {
             is ClickInteraction -> {
-                val anchored = interaction.anchor.isNotBlank()
+                val anchored = interaction.anchor.isNotBlank() || interaction.anchorText.isNotBlank()
                 AnchorPicker(
                     selected = interaction.anchor,
-                    onSelected = { onUpdate(interaction.copy(anchor = it)) }
+                    selectedText = interaction.anchorText,
+                    onSelected = { onUpdate(interaction.copy(anchor = it)) },
+                    onTextSelected = { onUpdate(interaction.copy(anchorText = it)) }
                 )
                 CoordField(
                     value = interaction.x,
@@ -662,7 +667,9 @@ private fun InteractionFields(interaction: Interaction, onUpdate: (Interaction) 
 
                 AnchorPicker(
                     selected = interaction.anchor,
-                    onSelected = { onUpdate(interaction.copy(anchor = it)) }
+                    selectedText = interaction.anchorText,
+                    onSelected = { onUpdate(interaction.copy(anchor = it)) },
+                    onTextSelected = { onUpdate(interaction.copy(anchorText = it)) }
                 )
                 if (start != null) {
                     // Editing the start translates the whole path, which is what
@@ -870,10 +877,18 @@ private fun TextFieldEntry(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AnchorPicker(selected: AnchorImage, onSelected: (AnchorImage) -> Unit) {
+private fun AnchorPicker(
+    selected: AnchorImage,
+    selectedText: String,
+    onSelected: (AnchorImage) -> Unit,
+    onTextSelected: (String) -> Unit
+) {
     val revision by ScreenshotStore.revision.collectAsState()
     val areas = remember(revision) { ScreenshotStore.list().map { it.name } }
     var expanded by remember { mutableStateOf(false) }
+    // Which kind is being edited, rather than which is set: the phrase field
+    // has to stay on screen while it is still empty and being typed into.
+    var byText by remember { mutableStateOf(selectedText.isNotBlank()) }
 
     ExposedDropdownMenuBox(
         expanded = expanded,
@@ -881,7 +896,7 @@ private fun AnchorPicker(selected: AnchorImage, onSelected: (AnchorImage) -> Uni
         modifier = Modifier.width(200.dp)
     ) {
         OutlinedTextField(
-            value = selected.ifBlank { ABSOLUTE_LABEL },
+            value = if (byText) TEXT_LABEL else selected.ifBlank { ABSOLUTE_LABEL },
             onValueChange = {},
             readOnly = true,
             singleLine = true,
@@ -890,20 +905,32 @@ private fun AnchorPicker(selected: AnchorImage, onSelected: (AnchorImage) -> Uni
             modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            (listOf(ABSOLUTE_LABEL) + areas).forEach { option ->
+            (listOf(ABSOLUTE_LABEL, TEXT_LABEL) + areas).forEach { option ->
                 DropdownMenuItem(
                     text = { Text(option) },
                     onClick = {
-                        onSelected(if (option == ABSOLUTE_LABEL) "" else option)
+                        byText = option == TEXT_LABEL
+                        onSelected(if (option == ABSOLUTE_LABEL || byText) "" else option)
+                        if (!byText) onTextSelected("")
                         expanded = false
                     }
                 )
             }
         }
     }
+
+    if (byText) {
+        TextFieldEntry(
+            value = selectedText,
+            onValueChange = onTextSelected,
+            label = "Phrase",
+            width = 200.dp
+        )
+    }
 }
 
 private const val ABSOLUTE_LABEL = "Screen (absolute)"
+private const val TEXT_LABEL = "Text on screen"
 
 /**
  * One coordinate, always shown in pixels.
@@ -1022,11 +1049,16 @@ private fun Interaction.isBlockEnd(): Boolean = closesBlock(this) || isMidBlock(
 private fun describeInteraction(interaction: Interaction, screen: ScreenGeometry): String {
     // Anchored coordinates are already pixels, and are an offset rather than a
     // place, so they are shown signed to make that obvious.
-    fun px(x: Float, y: Float, anchor: AnchorImage) =
-        if (anchor.isBlank()) "(${(x * screen.width).toInt()}, ${(y * screen.height).toInt()})"
+    fun px(x: Float, y: Float, anchor: AnchorImage, anchorText: String = "") =
+        if (anchor.isBlank() && anchorText.isBlank())
+            "(${(x * screen.width).toInt()}, ${(y * screen.height).toInt()})"
         else "(%+d, %+d)".format(x.toInt(), y.toInt())
 
-    fun from(anchor: AnchorImage) = if (anchor.isBlank()) "" else "  from \"$anchor\""
+    fun from(anchor: AnchorImage, anchorText: String = "") = when {
+        anchorText.isNotBlank() -> "  from text \"$anchorText\""
+        anchor.isNotBlank() -> "  from \"$anchor\""
+        else -> ""
+    }
 
     val wait = if (interaction.delayBefore > 0) "wait ${interaction.delayBefore}ms  " else ""
     val label = when (interaction) {
@@ -1036,8 +1068,8 @@ private fun describeInteraction(interaction: Interaction, screen: ScreenGeometry
                 interaction.duration >= 500 -> "Long press"
                 else -> "Click"
             }
-            "$what ${px(interaction.x, interaction.y, interaction.anchor)}" +
-                "  ${interaction.duration}ms${from(interaction.anchor)}"
+            "$what ${px(interaction.x, interaction.y, interaction.anchor, interaction.anchorText)}" +
+                "  ${interaction.duration}ms${from(interaction.anchor, interaction.anchorText)}"
         }
         is DragInteraction -> {
             val start = interaction.points.firstOrNull()
@@ -1045,9 +1077,9 @@ private fun describeInteraction(interaction: Interaction, screen: ScreenGeometry
             if (start == null || end == null) {
                 "Drag (empty)"
             } else {
-                "Drag ${px(start.x, start.y, interaction.anchor)} to " +
-                    "${px(end.x, end.y, interaction.anchor)}  ${interaction.points.size} pts" +
-                    from(interaction.anchor)
+                "Drag ${px(start.x, start.y, interaction.anchor, interaction.anchorText)} to " +
+                    "${px(end.x, end.y, interaction.anchor, interaction.anchorText)}" +
+                    "  ${interaction.points.size} pts" + from(interaction.anchor, interaction.anchorText)
             }
         }
         is TextInteraction ->

@@ -52,6 +52,9 @@ data class ClickInteraction(
     // repeats the same press.
     val taps: Int = 1,
     val anchor: AnchorImage = "",
+    // Read off the screen instead of matched as a picture. Takes precedence
+    // over [anchor] when both are set.
+    val anchorText: String = "",
     // Captured from the digitizer when recorded under root; 0 means "not
     // captured", and the evdev injector substitutes a device-typical value.
     val pressure: Int = 0,
@@ -78,6 +81,7 @@ data class DragInteraction(
     // Anchoring moves the whole path with the image, so a swipe that starts on
     // a list item keeps starting on it wherever the list has scrolled to.
     val anchor: AnchorImage = "",
+    val anchorText: String = "",
     override val delayBefore: Long,
     override val name: String = ""
 ) : Interaction()
@@ -386,9 +390,9 @@ object RecordingManager {
     }
 
     // Absent means absolute, which is what every recorded gesture is.
-    private fun putAnchor(target: JSONObject, anchor: AnchorImage) {
-        if (anchor.isBlank()) return
-        target.put("anchor", anchor)
+    private fun putAnchor(target: JSONObject, anchor: AnchorImage, anchorText: String) {
+        if (anchor.isNotBlank()) target.put("anchor", anchor)
+        if (anchorText.isNotBlank()) target.put("anchorText", anchorText)
     }
 
     private fun eventToJson(event: Interaction): JSONObject? {
@@ -404,7 +408,7 @@ object RecordingManager {
                 jsonObj.put("duration", event.duration)
                 jsonObj.put("randomFactor", event.randomFactor) // Save randomFactor
                 if (event.taps > 1) jsonObj.put("taps", event.taps)
-                putAnchor(jsonObj, event.anchor)
+                putAnchor(jsonObj, event.anchor, event.anchorText)
                 putTouch(jsonObj, event.pressure, event.touchMajor, event.touchMinor)
             }
             is DragInteraction -> {
@@ -421,7 +425,7 @@ object RecordingManager {
                 jsonObj.put("points", pointsArray)
                 jsonObj.put("randomFactorStart", event.randomFactorStart) // Save randomFactorStart
                 jsonObj.put("randomFactorHighest", event.randomFactorHighest) // Save randomFactorHighest
-                putAnchor(jsonObj, event.anchor)
+                putAnchor(jsonObj, event.anchor, event.anchorText)
             }
             is TextInteraction -> {
                 jsonObj.put("type", "text")
@@ -551,6 +555,7 @@ object RecordingManager {
                     randomFactor = obj.optInt("randomFactor", 0), // Load randomFactor
                     taps = obj.optInt("taps", 1),
                     anchor = obj.optString("anchor", ""),
+                    anchorText = obj.optString("anchorText", ""),
                     pressure = obj.optInt("p", 0),
                     touchMajor = obj.optInt("maj", 0),
                     touchMinor = obj.optInt("min", 0),
@@ -589,6 +594,7 @@ object RecordingManager {
                     randomFactorStart = obj.optInt("randomFactorStart", 0), // Load randomFactorStart
                     randomFactorHighest = obj.optInt("randomFactorHighest", 0), // Load randomFactorHighest
                     anchor = obj.optString("anchor", ""),
+                    anchorText = obj.optString("anchorText", ""),
                     delayBefore = delayBefore,
                     name = name
                 )
