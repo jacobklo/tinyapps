@@ -4,13 +4,13 @@
     "events": [
         {
             "delayBefore": 500,
-            "name": "1. click the email sign-in button",
+            "name": "1. tap the email sign-in row",
             "type": "click",
-            "x": 260,
-            "y": 28,
+            "x": 100,
+            "y": 20,
             "duration": 120,
             "randomFactor": 6,
-            "anchor": "d-email-button",
+            "anchorText": "Continue with email",
             "p": 45,
             "maj": 130,
             "min": 120
@@ -20,7 +20,7 @@
             "name": "2. wait for the email screen",
             "type": "set",
             "variable": "ready",
-            "expression": "waitImage(\"d-enter-email\", 15000)"
+            "expression": "waitTextAppear(\"Enter your email address\", 15000)"
         },
         {
             "delayBefore": 400,
@@ -62,21 +62,14 @@
             "text": "abc@example.com"
         },
         {
-            "delayBefore": 0,
-            "name": "5a. wait for Continue to light up",
-            "type": "set",
-            "variable": "ready",
-            "expression": "waitImage(\"d-continue\", 10000)"
-        },
-        {
-            "delayBefore": 500,
-            "name": "5. click Continue",
+            "delayBefore": 800,
+            "name": "5. tap Continue",
             "type": "click",
-            "x": 120,
-            "y": 33,
+            "x": 90,
+            "y": 16,
             "duration": 120,
             "randomFactor": 6,
-            "anchor": "d-continue",
+            "anchorText": "Continue",
             "p": 45,
             "maj": 130,
             "min": 120
@@ -86,7 +79,7 @@
             "name": "6. wait for the code screen",
             "type": "set",
             "variable": "ready",
-            "expression": "waitImage(\"d-enter-code\", 15000)"
+            "expression": "waitTextAppear(\"Enter the code\", 15000)"
         },
         {
             "delayBefore": 0,
@@ -149,21 +142,14 @@
                     "text": "{codes[i]}"
                 },
                 {
-                    "delayBefore": 0,
-                    "name": "8.3a wait for Continue to light up",
-                    "type": "set",
-                    "variable": "ready",
-                    "expression": "waitImage(\"d-continue\", 10000)"
-                },
-                {
-                    "delayBefore": 500,
-                    "name": "8.3 click Continue",
+                    "delayBefore": 800,
+                    "name": "8.3 tap Continue",
                     "type": "click",
-                    "x": 120,
-                    "y": 33,
+                    "x": 90,
+                    "y": 16,
                     "duration": 120,
                     "randomFactor": 6,
-                    "anchor": "d-continue",
+                    "anchorText": "Continue",
                     "p": 45,
                     "maj": 130,
                     "min": 120
@@ -174,7 +160,7 @@
                     "type": "if",
                     "branches": [
                         {
-                            "condition": "image(\"d-birthday\")",
+                            "condition": "textAppear(\"your birthday\")",
                             "events": [
                                 {
                                     "delayBefore": 0,
@@ -200,7 +186,7 @@
             "name": "9. wait for the birthday screen",
             "type": "set",
             "variable": "ready",
-            "expression": "waitImage(\"d-birthday\", 15000)"
+            "expression": "waitTextAppear(\"your birthday\", 15000)"
         },
         {
             "delayBefore": 500,
@@ -208,40 +194,40 @@
             "type": "drag",
             "points": [
                 {
-                    "x": 137,
-                    "y": 1759,
+                    "x": -271,
+                    "y": -164,
                     "dt": 0,
                     "p": 45,
                     "maj": 130,
                     "min": 120
                 },
                 {
-                    "x": 137,
-                    "y": 1681,
+                    "x": -271,
+                    "y": -242,
                     "dt": 40,
                     "p": 45,
                     "maj": 130,
                     "min": 120
                 },
                 {
-                    "x": 137,
-                    "y": 1585,
+                    "x": -271,
+                    "y": -338,
                     "dt": 40,
                     "p": 45,
                     "maj": 130,
                     "min": 120
                 },
                 {
-                    "x": 137,
-                    "y": 1518,
+                    "x": -271,
+                    "y": -405,
                     "dt": 40,
                     "p": 45,
                     "maj": 130,
                     "min": 120
                 },
                 {
-                    "x": 137,
-                    "y": 1479,
+                    "x": -271,
+                    "y": -444,
                     "dt": 40,
                     "p": 45,
                     "maj": 130,
@@ -250,7 +236,7 @@
             ],
             "randomFactorStart": 12,
             "randomFactorHighest": 30,
-            "anchor": "d-birthday"
+            "anchorText": "Continue"
         },
         {
             "delayBefore": 500,
@@ -258,40 +244,40 @@
             "type": "drag",
             "points": [
                 {
-                    "x": 497,
-                    "y": 1769,
+                    "x": 89,
+                    "y": -154,
                     "dt": 0,
                     "p": 45,
                     "maj": 130,
                     "min": 120
                 },
                 {
-                    "x": 497,
-                    "y": 1679,
+                    "x": 89,
+                    "y": -244,
                     "dt": 40,
                     "p": 45,
                     "maj": 130,
                     "min": 120
                 },
                 {
-                    "x": 497,
-                    "y": 1571,
+                    "x": 89,
+                    "y": -352,
                     "dt": 40,
                     "p": 45,
                     "maj": 130,
                     "min": 120
                 },
                 {
-                    "x": 497,
-                    "y": 1494,
+                    "x": 89,
+                    "y": -429,
                     "dt": 40,
                     "p": 45,
                     "maj": 130,
                     "min": 120
                 },
                 {
-                    "x": 497,
-                    "y": 1449,
+                    "x": 89,
+                    "y": -474,
                     "dt": 40,
                     "p": 45,
                     "maj": 130,
@@ -300,7 +286,7 @@
             ],
             "randomFactorStart": 12,
             "randomFactorHighest": 30,
-            "anchor": "d-birthday"
+            "anchorText": "Continue"
         },
         {
             "delayBefore": 500,
@@ -308,40 +294,40 @@
             "type": "drag",
             "points": [
                 {
-                    "x": 857,
-                    "y": 1749,
+                    "x": 449,
+                    "y": -174,
                     "dt": 0,
                     "p": 45,
                     "maj": 130,
                     "min": 120
                 },
                 {
-                    "x": 857,
-                    "y": 1654,
+                    "x": 449,
+                    "y": -266,
                     "dt": 40,
                     "p": 45,
                     "maj": 130,
                     "min": 120
                 },
                 {
-                    "x": 857,
-                    "y": 1538,
+                    "x": 449,
+                    "y": -379,
                     "dt": 40,
                     "p": 45,
                     "maj": 130,
                     "min": 120
                 },
                 {
-                    "x": 857,
-                    "y": 1457,
+                    "x": 449,
+                    "y": -458,
                     "dt": 40,
                     "p": 45,
                     "maj": 130,
                     "min": 120
                 },
                 {
-                    "x": 857,
-                    "y": 1409,
+                    "x": 449,
+                    "y": -504,
                     "dt": 40,
                     "p": 45,
                     "maj": 130,
@@ -350,17 +336,17 @@
             ],
             "randomFactorStart": 12,
             "randomFactorHighest": 30,
-            "anchor": "d-birthday"
+            "anchorText": "Continue"
         },
         {
             "delayBefore": 800,
-            "name": "11. click Continue",
+            "name": "11. tap Continue",
             "type": "click",
-            "x": 120,
-            "y": 33,
+            "x": 90,
+            "y": 16,
             "duration": 120,
             "randomFactor": 6,
-            "anchor": "d-continue",
+            "anchorText": "Continue",
             "p": 45,
             "maj": 130,
             "min": 120
@@ -370,7 +356,7 @@
             "name": "12. wait for the name screen",
             "type": "set",
             "variable": "ready",
-            "expression": "waitImage(\"d-what-name\", 15000)"
+            "expression": "waitTextAppear(\"your name\", 15000)"
         },
         {
             "delayBefore": 400,
@@ -412,21 +398,14 @@
             "text": "ABCD"
         },
         {
-            "delayBefore": 0,
-            "name": "15a. wait for Continue to light up",
-            "type": "set",
-            "variable": "ready",
-            "expression": "waitImage(\"d-continue\", 10000)"
-        },
-        {
-            "delayBefore": 500,
-            "name": "15. click Continue",
+            "delayBefore": 800,
+            "name": "15. tap Continue",
             "type": "click",
-            "x": 120,
-            "y": 33,
+            "x": 90,
+            "y": 16,
             "duration": 120,
             "randomFactor": 6,
-            "anchor": "d-continue",
+            "anchorText": "Continue",
             "p": 45,
             "maj": 130,
             "min": 120
@@ -436,7 +415,7 @@
             "name": "16. wait for the username screen",
             "type": "set",
             "variable": "ready",
-            "expression": "waitImage(\"d-username\", 15000)"
+            "expression": "waitTextAppear(\"Give yourself\", 15000)"
         },
         {
             "delayBefore": 400,
@@ -478,21 +457,14 @@
             "text": "abcdefg"
         },
         {
-            "delayBefore": 0,
-            "name": "20a. wait for Continue to light up",
-            "type": "set",
-            "variable": "ready",
-            "expression": "waitImage(\"d-continue\", 10000)"
-        },
-        {
-            "delayBefore": 500,
-            "name": "20. click Continue",
+            "delayBefore": 800,
+            "name": "20. tap Continue",
             "type": "click",
-            "x": 120,
-            "y": 33,
+            "x": 90,
+            "y": 16,
             "duration": 120,
             "randomFactor": 6,
-            "anchor": "d-continue",
+            "anchorText": "Continue",
             "p": 45,
             "maj": 130,
             "min": 120
@@ -502,7 +474,7 @@
             "name": "21. wait for the password screen",
             "type": "set",
             "variable": "ready",
-            "expression": "waitImage(\"d-password\", 15000)"
+            "expression": "waitTextAppear(\"Choose a password\", 15000)"
         },
         {
             "delayBefore": 400,
@@ -544,41 +516,27 @@
             "text": "abcdefgh"
         },
         {
-            "delayBefore": 0,
-            "name": "23b. wait for the show-password eye",
-            "type": "set",
-            "variable": "ready",
-            "expression": "waitImage(\"d-show-password\", 10000)"
-        },
-        {
-            "delayBefore": 300,
+            "delayBefore": 500,
             "name": "22c. reveal the password",
             "type": "click",
-            "x": 40,
-            "y": 31,
+            "x": 931,
+            "y": 458,
             "duration": 120,
             "randomFactor": 4,
-            "anchor": "d-show-password",
+            "anchorText": "Choose a password",
             "p": 45,
             "maj": 130,
             "min": 120
         },
         {
-            "delayBefore": 0,
-            "name": "24a. wait for Continue to light up",
-            "type": "set",
-            "variable": "ready",
-            "expression": "waitImage(\"d-continue\", 10000)"
-        },
-        {
-            "delayBefore": 500,
-            "name": "24. click Continue",
+            "delayBefore": 800,
+            "name": "24. tap Continue",
             "type": "click",
-            "x": 120,
-            "y": 33,
+            "x": 90,
+            "y": 16,
             "duration": 120,
             "randomFactor": 6,
-            "anchor": "d-continue",
+            "anchorText": "Continue",
             "p": 45,
             "maj": 130,
             "min": 120
@@ -588,24 +546,17 @@
             "name": "25. wait for the find-friends screen",
             "type": "set",
             "variable": "ready",
-            "expression": "waitImage(\"d-find-friends\", 15000)"
-        },
-        {
-            "delayBefore": 0,
-            "name": "25b. wait for the Not now button",
-            "type": "set",
-            "variable": "ready",
-            "expression": "waitImage(\"d-not-now\", 12000)"
+            "expression": "waitTextAppear(\"Find your friends\", 15000)"
         },
         {
             "delayBefore": 1200,
-            "name": "26. click Not now",
+            "name": "26. tap Not now",
             "type": "click",
-            "x": 100,
-            "y": 26,
+            "x": 60,
+            "y": 16,
             "duration": 120,
             "randomFactor": 6,
-            "anchor": "d-not-now",
+            "anchorText": "Not now",
             "p": 45,
             "maj": 130,
             "min": 120
@@ -615,24 +566,17 @@
             "name": "27. wait for the profile-picture screen",
             "type": "set",
             "variable": "ready",
-            "expression": "waitImage(\"d-profile-pic\", 15000)"
-        },
-        {
-            "delayBefore": 0,
-            "name": "27b. wait for the Skip button",
-            "type": "set",
-            "variable": "ready",
-            "expression": "waitImage(\"d-skip\", 12000)"
+            "expression": "waitTextAppear(\"Set a profile picture\", 15000)"
         },
         {
             "delayBefore": 1200,
-            "name": "28. click Skip",
+            "name": "28. tap Skip",
             "type": "click",
-            "x": 53,
-            "y": 27,
+            "x": 30,
+            "y": 16,
             "duration": 120,
             "randomFactor": 6,
-            "anchor": "d-skip",
+            "anchorText": "Skip",
             "p": 45,
             "maj": 130,
             "min": 120
@@ -642,24 +586,17 @@
             "name": "29. wait for the interests screen",
             "type": "set",
             "variable": "ready",
-            "expression": "waitImage(\"d-interests\", 15000)"
-        },
-        {
-            "delayBefore": 0,
-            "name": "29b. wait for the interest rows",
-            "type": "set",
-            "variable": "ready",
-            "expression": "waitImage(\"d-tech\", 12000)"
+            "expression": "waitTextAppear(\"Pick your interests\", 15000)"
         },
         {
             "delayBefore": 1200,
             "name": "30. pick Technology",
             "type": "click",
-            "x": 173,
-            "y": 26,
+            "x": 90,
+            "y": 16,
             "duration": 120,
             "randomFactor": 6,
-            "anchor": "d-tech",
+            "anchorText": "Technology",
             "p": 45,
             "maj": 130,
             "min": 120
@@ -668,11 +605,11 @@
             "delayBefore": 400,
             "name": "30. pick Business & Finance",
             "type": "click",
-            "x": 259,
-            "y": 26,
+            "x": 60,
+            "y": 16,
             "duration": 120,
             "randomFactor": 6,
-            "anchor": "d-finance",
+            "anchorText": "Finance",
             "p": 45,
             "maj": 130,
             "min": 120
@@ -681,31 +618,24 @@
             "delayBefore": 400,
             "name": "30. pick Memes",
             "type": "click",
-            "x": 128,
-            "y": 29,
+            "x": 55,
+            "y": 16,
             "duration": 120,
             "randomFactor": 6,
-            "anchor": "d-memes",
+            "anchorText": "Memes",
             "p": 45,
             "maj": 130,
             "min": 120
         },
         {
-            "delayBefore": 0,
-            "name": "31a. wait for Continue to light up",
-            "type": "set",
-            "variable": "ready",
-            "expression": "waitImage(\"d-continue\", 10000)"
-        },
-        {
-            "delayBefore": 500,
-            "name": "31. click Continue",
+            "delayBefore": 800,
+            "name": "31. tap Continue",
             "type": "click",
-            "x": 120,
-            "y": 33,
+            "x": 90,
+            "y": 16,
             "duration": 120,
             "randomFactor": 6,
-            "anchor": "d-continue",
+            "anchorText": "Continue",
             "p": 45,
             "maj": 130,
             "min": 120
