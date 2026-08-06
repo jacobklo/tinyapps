@@ -69,6 +69,7 @@ private val STEP_OPTIONS = listOf(
     StepOption("Toast") { listOf(ToastInteraction("", 0)) },
     StepOption("Text input") { listOf(TextInteraction(text = "", delayBefore = 0)) },
     StepOption("Set variable") { listOf(SetVariableInteraction("count", "0", 0)) },
+    StepOption("Focus field") { listOf(FocusFieldInteraction("field", 0)) },
     StepOption("Wait for code") {
         listOf(
             WaitCodeInteraction(
@@ -163,6 +164,20 @@ private fun helpFor(interaction: Interaction): StepHelp = when (interaction) {
             "random(2, 5)",
             "\"page \" + count",
             "count % 3"
+        )
+    )
+
+    is FocusFieldInteraction -> StepHelp(
+        "Puts the cursor in the text field on screen, wherever it is, by asking " +
+            "the window rather than by tapping a remembered spot. Taps nothing " +
+            "when the field already has focus. The variable is left holding how " +
+            "many characters the field already contains, so a Repeat of Key DEL " +
+            "guarded on it clears the field exactly. Needs root. If there is no " +
+            "field, or several and none focused, nothing is touched and an error " +
+            "is shown.",
+        listOf(
+            "field               then While field > 0: Key DEL, Set field = field - 1",
+            "chars               names it something else"
         )
     )
 
@@ -768,6 +783,14 @@ private fun InteractionFields(interaction: Interaction, onUpdate: (Interaction) 
                     label = "= expression"
                 )
             }
+            is FocusFieldInteraction -> {
+                TextFieldEntry(
+                    value = interaction.variable,
+                    onValueChange = { onUpdate(interaction.copy(variable = it)) },
+                    label = "Length into",
+                    width = 140.dp
+                )
+            }
             is WaitCodeInteraction -> {
                 TextFieldEntry(
                     value = interaction.variable,
@@ -1035,6 +1058,7 @@ private fun describeInteraction(interaction: Interaction, screen: ScreenGeometry
         is WaitInteraction -> "Wait"
         is ToastInteraction -> "Toast: ${interaction.message.ifBlank { "(empty)" }}"
         is SetVariableInteraction -> "Set ${interaction.variable} = ${interaction.expression}"
+        is FocusFieldInteraction -> "Focus field  length -> ${interaction.variable}"
         is WaitCodeInteraction ->
             "Wait for code -> ${interaction.variable}  max age ${interaction.maxAgeSeconds}s"
         is BreakInteraction -> "Break"
@@ -1117,6 +1141,7 @@ fun Interaction.withDelay(delay: Long): Interaction = when (this) {
     is ToastInteraction -> copy(delayBefore = delay)
     is SetVariableInteraction -> copy(delayBefore = delay)
     is WaitCodeInteraction -> copy(delayBefore = delay)
+    is FocusFieldInteraction -> copy(delayBefore = delay)
     is BreakInteraction -> copy(delayBefore = delay)
     is ForLoopInteraction -> copy(delayBefore = delay)
     is RandomSelectInteraction -> copy(delayBefore = delay)
@@ -1145,6 +1170,7 @@ fun Interaction.withName(newName: String): Interaction = when (this) {
     is ToastInteraction -> copy(name = newName)
     is SetVariableInteraction -> copy(name = newName)
     is WaitCodeInteraction -> copy(name = newName)
+    is FocusFieldInteraction -> copy(name = newName)
     is BreakInteraction -> copy(name = newName)
     is ForLoopInteraction -> copy(name = newName)
     is RandomSelectInteraction -> copy(name = newName)

@@ -141,6 +141,21 @@ data class WaitCodeInteraction(
     override val name: String = ""
 ) : Interaction()
 
+/**
+ * Puts the cursor in the editable field on screen, wherever it is, and stores
+ * how many characters it already holds in [variable].
+ *
+ * Nothing is touched when the field already has focus, which is the common case
+ * on a screen that opens ready to type. The character count is what makes
+ * clearing exact: backspace that many times rather than a number picked to be
+ * large enough for anything.
+ */
+data class FocusFieldInteraction(
+	val variable: String,
+	override val delayBefore: Long,
+	override val name: String = ""
+) : Interaction()
+
 /** Assigns the result of an expression to a variable for the rest of the run. */
 data class SetVariableInteraction(
     val variable: String,
@@ -280,6 +295,7 @@ fun summarize(events: List<Interaction>): RecordingSummary {
                 is LaunchAppInteraction -> actions++
                 is ShellInteraction -> actions++
                 is SetVariableInteraction -> actions++
+                is FocusFieldInteraction -> actions++
                 is WaitCodeInteraction -> {
                     actions++
                     // Its real cost is however long the code takes to arrive;
@@ -429,6 +445,10 @@ object RecordingManager {
             is ToastInteraction -> {
                 jsonObj.put("type", "toast")
                 jsonObj.put("message", event.message)
+            }
+            is FocusFieldInteraction -> {
+                jsonObj.put("type", "focus_field")
+                jsonObj.put("variable", event.variable)
             }
             is SetVariableInteraction -> {
                 jsonObj.put("type", "set")
@@ -586,6 +606,11 @@ object RecordingManager {
             "wait" -> WaitInteraction(delayBefore, name)
             "toast" -> ToastInteraction(obj.optString("message", ""), delayBefore, name)
             "break" -> BreakInteraction(delayBefore, name)
+            "focus_field" -> FocusFieldInteraction(
+                variable = obj.optString("variable", "field"),
+                delayBefore = delayBefore,
+                name = name
+            )
             "set" -> SetVariableInteraction(
                 variable = obj.optString("variable", ""),
                 expression = obj.optString("expression", "0"),

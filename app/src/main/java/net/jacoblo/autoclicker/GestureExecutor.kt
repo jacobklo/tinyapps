@@ -31,6 +31,11 @@ private const val TAP_GAP_MS = 60L
 // short enough that a second, separate failure is not swallowed.
 private const val ERROR_REPEAT_MS = 5000L
 
+// Landing on a field the window itself located needs no help from the caller,
+// so the press is described here rather than in every recording.
+private const val FIELD_TAP_MS = 120L
+private const val FIELD_TAP_JITTER_PX = 6
+
 // Gap between typed characters. Unhurried touch typing sits around 150-250ms
 // per character, and the spread matters as much as the mean: a fixed interval
 // is as unlike a person as no interval at all.
@@ -197,6 +202,8 @@ object GestureExecutor {
 				is ToastInteraction -> runToast(context.interpolate(event.message))
 				is SetVariableInteraction ->
 					context.set(event.variable, context.evaluateOrZero(event.expression))
+
+				is FocusFieldInteraction -> runFocusField(event, context)
 
 				is WaitCodeInteraction -> runWaitCode(event, context)
 
@@ -420,6 +427,38 @@ object GestureExecutor {
 			return
 		}
 		service.dispatchText(text)
+	}
+
+	/**
+	 * Leaves [FocusFieldInteraction.variable] holding the field's current length
+	 * so the script can clear it exactly, and 0 when there is no field, so a
+	 * clearing loop guarded on it does nothing rather than backspacing through
+	 * whatever is focused instead.
+	 */
+	private suspend fun runFocusField(event: FocusFieldInteraction, context: ScriptContext) {
+		val variable = event.variable.ifBlank { "field" }
+		when (val result = withContext(Dispatchers.IO) { ViewHierarchy.findField() }) {
+			is FieldSearch.Found -> {
+				val field = result.field
+				context.set(variable, Value.Num(field.textLength.toLong()))
+				if (field.focused) {
+					// Already where the text will land. A tap here would be a
+					// synthetic touch that changes nothing.
+					Log.d(TAG, "field already focused, holding ${field.textLength} char(s)")
+					return
+				}
+				Log.d(TAG, "focusing field at ${field.centreX},${field.centreY}")
+				tap(
+					field.centreX, field.centreY, FIELD_TAP_MS, FIELD_TAP_JITTER_PX,
+					TouchSample(45, 130, 120), 0f, 0f, anchored = true
+				)
+			}
+			is FieldSearch.Missing -> {
+				context.set(variable, Value.Num(0))
+				Log.w(TAG, "no field to focus: ${result.reason}")
+				reportError(result.reason)
+			}
+		}
 	}
 
 	/**
