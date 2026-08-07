@@ -30,6 +30,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import net.jacoblo.autoclicker.ui.theme.AutoClickerTheme
 import java.io.File
 
@@ -179,8 +181,14 @@ fun RecordingsListScreen(modifier: Modifier = Modifier) {
 
     LazyColumn(modifier = modifier.fillMaxSize()) {
         items(recordings, key = { it.absolutePath }) { file ->
-            val summary = remember(file, revision) {
-                summarize(RecordingManager.loadRecording(file).events)
+            // Every row is a file read and a JSON parse, and there is one per
+            // recording, so the list would stutter for as long as the folder is
+            // large. The row draws at once and fills its summary in when it
+            // arrives.
+            val summary by produceState<RecordingSummary?>(null, file, revision) {
+                value = withContext(Dispatchers.IO) {
+                    summarize(RecordingManager.loadRecording(file).events)
+                }
             }
             RecordingItem(
                 file = file,
@@ -255,7 +263,7 @@ fun RecordingsListScreen(modifier: Modifier = Modifier) {
 fun RecordingItem(
     file: File,
     isSelected: Boolean,
-    summary: RecordingSummary,
+    summary: RecordingSummary?,
     onSelect: () -> Unit,
     onEdit: () -> Unit,
     onRename: () -> Unit,
@@ -295,7 +303,7 @@ fun RecordingItem(
                 }
             }
             Text(
-                text = summary.describe(),
+                text = summary?.describe().orEmpty(),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

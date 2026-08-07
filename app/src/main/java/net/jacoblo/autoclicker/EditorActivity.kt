@@ -28,6 +28,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import net.jacoblo.autoclicker.ui.theme.AutoClickerTheme
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -359,10 +361,29 @@ class EditorActivity : ComponentActivity() {
 	}
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Opening a recording is a file read and a JSON parse, which is not work for
+ * the thread that draws.
+ *
+ * Nothing below is composed until it has landed. Every remember in the editor
+ * seeds itself from the loaded recording -- the rows, the id counter, the
+ * global random, and the baseline that decides whether there are unsaved
+ * changes -- so they have to see it once and complete. Loading in place would
+ * compose an empty editor first, and then Save would write that emptiness over
+ * the file and Back would ask about discarding changes nobody made.
+ */
 @Composable
 fun EditorScreen(file: File, onBack: () -> Unit) {
-	val recordingData = remember { RecordingManager.loadRecording(file) }
+	val loaded by produceState<RecordingData?>(null, file) {
+		value = withContext(Dispatchers.IO) { RecordingManager.loadRecording(file) }
+	}
+
+	loaded?.let { LoadedEditorScreen(file, it, onBack) }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LoadedEditorScreen(file: File, recordingData: RecordingData, onBack: () -> Unit) {
 	// The hierarchy is flattened for editing and rebuilt on save.
 	val initialSteps = remember { flatten(recordingData.events) }
 	// Rows carry an id because reordering needs stable identity: keying by
