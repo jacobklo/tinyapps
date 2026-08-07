@@ -77,7 +77,7 @@ object EvdevInjector {
 	}
 
 	@Synchronized
-	fun playDrag(points: List<DragPoint>, durationScale: Float = 1f) {
+	fun playDrag(points: List<DragPoint>) {
 		if (points.isEmpty()) return
 		val target = device ?: return
 		val screen = ScreenGeometry.current(AppSettings.appContext)
@@ -89,7 +89,7 @@ object EvdevInjector {
 
 		for (i in 1 until points.size) {
 			val point = points[i]
-			sleepJittered((point.dt * durationScale).toLong(), jitter)
+			sleepJittered(point.dt, jitter)
 			val (rawX, rawY) = target.screenToRaw(
 				point.x + jitterPx(jitter.positionPx),
 				point.y + jitterPx(jitter.positionPx),
