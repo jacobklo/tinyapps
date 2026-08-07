@@ -20,6 +20,7 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.Toast
+import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.sqrt
 
@@ -626,6 +627,4 @@ class Bubble(private val context: Context) {
         } catch (e: IllegalArgumentException) {
         }
     }
-
-    private fun abs(value: Int) = if (value < 0) -value else value
 }
