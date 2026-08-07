@@ -1375,7 +1375,7 @@ fun DragStep.withSwipeDuration(ms: Long): DragStep {
 // Flattening / Unflattening
 // ---------------------------------------------------------------------------
 
-fun flatten(steps: List<Step>): List<Step> {
+fun flatten(steps: List<RuntimeStep>): List<Step> {
 	val flatList = mutableListOf<Step>()
 	steps.forEach { step ->
 		when (step) {
@@ -1415,10 +1415,10 @@ fun flatten(steps: List<Step>): List<Step> {
 	return flatList
 }
 
-fun buildHierarchy(flatSteps: List<Step>): List<Step> =
+fun buildHierarchy(flatSteps: List<Step>): List<RuntimeStep> =
 	readSequence(flatSteps, 0) { false }.children
 
-private class ParsedSequence(val children: List<Step>, val terminator: Step?, val next: Int)
+private class ParsedSequence(val children: List<RuntimeStep>, val terminator: Step?, val next: Int)
 
 /**
  * Reads steps until [isTerminator] matches, recursing into any block it
@@ -1430,7 +1430,7 @@ private fun readSequence(
 	start: Int,
 	isTerminator: (Step) -> Boolean
 ): ParsedSequence {
-	val children = mutableListOf<Step>()
+	val children = mutableListOf<RuntimeStep>()
 	var i = start
 	while (i < flat.size) {
 		val item = flat[i]
@@ -1444,7 +1444,7 @@ private fun readSequence(
 			// An End or Else with no matching Start cannot be represented; drop
 			// it. The editor warns about this before saving.
 			is BlockEnd, is BlockMid -> i++
-			else -> {
+			is RuntimeStep -> {
 				children.add(item)
 				i++
 			}
@@ -1458,7 +1458,7 @@ private fun readSequence(
  * counts every End alike, so a parser that was stricter than the check the
  * editor shows would reject a list the editor called balanced.
  */
-private fun readBlock(flat: List<Step>, opener: BlockStart, start: Int): Pair<Step, Int> =
+private fun readBlock(flat: List<Step>, opener: BlockStart, start: Int): Pair<RuntimeStep, Int> =
 	when (opener) {
 		is LoopStartStep -> {
 			val body = readSequence(flat, start) { it is LoopEndStep || it is RandomSelectEndStep }
@@ -1475,7 +1475,7 @@ private fun readBlock(flat: List<Step>, opener: BlockStart, start: Int): Pair<St
 		is IfStartStep -> readIf(flat, opener, start)
 	}
 
-private fun readIf(flat: List<Step>, opener: IfStartStep, start: Int): Pair<Step, Int> {
+private fun readIf(flat: List<Step>, opener: IfStartStep, start: Int): Pair<RuntimeStep, Int> {
 	val branches = mutableListOf<ConditionBranch>()
 	var condition = opener.condition
 	var index = start

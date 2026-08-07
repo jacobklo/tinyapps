@@ -41,7 +41,7 @@ class Bubble(private val context: Context) {
 
 	private var isRecording = false
 	private var recordingOverlay: View? = null
-	private val recordedEvents = mutableListOf<Step>()
+	private val recordedEvents = mutableListOf<RuntimeStep>()
 	private var lastEventTime = 0L
 
 	// New variables for tracking multi-point drag

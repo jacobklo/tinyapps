@@ -131,7 +131,7 @@ object GestureExecutor {
 	 * polling.
 	 */
 	fun playRecording(
-		events: List<Step>,
+		events: List<RuntimeStep>,
 		globalRandom: Int = 0,
 		onFinished: ((PlaybackResult) -> Unit)? = null
 	) {
@@ -207,7 +207,7 @@ object GestureExecutor {
 	}
 
 	private suspend fun executeEvents(
-		events: List<Step>,
+		events: List<RuntimeStep>,
 		globalRandom: Int,
 		context: ScriptContext
 	) {
@@ -276,15 +276,11 @@ object GestureExecutor {
 						executeEvents(listOf(event.steps.random()), globalRandom, context)
 					}
 				}
-				else -> {
-					// Editor-only markers never reach playback
-				}
 			}
 		}
 	}
 
-	private suspend fun runLoop(
-		event: ForLoopStep,
+	private suspend fun runLoop(		event: ForLoopStep,
 		globalRandom: Int,
 		context: ScriptContext
 	) {

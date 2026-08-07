@@ -11,7 +11,7 @@ import java.util.Date
 import java.util.Locale
 
 // Data holder for recording and its metadata
-data class RecordingData(val events: List<Step>, val globalRandom: Int = 0)
+data class RecordingData(val events: List<RuntimeStep>, val globalRandom: Int = 0)
 
 // Two minutes covers a code that was requested moments ago while still ruling
 // out the one from the previous login.
@@ -21,11 +21,31 @@ const val DEFAULT_CODE_MAX_AGE_S = 120L
 // time out before a code that has already arrived is even visible.
 const val DEFAULT_CODE_TIMEOUT_MS = 90000L
 
-// 1) Separate data classes for Click and Drag
-sealed class Step {
-	abstract val delayBefore: Long
-	abstract val name: String
+/**
+ * Anything the editor can hold in its list of rows.
+ *
+ * Two kinds, and the difference is what can happen to them. A [RuntimeStep] is
+ * a step in the ordinary sense: it is executed, and it is written to and read
+ * back from a file. An [EditorMarker] exists only while a block is being
+ * edited as a flat list, and is folded back into the tree on save.
+ *
+ * They are separated because everything that touches only one of them used to
+ * have to handle both and quietly did nothing for the other half. The
+ * serialiser skipped markers by returning null, the executor by an else arm
+ * commented "never reach playback" -- so a *runtime* step missing from either
+ * was indistinguishable from a marker, and went equally unmentioned. Splitting
+ * the type turns both of those into cases the compiler counts.
+ */
+sealed interface Step {
+	val delayBefore: Long
+	val name: String
 }
+
+/** A step that runs, and the only kind that reaches a file. */
+sealed class RuntimeStep : Step
+
+/** A row that only exists while a block is flattened for editing. */
+sealed class EditorMarker : Step
 
 /**
  * Where a gesture's coordinates are measured from.
@@ -62,7 +82,7 @@ data class ClickStep(
 	val touchMinor: Int = 0,
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Step()
+) : RuntimeStep()
 
 // 2) Drag data class with multiple coordinates and delta time
 data class DragPoint(
@@ -84,33 +104,33 @@ data class DragStep(
 	val anchorText: String = "",
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Step()
+) : RuntimeStep()
 
 // Text entry into whatever field currently holds input focus
 data class TextStep(
 	val text: String,
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Step()
+) : RuntimeStep()
 
 // A hardware/system key, by KeyEvent name: BACK, HOME, APP_SWITCH, VOLUME_UP...
 data class KeyEventStep(
 	val key: String,
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Step()
+) : RuntimeStep()
 
 data class LaunchAppStep(
 	val packageName: String,
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Step()
+) : RuntimeStep()
 
 data class ShellStep(
 	val command: String,
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Step()
+) : RuntimeStep()
 
 /**
  * Shows a toast. [message] is plain text, except that anything in braces is
@@ -121,13 +141,13 @@ data class ToastStep(
 	val message: String,
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Step()
+) : RuntimeStep()
 
 /** Does nothing but honour its delayBefore, for a pause between actions. */
 data class WaitStep(
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Step()
+) : RuntimeStep()
 
 /**
  * Waits for six-digit codes from the gmail-six-digit service and stores them,
@@ -143,7 +163,7 @@ data class WaitCodeStep(
 	val timeoutMs: Long,
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Step()
+) : RuntimeStep()
 
 /**
  * Puts the cursor in the editable field on screen, wherever it is, and stores
@@ -158,7 +178,7 @@ data class FocusFieldStep(
 	val variable: String,
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Step()
+) : RuntimeStep()
 
 /** Assigns the result of an expression to a variable for the rest of the run. */
 data class SetVariableStep(
@@ -166,45 +186,45 @@ data class SetVariableStep(
 	val expression: String,
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Step()
+) : RuntimeStep()
 
 // New ForLoop step. repeatCount <= 0 repeats until stopped or Break.
 data class ForLoopStep(
 	val repeatCount: Int,
-	val steps: List<Step>,
+	val steps: List<RuntimeStep>,
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Step()
+) : RuntimeStep()
 
 /** One condition and the body that runs when it is the first to hold. */
-data class ConditionBranch(val condition: String, val steps: List<Step>)
+data class ConditionBranch(val condition: String, val steps: List<RuntimeStep>)
 
 data class IfStep(
 	val branches: List<ConditionBranch>,
-	val elseBranch: List<Step> = emptyList(),
+	val elseBranch: List<RuntimeStep> = emptyList(),
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Step()
+) : RuntimeStep()
 
 data class WhileStep(
 	val condition: String,
-	val steps: List<Step>,
+	val steps: List<RuntimeStep>,
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Step()
+) : RuntimeStep()
 
 /** Exits the innermost enclosing Repeat or While. */
 data class BreakStep(
 	override val delayBefore: Long = 0,
 	override val name: String = ""
-) : Step()
+) : RuntimeStep()
 
 // Random Select step
 data class RandomSelectStep(
-	val steps: List<Step>,
+	val steps: List<RuntimeStep>,
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Step()
+) : RuntimeStep()
 
 /**
  * Editor helper types.
@@ -216,13 +236,13 @@ data class RandomSelectStep(
  * ends when the tree is rebuilt -- so it is the type that says, rather than a
  * predicate listing the same four classes at each site.
  */
-sealed class BlockStart : Step()
+sealed class BlockStart : EditorMarker()
 
 /** Closes the block a [BlockStart] opened. */
-sealed class BlockEnd : Step()
+sealed class BlockEnd : EditorMarker()
 
 /** Neither opens nor closes: sits at the parent's level and keeps it open. */
-sealed class BlockMid : Step()
+sealed class BlockMid : EditorMarker()
 
 data class LoopStartStep(
 	val repeatCount: Int,
@@ -293,12 +313,12 @@ data class RecordingSummary(val actions: Int, val durationMs: Long, val loops: I
  * Runtime estimate. Loop bodies are counted repeatCount times; a random-select
  * is counted once through, so anything containing one is approximate.
  */
-fun summarize(events: List<Step>): RecordingSummary {
+fun summarize(events: List<RuntimeStep>): RecordingSummary {
 	var actions = 0
 	var duration = 0L
 	var loops = 0
 
-	fun walk(list: List<Step>, repeats: Int) {
+	fun walk(list: List<RuntimeStep>, repeats: Int) {
 		list.forEach { event ->
 			duration += event.delayBefore * repeats
 			when (event) {
@@ -342,7 +362,9 @@ fun summarize(events: List<Step>): RecordingSummary {
 					// both the action count and the estimate.
 					event.branches.firstOrNull()?.let { walk(it.steps, repeats) }
 				}
-				else -> {}
+				// Neither is an action, and the delay above is already counted.
+				is WaitStep -> {}
+				is BreakStep -> {}
 			}
 		}
 	}
@@ -364,7 +386,7 @@ object RecordingManager {
 	private val recordingsDir: File
 		get() = Storage.recordingsDir
 
-	fun saveRecording(events: List<Step>, globalRandom: Int = 0) {
+	fun saveRecording(events: List<RuntimeStep>, globalRandom: Int = 0) {
 		// ':' is rejected by the FUSE layer that apps write external storage
 		// through (EPERM), even though root can create such a file directly.
 		val stamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
@@ -379,10 +401,10 @@ object RecordingManager {
 		saveRecordingToFile(file, events, globalRandom)
 	}
 
-	fun saveRecordingToFile(file: File, events: List<Step>, globalRandom: Int = 0) {
+	fun saveRecordingToFile(file: File, events: List<RuntimeStep>, globalRandom: Int = 0) {
 		val jsonArray = JSONArray()
 		events.forEach { event ->
-			eventToJson(event)?.let { jsonArray.put(it) }
+			jsonArray.put(eventToJson(event))
 		}
 
 		val finalJson = JSONObject().apply {
@@ -409,7 +431,7 @@ object RecordingManager {
 		if (anchorText.isNotBlank()) target.put("anchorText", anchorText)
 	}
 
-	private fun eventToJson(event: Step): JSONObject? {
+	private fun eventToJson(event: RuntimeStep): JSONObject {
 		val jsonObj = JSONObject()
 		jsonObj.put("delayBefore", event.delayBefore)
 		jsonObj.put("name", event.name)
@@ -508,20 +530,19 @@ object RecordingManager {
 				jsonObj.put("type", "random_select")
 				jsonObj.put("events", eventsToJson(event.steps))
 			}
-			else -> return null // Skip editor-only types
 		}
 		return jsonObj
 	}
 
-	private fun eventsToJson(events: List<Step>): JSONArray {
+	private fun eventsToJson(events: List<RuntimeStep>): JSONArray {
 		val array = JSONArray()
-		events.forEach { child -> eventToJson(child)?.let { array.put(it) } }
+		events.forEach { child -> array.put(eventToJson(child)) }
 		return array
 	}
 
-	private fun jsonToEvents(array: JSONArray?): List<Step> {
+	private fun jsonToEvents(array: JSONArray?): List<RuntimeStep> {
 		if (array == null) return emptyList()
-		val events = mutableListOf<Step>()
+		val events = mutableListOf<RuntimeStep>()
 		for (i in 0 until array.length()) {
 			parseEvent(array.getJSONObject(i))?.let { events.add(it) }
 		}
@@ -537,7 +558,7 @@ object RecordingManager {
 	fun loadRecording(file: File): RecordingData {
 		if (!file.exists()) return RecordingData(emptyList())
 
-		val events = mutableListOf<Step>()
+		val events = mutableListOf<RuntimeStep>()
 		var globalRandom = 0
 		try {
 			val jsonString = file.readText()
@@ -555,7 +576,7 @@ object RecordingManager {
 		return RecordingData(events, globalRandom)
 	}
 
-	private fun parseEvent(obj: JSONObject): Step? {
+	private fun parseEvent(obj: JSONObject): RuntimeStep? {
 		val type = obj.optString("type")
 		val delayBefore = obj.optLong("delayBefore", 0L)
 		val name = obj.optString("name", "")

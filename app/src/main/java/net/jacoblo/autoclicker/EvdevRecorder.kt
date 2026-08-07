@@ -40,7 +40,7 @@ object EvdevRecorder {
 	fun start(
 		device: EvdevDevice,
 		shouldIgnore: (Float, Float) -> Boolean,
-		onGesture: (Step) -> Unit
+		onGesture: (RuntimeStep) -> Unit
 	): Boolean {
 		if (running) return true
 		val spawned = RootShell.spawn("getevent -t ${device.path}")
@@ -71,7 +71,7 @@ object EvdevRecorder {
 		source: Process,
 		device: EvdevDevice,
 		shouldIgnore: (Float, Float) -> Boolean,
-		onGesture: (Step) -> Unit
+		onGesture: (RuntimeStep) -> Unit
 	) {
 		val screen = ScreenGeometry.current(AppSettings.appContext)
 		val input = BufferedReader(InputStreamReader(source.inputStream))
@@ -116,7 +116,7 @@ private class CapturedGesture(
 	val startX: Float get() = points.first().x
 	val startY: Float get() = points.first().y
 
-	fun toStep(delayBefore: Long, screen: ScreenGeometry): Step {
+	fun toStep(delayBefore: Long, screen: ScreenGeometry): RuntimeStep {
 		val last = points.last()
 		val distance = sqrt((last.x - startX).pow(2) + (last.y - startY).pow(2))
 		if (distance < CLICK_DISTANCE_PX) {

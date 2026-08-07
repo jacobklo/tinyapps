@@ -21,7 +21,7 @@ class RecordingFileTest {
 	@get:Rule
 	val temp = TemporaryFolder()
 
-	private fun roundTrip(steps: List<Step>, globalRandom: Int = 0): RecordingData {
+	private fun roundTrip(steps: List<RuntimeStep>, globalRandom: Int = 0): RecordingData {
 		val file = File(temp.root, "recording.json")
 		RecordingManager.saveRecordingToFile(file, steps, globalRandom)
 		return RecordingManager.loadRecording(file)
@@ -38,7 +38,7 @@ class RecordingFileTest {
 	}
 
 	/** One of every step type that reaches a file, in one recording. */
-	private fun everyRuntimeStep(): List<Step> = listOf(
+	private fun everyRuntimeStep(): List<RuntimeStep> = listOf(
 		ClickStep(
 			x = 0.25f,
 			y = 0.75f,
@@ -135,20 +135,6 @@ class RecordingFileTest {
 	@Test
 	fun theGlobalRandomComesBack() {
 		assertEquals(250, roundTrip(listOf(WaitStep(delayBefore = 0)), globalRandom = 250).globalRandom)
-	}
-
-	/** Editor-only markers cannot be represented, so they are dropped on save. */
-	@Test
-	fun blockMarkersDoNotReachTheFile() {
-		val saved = roundTrip(
-			listOf(
-				LoopStartStep(repeatCount = 2),
-				ToastStep("body", delayBefore = 0),
-				LoopEndStep()
-			)
-		)
-
-		assertEquals(listOf(ToastStep("body", delayBefore = 0)), saved.events)
 	}
 
 	/**
