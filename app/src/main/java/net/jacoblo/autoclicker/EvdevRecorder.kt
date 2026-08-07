@@ -40,7 +40,7 @@ object EvdevRecorder {
 	fun start(
 		device: EvdevDevice,
 		shouldIgnore: (Float, Float) -> Boolean,
-		onGesture: (Interaction) -> Unit
+		onGesture: (Step) -> Unit
 	): Boolean {
 		if (running) return true
 		val spawned = RootShell.spawn("getevent -t ${device.path}")
@@ -71,7 +71,7 @@ object EvdevRecorder {
 		source: Process,
 		device: EvdevDevice,
 		shouldIgnore: (Float, Float) -> Boolean,
-		onGesture: (Interaction) -> Unit
+		onGesture: (Step) -> Unit
 	) {
 		val screen = ScreenGeometry.current(AppSettings.appContext)
 		val input = BufferedReader(InputStreamReader(source.inputStream))
@@ -95,7 +95,7 @@ object EvdevRecorder {
 				}
 				val delayBefore = if (lastGestureEndMs == 0L) 0L else finished.startMs - lastGestureEndMs
 				lastGestureEndMs = finished.endMs
-				onGesture(finished.toInteraction(delayBefore.coerceAtLeast(0), screen))
+				onGesture(finished.toStep(delayBefore.coerceAtLeast(0), screen))
 			}
 		} catch (e: Exception) {
 			if (running) Log.e(TAG, "reader loop failed", e)
@@ -106,7 +106,7 @@ object EvdevRecorder {
 /**
  * Points are held in screen pixels while capturing, because the bubble-bounds
  * filter compares against window coordinates. They are converted to fractions
- * of the screen only when the interaction is handed over.
+ * of the screen only when the step is handed over.
  */
 private class CapturedGesture(
 	val points: List<DragPoint>,
@@ -116,12 +116,12 @@ private class CapturedGesture(
 	val startX: Float get() = points.first().x
 	val startY: Float get() = points.first().y
 
-	fun toInteraction(delayBefore: Long, screen: ScreenGeometry): Interaction {
+	fun toStep(delayBefore: Long, screen: ScreenGeometry): Step {
 		val last = points.last()
 		val distance = sqrt((last.x - startX).pow(2) + (last.y - startY).pow(2))
 		if (distance < CLICK_DISTANCE_PX) {
 			val first = points.first()
-			return ClickInteraction(
+			return ClickStep(
 				x = startX / screen.width,
 				y = startY / screen.height,
 				duration = (endMs - startMs).coerceAtLeast(1),
@@ -135,7 +135,7 @@ private class CapturedGesture(
 		val scaled = points.map {
 			it.copy(x = it.x / screen.width, y = it.y / screen.height)
 		}
-		return DragInteraction(points = scaled, delayBefore = delayBefore)
+		return DragStep(points = scaled, delayBefore = delayBefore)
 	}
 }
 

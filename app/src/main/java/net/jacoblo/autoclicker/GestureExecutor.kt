@@ -61,7 +61,7 @@ sealed class PlaybackResult {
 }
 
 /**
- * Replays recorded interactions through whichever backend the user selected.
+ * Replays recorded steps through whichever backend the user selected.
  *
  * Coordinate randomisation lives here so both backends jitter identically and
  * the backends only ever inject final coordinates. The root backend maps a drag
@@ -131,7 +131,7 @@ object GestureExecutor {
 	 * polling.
 	 */
 	fun playRecording(
-		events: List<Interaction>,
+		events: List<Step>,
 		globalRandom: Int = 0,
 		onFinished: ((PlaybackResult) -> Unit)? = null
 	) {
@@ -207,7 +207,7 @@ object GestureExecutor {
 	}
 
 	private suspend fun executeEvents(
-		events: List<Interaction>,
+		events: List<Step>,
 		globalRandom: Int,
 		context: ScriptContext
 	) {
@@ -220,60 +220,60 @@ object GestureExecutor {
 			delay(event.delayBefore + randDelay)
 
 			when (event) {
-				is ClickInteraction -> runClick(
+				is ClickStep -> runClick(
 					event.x, event.y, event.duration, event.randomFactor,
 					TouchSample(event.pressure, event.touchMajor, event.touchMinor),
 					event.anchor, event.anchorText, event.taps
 				)
-				is DragInteraction -> runDrag(
+				is DragStep -> runDrag(
 					event.points, event.randomFactorStart, event.randomFactorHighest,
 					event.anchor, event.anchorText
 				)
 				// Braces are worked out the same way a Toast does, which is the
 				// only way a script can type something it looked up rather than
 				// something that was written into it.
-				is TextInteraction -> runText(context.interpolate(event.text))
-				is KeyEventInteraction -> runKeyEvent(event.key)
-				is LaunchAppInteraction -> runLaunchApp(event.packageName)
-				is ShellInteraction -> runShell(event.command)
-				is WaitInteraction -> {
+				is TextStep -> runText(context.interpolate(event.text))
+				is KeyEventStep -> runKeyEvent(event.key)
+				is LaunchAppStep -> runLaunchApp(event.packageName)
+				is ShellStep -> runShell(event.command)
+				is WaitStep -> {
 					// The delay above is the whole action.
 				}
-				is ToastInteraction -> runToast(context.interpolate(event.message))
-				is SetVariableInteraction ->
+				is ToastStep -> runToast(context.interpolate(event.message))
+				is SetVariableStep ->
 					context.set(event.variable, context.evaluateOrZero(event.expression))
 
-				is FocusFieldInteraction -> runFocusField(event, context)
+				is FocusFieldStep -> runFocusField(event, context)
 
-				is WaitCodeInteraction -> runWaitCode(event, context)
+				is WaitCodeStep -> runWaitCode(event, context)
 
-				is BreakInteraction -> throw BreakSignal()
+				is BreakStep -> throw BreakSignal()
 
-				is ForLoopInteraction -> runLoop(event, globalRandom, context)
+				is ForLoopStep -> runLoop(event, globalRandom, context)
 
-				is WhileInteraction -> {
+				is WhileStep -> {
 					try {
 						while (context.condition(event.condition)) {
 							currentCoroutineContext().ensureActive()
-							executeEvents(event.interactions, globalRandom, context)
+							executeEvents(event.steps, globalRandom, context)
 						}
 					} catch (stop: BreakSignal) {
 						Log.d(TAG, "break out of while")
 					}
 				}
 
-				is IfInteraction -> {
+				is IfStep -> {
 					val taken = event.branches.firstOrNull { context.condition(it.condition) }
 					if (taken != null) {
-						executeEvents(taken.interactions, globalRandom, context)
+						executeEvents(taken.steps, globalRandom, context)
 					} else {
 						executeEvents(event.elseBranch, globalRandom, context)
 					}
 				}
 
-				is RandomSelectInteraction -> {
-					if (event.interactions.isNotEmpty()) {
-						executeEvents(listOf(event.interactions.random()), globalRandom, context)
+				is RandomSelectStep -> {
+					if (event.steps.isNotEmpty()) {
+						executeEvents(listOf(event.steps.random()), globalRandom, context)
 					}
 				}
 				else -> {
@@ -284,7 +284,7 @@ object GestureExecutor {
 	}
 
 	private suspend fun runLoop(
-		event: ForLoopInteraction,
+		event: ForLoopStep,
 		globalRandom: Int,
 		context: ScriptContext
 	) {
@@ -293,11 +293,11 @@ object GestureExecutor {
 				// Repeat forever, until Break or the stop button.
 				while (true) {
 					currentCoroutineContext().ensureActive()
-					executeEvents(event.interactions, globalRandom, context)
+					executeEvents(event.steps, globalRandom, context)
 				}
 			}
 			repeat(event.repeatCount) {
-				executeEvents(event.interactions, globalRandom, context)
+				executeEvents(event.steps, globalRandom, context)
 			}
 		} catch (stop: BreakSignal) {
 			Log.d(TAG, "break out of repeat")
@@ -489,12 +489,12 @@ object GestureExecutor {
 	}
 
 	/**
-	 * Leaves [FocusFieldInteraction.variable] holding the field's current length
+	 * Leaves [FocusFieldStep.variable] holding the field's current length
 	 * so the script can clear it exactly, and 0 when there is no field, so a
 	 * clearing loop guarded on it does nothing rather than backspacing through
 	 * whatever is focused instead.
 	 */
-	private suspend fun runFocusField(event: FocusFieldInteraction, context: ScriptContext) {
+	private suspend fun runFocusField(event: FocusFieldStep, context: ScriptContext) {
 		val variable = event.variable.ifBlank { "field" }
 		when (val result = withContext(Dispatchers.IO) { ViewHierarchy.findField() }) {
 			is FieldSearch.Found -> {
@@ -524,7 +524,7 @@ object GestureExecutor {
 	 * Leaves the variable holding an empty list when no code arrives, so a
 	 * script can branch on count() instead of typing whatever was there before.
 	 */
-	private suspend fun runWaitCode(event: WaitCodeInteraction, context: ScriptContext) {
+	private suspend fun runWaitCode(event: WaitCodeStep, context: ScriptContext) {
 		val variable = event.variable.ifBlank { "codes" }
 		when (val result = withContext(Dispatchers.IO) {
 			CodeServer.waitForCodes(event.maxAgeSeconds, event.timeoutMs)

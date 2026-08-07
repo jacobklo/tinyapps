@@ -6,9 +6,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 private fun click(name: String) =
-    ClickInteraction(x = 0.5f, y = 0.5f, duration = 10, delayBefore = 0, name = name)
+    ClickStep(x = 0.5f, y = 0.5f, duration = 10, delayBefore = 0, name = name)
 
-private fun names(events: List<Interaction>) = events.map { it.name }
+private fun names(events: List<Step>) = events.map { it.name }
 
 /**
  * The editor edits a flat list and rebuilds the tree on save, so flatten and
@@ -27,7 +27,7 @@ class HierarchyTest {
     @Test
     fun repeatBlockRoundTrips() {
         val tree = listOf(
-            ForLoopInteraction(3, listOf(click("inner")), delayBefore = 0, name = "loop")
+            ForLoopStep(3, listOf(click("inner")), delayBefore = 0, name = "loop")
         )
         assertEquals(tree, buildHierarchy(flatten(tree)))
     }
@@ -35,7 +35,7 @@ class HierarchyTest {
     @Test
     fun whileBlockRoundTrips() {
         val tree = listOf(
-            WhileInteraction("count < 3", listOf(click("inner")), delayBefore = 0, name = "w")
+            WhileStep("count < 3", listOf(click("inner")), delayBefore = 0, name = "w")
         )
         assertEquals(tree, buildHierarchy(flatten(tree)))
     }
@@ -43,7 +43,7 @@ class HierarchyTest {
     @Test
     fun ifElseIfElseRoundTrips() {
         val tree = listOf(
-            IfInteraction(
+            IfStep(
                 branches = listOf(
                     ConditionBranch("a == 1", listOf(click("first"))),
                     ConditionBranch("a == 2", listOf(click("second")))
@@ -59,7 +59,7 @@ class HierarchyTest {
     @Test
     fun ifWithoutElseRoundTrips() {
         val tree = listOf(
-            IfInteraction(
+            IfStep(
                 branches = listOf(ConditionBranch("x > 0", listOf(click("only")))),
                 elseBranch = emptyList(),
                 delayBefore = 0,
@@ -72,18 +72,18 @@ class HierarchyTest {
     @Test
     fun nestedConditionalsInsideLoopsRoundTrip() {
         val tree = listOf(
-            WhileInteraction(
+            WhileStep(
                 condition = "running == 1",
-                interactions = listOf(
-                    ForLoopInteraction(
+                steps = listOf(
+                    ForLoopStep(
                         repeatCount = 2,
-                        interactions = listOf(
-                            IfInteraction(
+                        steps = listOf(
+                            IfStep(
                                 branches = listOf(
                                     ConditionBranch("hp < 10", listOf(click("heal")))
                                 ),
                                 elseBranch = listOf(
-                                    IfInteraction(
+                                    IfStep(
                                         branches = listOf(
                                             ConditionBranch("mp > 5", listOf(click("cast")))
                                         ),
@@ -111,7 +111,7 @@ class HierarchyTest {
     fun flatteningAnIfProducesMarkersInSourceOrder() {
         val flat = flatten(
             listOf(
-                IfInteraction(
+                IfStep(
                     branches = listOf(
                         ConditionBranch("c1", listOf(click("a"))),
                         ConditionBranch("c2", listOf(click("b")))
@@ -122,43 +122,43 @@ class HierarchyTest {
                 )
             )
         )
-        assertTrue(flat[0] is IfStartInteraction)
+        assertTrue(flat[0] is IfStartStep)
         assertEquals("a", flat[1].name)
-        assertTrue(flat[2] is ElseIfInteraction)
+        assertTrue(flat[2] is ElseIfStep)
         assertEquals("b", flat[3].name)
-        assertTrue(flat[4] is ElseInteraction)
+        assertTrue(flat[4] is ElseStep)
         assertEquals("c", flat[5].name)
-        assertTrue(flat[6] is IfEndInteraction)
+        assertTrue(flat[6] is IfEndStep)
     }
 
     @Test
     fun strayEndMarkerIsDroppedRatherThanCorruptingTheTree() {
-        val rebuilt = buildHierarchy(listOf(click("a"), IfEndInteraction(), click("b")))
+        val rebuilt = buildHierarchy(listOf(click("a"), IfEndStep(), click("b")))
         assertEquals(listOf("a", "b"), names(rebuilt))
     }
 
     @Test
     fun balanceDetectsMissingAndOrphanedMarkers() {
-        assertTrue(isBalanced(listOf(IfStartInteraction("c"), IfEndInteraction())))
+        assertTrue(isBalanced(listOf(IfStartStep("c"), IfEndStep())))
         assertTrue(
             isBalanced(
-                listOf(IfStartInteraction("c"), ElseIfInteraction("d"), ElseInteraction(), IfEndInteraction())
+                listOf(IfStartStep("c"), ElseIfStep("d"), ElseStep(), IfEndStep())
             )
         )
-        assertFalse(isBalanced(listOf(IfStartInteraction("c"))))
-        assertFalse(isBalanced(listOf(IfEndInteraction())))
+        assertFalse(isBalanced(listOf(IfStartStep("c"))))
+        assertFalse(isBalanced(listOf(IfEndStep())))
         // An Else with no enclosing If has nothing to attach to.
-        assertFalse(isBalanced(listOf(ElseInteraction())))
+        assertFalse(isBalanced(listOf(ElseStep())))
     }
 
     @Test
     fun depthsIndentBodiesButNotTheBranchMarkers() {
         val flat = listOf(
-            IfStartInteraction("c"),
+            IfStartStep("c"),
             click("a"),
-            ElseInteraction(),
+            ElseStep(),
             click("b"),
-            IfEndInteraction()
+            IfEndStep()
         )
         assertEquals(listOf(0, 1, 0, 1, 0), blockDepths(flat))
     }

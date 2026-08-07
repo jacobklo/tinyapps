@@ -167,7 +167,7 @@ fun SettingsScreen(onBack: () -> Unit) {
 					modifier = Modifier.padding(horizontal = 16.dp)
 				)
 				Text(
-					"Random variation added to every replayed touch sample. Applied on top of the per-interaction random factors.",
+					"Random variation added to every replayed touch sample. Applied on top of the per-step random factors.",
 					style = MaterialTheme.typography.bodySmall,
 					modifier = Modifier.padding(horizontal = 16.dp)
 				)

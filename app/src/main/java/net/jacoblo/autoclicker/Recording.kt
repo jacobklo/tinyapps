@@ -11,7 +11,7 @@ import java.util.Date
 import java.util.Locale
 
 // Data holder for recording and its metadata
-data class RecordingData(val events: List<Interaction>, val globalRandom: Int = 0)
+data class RecordingData(val events: List<Step>, val globalRandom: Int = 0)
 
 // Two minutes covers a code that was requested moments ago while still ruling
 // out the one from the previous login.
@@ -22,7 +22,7 @@ const val DEFAULT_CODE_MAX_AGE_S = 120L
 const val DEFAULT_CODE_TIMEOUT_MS = 90000L
 
 // 1) Separate data classes for Click and Drag
-sealed class Interaction {
+sealed class Step {
 	abstract val delayBefore: Long
 	abstract val name: String
 }
@@ -43,7 +43,7 @@ typealias AnchorImage = String
 
 // Conversion between fractions and pixels happens only at the executor boundary
 // and in the editor's fields.
-data class ClickInteraction(
+data class ClickStep(
 	val x: Float,
 	val y: Float,
 	val duration: Long,
@@ -62,7 +62,7 @@ data class ClickInteraction(
 	val touchMinor: Int = 0,
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Interaction()
+) : Step()
 
 // 2) Drag data class with multiple coordinates and delta time
 data class DragPoint(
@@ -74,7 +74,7 @@ data class DragPoint(
 	val touchMinor: Int = 0
 )
 
-data class DragInteraction(
+data class DragStep(
 	val points: List<DragPoint>,
 	val randomFactorStart: Int = 0, // Added randomFactorStart
 	val randomFactorHighest: Int = 0, // Added randomFactorHighest
@@ -84,50 +84,50 @@ data class DragInteraction(
 	val anchorText: String = "",
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Interaction()
+) : Step()
 
 // Text entry into whatever field currently holds input focus
-data class TextInteraction(
+data class TextStep(
 	val text: String,
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Interaction()
+) : Step()
 
 // A hardware/system key, by KeyEvent name: BACK, HOME, APP_SWITCH, VOLUME_UP...
-data class KeyEventInteraction(
+data class KeyEventStep(
 	val key: String,
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Interaction()
+) : Step()
 
-data class LaunchAppInteraction(
+data class LaunchAppStep(
 	val packageName: String,
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Interaction()
+) : Step()
 
-data class ShellInteraction(
+data class ShellStep(
 	val command: String,
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Interaction()
+) : Step()
 
 /**
  * Shows a toast. [message] is plain text, except that anything in braces is
  * evaluated as an expression, so a script can report what it is doing:
  * "attempt {count} of 5".
  */
-data class ToastInteraction(
+data class ToastStep(
 	val message: String,
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Interaction()
+) : Step()
 
 /** Does nothing but honour its delayBefore, for a pause between actions. */
-data class WaitInteraction(
+data class WaitStep(
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Interaction()
+) : Step()
 
 /**
  * Waits for six-digit codes from the gmail-six-digit service and stores them,
@@ -137,13 +137,13 @@ data class WaitInteraction(
  * keeps ten minutes of history, so without it the step would hand back the code
  * from the previous login the instant it was asked.
  */
-data class WaitCodeInteraction(
+data class WaitCodeStep(
 	val variable: String,
 	val maxAgeSeconds: Long,
 	val timeoutMs: Long,
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Interaction()
+) : Step()
 
 /**
  * Puts the cursor in the editable field on screen, wherever it is, and stores
@@ -154,112 +154,112 @@ data class WaitCodeInteraction(
  * clearing exact: backspace that many times rather than a number picked to be
  * large enough for anything.
  */
-data class FocusFieldInteraction(
+data class FocusFieldStep(
 	val variable: String,
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Interaction()
+) : Step()
 
 /** Assigns the result of an expression to a variable for the rest of the run. */
-data class SetVariableInteraction(
+data class SetVariableStep(
 	val variable: String,
 	val expression: String,
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Interaction()
+) : Step()
 
-// New ForLoop interaction. repeatCount <= 0 repeats until stopped or Break.
-data class ForLoopInteraction(
+// New ForLoop step. repeatCount <= 0 repeats until stopped or Break.
+data class ForLoopStep(
 	val repeatCount: Int,
-	val interactions: List<Interaction>,
+	val steps: List<Step>,
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Interaction()
+) : Step()
 
 /** One condition and the body that runs when it is the first to hold. */
-data class ConditionBranch(val condition: String, val interactions: List<Interaction>)
+data class ConditionBranch(val condition: String, val steps: List<Step>)
 
-data class IfInteraction(
+data class IfStep(
 	val branches: List<ConditionBranch>,
-	val elseBranch: List<Interaction> = emptyList(),
+	val elseBranch: List<Step> = emptyList(),
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Interaction()
+) : Step()
 
-data class WhileInteraction(
+data class WhileStep(
 	val condition: String,
-	val interactions: List<Interaction>,
+	val steps: List<Step>,
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Interaction()
+) : Step()
 
 /** Exits the innermost enclosing Repeat or While. */
-data class BreakInteraction(
+data class BreakStep(
 	override val delayBefore: Long = 0,
 	override val name: String = ""
-) : Interaction()
+) : Step()
 
-// Random Select interaction
-data class RandomSelectInteraction(
-	val interactions: List<Interaction>,
+// Random Select step
+data class RandomSelectStep(
+	val steps: List<Step>,
 	override val delayBefore: Long,
 	override val name: String = ""
-) : Interaction()
+) : Step()
 
 // Editor helper types
-data class LoopStartInteraction(
+data class LoopStartStep(
 	val repeatCount: Int,
 	override val delayBefore: Long = 0,
 	override val name: String = ""
-) : Interaction()
+) : Step()
 
-data class LoopEndInteraction(
+data class LoopEndStep(
 	override val delayBefore: Long = 0,
 	override val name: String = ""
-) : Interaction()
+) : Step()
 
-data class RandomSelectStartInteraction(
+data class RandomSelectStartStep(
 	override val delayBefore: Long = 0,
 	override val name: String = ""
-) : Interaction()
+) : Step()
 
-data class RandomSelectEndInteraction(
+data class RandomSelectEndStep(
 	override val delayBefore: Long = 0,
 	override val name: String = ""
-) : Interaction()
+) : Step()
 
-data class IfStartInteraction(
+data class IfStartStep(
 	val condition: String,
 	override val delayBefore: Long = 0,
 	override val name: String = ""
-) : Interaction()
+) : Step()
 
-data class ElseIfInteraction(
+data class ElseIfStep(
 	val condition: String,
 	override val delayBefore: Long = 0,
 	override val name: String = ""
-) : Interaction()
+) : Step()
 
-data class ElseInteraction(
+data class ElseStep(
 	override val delayBefore: Long = 0,
 	override val name: String = ""
-) : Interaction()
+) : Step()
 
-data class IfEndInteraction(
+data class IfEndStep(
 	override val delayBefore: Long = 0,
 	override val name: String = ""
-) : Interaction()
+) : Step()
 
-data class WhileStartInteraction(
+data class WhileStartStep(
 	val condition: String,
 	override val delayBefore: Long = 0,
 	override val name: String = ""
-) : Interaction()
+) : Step()
 
-data class WhileEndInteraction(
+data class WhileEndStep(
 	override val delayBefore: Long = 0,
 	override val name: String = ""
-) : Interaction()
+) : Step()
 
 /** At-a-glance description of a recording for the list screen. */
 data class RecordingSummary(val actions: Int, val durationMs: Long, val loops: Int) {
@@ -276,54 +276,54 @@ data class RecordingSummary(val actions: Int, val durationMs: Long, val loops: I
  * Runtime estimate. Loop bodies are counted repeatCount times; a random-select
  * is counted once through, so anything containing one is approximate.
  */
-fun summarize(events: List<Interaction>): RecordingSummary {
+fun summarize(events: List<Step>): RecordingSummary {
 	var actions = 0
 	var duration = 0L
 	var loops = 0
 
-	fun walk(list: List<Interaction>, repeats: Int) {
+	fun walk(list: List<Step>, repeats: Int) {
 		list.forEach { event ->
 			duration += event.delayBefore * repeats
 			when (event) {
-				is ClickInteraction -> {
+				is ClickStep -> {
 					actions++
 					duration += event.duration * event.taps.coerceAtLeast(1) * repeats
 				}
-				is DragInteraction -> {
+				is DragStep -> {
 					actions++
 					duration += event.points.sumOf { it.dt } * repeats
 				}
-				is TextInteraction -> actions++
-				is KeyEventInteraction -> actions++
-				is ToastInteraction -> actions++
-				is LaunchAppInteraction -> actions++
-				is ShellInteraction -> actions++
-				is SetVariableInteraction -> actions++
-				is FocusFieldInteraction -> actions++
-				is WaitCodeInteraction -> {
+				is TextStep -> actions++
+				is KeyEventStep -> actions++
+				is ToastStep -> actions++
+				is LaunchAppStep -> actions++
+				is ShellStep -> actions++
+				is SetVariableStep -> actions++
+				is FocusFieldStep -> actions++
+				is WaitCodeStep -> {
 					actions++
 					// Its real cost is however long the code takes to arrive;
 					// the timeout is the only bound the editor can show.
 					duration += event.timeoutMs * repeats
 				}
-				is ForLoopInteraction -> {
+				is ForLoopStep -> {
 					loops++
 					// An unbounded repeat has no meaningful runtime, so count
 					// its body once rather than reporting zero.
-					walk(event.interactions, repeats * event.repeatCount.coerceAtLeast(1))
+					walk(event.steps, repeats * event.repeatCount.coerceAtLeast(1))
 				}
-				is RandomSelectInteraction -> {
+				is RandomSelectStep -> {
 					loops++
-					walk(event.interactions, repeats)
+					walk(event.steps, repeats)
 				}
-				is WhileInteraction -> {
+				is WhileStep -> {
 					loops++
-					walk(event.interactions, repeats)
+					walk(event.steps, repeats)
 				}
-				is IfInteraction -> {
+				is IfStep -> {
 					// Only one branch runs, so counting them all would overstate
 					// both the action count and the estimate.
-					event.branches.firstOrNull()?.let { walk(it.interactions, repeats) }
+					event.branches.firstOrNull()?.let { walk(it.steps, repeats) }
 				}
 				else -> {}
 			}
@@ -347,7 +347,7 @@ object RecordingManager {
 	private val recordingsDir: File
 		get() = Storage.recordingsDir
 
-	fun saveRecording(events: List<Interaction>, globalRandom: Int = 0) {
+	fun saveRecording(events: List<Step>, globalRandom: Int = 0) {
 		// ':' is rejected by the FUSE layer that apps write external storage
 		// through (EPERM), even though root can create such a file directly.
 		val stamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
@@ -362,7 +362,7 @@ object RecordingManager {
 		saveRecordingToFile(file, events, globalRandom)
 	}
 
-	fun saveRecordingToFile(file: File, events: List<Interaction>, globalRandom: Int = 0) {
+	fun saveRecordingToFile(file: File, events: List<Step>, globalRandom: Int = 0) {
 		val jsonArray = JSONArray()
 		events.forEach { event ->
 			eventToJson(event)?.let { jsonArray.put(it) }
@@ -392,13 +392,13 @@ object RecordingManager {
 		if (anchorText.isNotBlank()) target.put("anchorText", anchorText)
 	}
 
-	private fun eventToJson(event: Interaction): JSONObject? {
+	private fun eventToJson(event: Step): JSONObject? {
 		val jsonObj = JSONObject()
 		jsonObj.put("delayBefore", event.delayBefore)
 		jsonObj.put("name", event.name)
 
 		when (event) {
-			is ClickInteraction -> {
+			is ClickStep -> {
 				jsonObj.put("type", "click")
 				jsonObj.put("x", event.x)
 				jsonObj.put("y", event.y)
@@ -408,7 +408,7 @@ object RecordingManager {
 				putAnchor(jsonObj, event.anchor, event.anchorText)
 				putTouch(jsonObj, event.pressure, event.touchMajor, event.touchMinor)
 			}
-			is DragInteraction -> {
+			is DragStep -> {
 				jsonObj.put("type", "drag")
 				val pointsArray = JSONArray()
 				event.points.forEach { point ->
@@ -424,87 +424,87 @@ object RecordingManager {
 				jsonObj.put("randomFactorHighest", event.randomFactorHighest) // Save randomFactorHighest
 				putAnchor(jsonObj, event.anchor, event.anchorText)
 			}
-			is TextInteraction -> {
+			is TextStep -> {
 				jsonObj.put("type", "text")
 				jsonObj.put("text", event.text)
 			}
-			is KeyEventInteraction -> {
+			is KeyEventStep -> {
 				jsonObj.put("type", "key")
 				jsonObj.put("key", event.key)
 			}
-			is LaunchAppInteraction -> {
+			is LaunchAppStep -> {
 				jsonObj.put("type", "launch")
 				jsonObj.put("package", event.packageName)
 			}
-			is ShellInteraction -> {
+			is ShellStep -> {
 				jsonObj.put("type", "shell")
 				jsonObj.put("command", event.command)
 			}
-			is WaitInteraction -> {
+			is WaitStep -> {
 				jsonObj.put("type", "wait")
 			}
-			is ToastInteraction -> {
+			is ToastStep -> {
 				jsonObj.put("type", "toast")
 				jsonObj.put("message", event.message)
 			}
-			is FocusFieldInteraction -> {
+			is FocusFieldStep -> {
 				jsonObj.put("type", "focus_field")
 				jsonObj.put("variable", event.variable)
 			}
-			is SetVariableInteraction -> {
+			is SetVariableStep -> {
 				jsonObj.put("type", "set")
 				jsonObj.put("variable", event.variable)
 				jsonObj.put("expression", event.expression)
 			}
-			is WaitCodeInteraction -> {
+			is WaitCodeStep -> {
 				jsonObj.put("type", "wait_code")
 				jsonObj.put("variable", event.variable)
 				jsonObj.put("maxAgeSeconds", event.maxAgeSeconds)
 				jsonObj.put("timeoutMs", event.timeoutMs)
 			}
-			is BreakInteraction -> {
+			is BreakStep -> {
 				jsonObj.put("type", "break")
 			}
-			is IfInteraction -> {
+			is IfStep -> {
 				jsonObj.put("type", "if")
 				val branchArray = JSONArray()
 				event.branches.forEach { branch ->
 					branchArray.put(JSONObject().apply {
 						put("condition", branch.condition)
-						put("events", eventsToJson(branch.interactions))
+						put("events", eventsToJson(branch.steps))
 					})
 				}
 				jsonObj.put("branches", branchArray)
 				jsonObj.put("else", eventsToJson(event.elseBranch))
 			}
-			is WhileInteraction -> {
+			is WhileStep -> {
 				jsonObj.put("type", "while")
 				jsonObj.put("condition", event.condition)
-				jsonObj.put("events", eventsToJson(event.interactions))
+				jsonObj.put("events", eventsToJson(event.steps))
 			}
-			is ForLoopInteraction -> {
+			is ForLoopStep -> {
 				jsonObj.put("type", "loop")
 				jsonObj.put("count", event.repeatCount)
-				jsonObj.put("events", eventsToJson(event.interactions))
+				jsonObj.put("events", eventsToJson(event.steps))
 			}
-			is RandomSelectInteraction -> {
+			is RandomSelectStep -> {
 				jsonObj.put("type", "random_select")
-				jsonObj.put("events", eventsToJson(event.interactions))
+				jsonObj.put("events", eventsToJson(event.steps))
 			}
 			else -> return null // Skip editor-only types
 		}
 		return jsonObj
 	}
 
-	private fun eventsToJson(events: List<Interaction>): JSONArray {
+	private fun eventsToJson(events: List<Step>): JSONArray {
 		val array = JSONArray()
 		events.forEach { child -> eventToJson(child)?.let { array.put(it) } }
 		return array
 	}
 
-	private fun jsonToEvents(array: JSONArray?): List<Interaction> {
+	private fun jsonToEvents(array: JSONArray?): List<Step> {
 		if (array == null) return emptyList()
-		val events = mutableListOf<Interaction>()
+		val events = mutableListOf<Step>()
 		for (i in 0 until array.length()) {
 			parseEvent(array.getJSONObject(i))?.let { events.add(it) }
 		}
@@ -520,7 +520,7 @@ object RecordingManager {
 	fun loadRecording(file: File): RecordingData {
 		if (!file.exists()) return RecordingData(emptyList())
 
-		val events = mutableListOf<Interaction>()
+		val events = mutableListOf<Step>()
 		var globalRandom = 0
 		try {
 			val jsonString = file.readText()
@@ -538,14 +538,14 @@ object RecordingManager {
 		return RecordingData(events, globalRandom)
 	}
 
-	private fun parseEvent(obj: JSONObject): Interaction? {
+	private fun parseEvent(obj: JSONObject): Step? {
 		val type = obj.optString("type")
 		val delayBefore = obj.optLong("delayBefore", 0L)
 		val name = obj.optString("name", "")
 
 		return when (type) {
 			"click" -> {
-				ClickInteraction(
+				ClickStep(
 					x = obj.getDouble("x").toFloat(),
 					y = obj.getDouble("y").toFloat(),
 					duration = obj.getLong("duration"),
@@ -586,7 +586,7 @@ object RecordingManager {
 					points.add(DragPoint(startX, startY, 0))
 					points.add(DragPoint(endX, endY, duration))
 				}
-				DragInteraction(
+				DragStep(
 					points = points,
 					randomFactorStart = obj.optInt("randomFactorStart", 0), // Load randomFactorStart
 					randomFactorHighest = obj.optInt("randomFactorHighest", 0), // Load randomFactorHighest
@@ -597,30 +597,30 @@ object RecordingManager {
 				)
 			}
 			"text" -> {
-				TextInteraction(
+				TextStep(
 					text = obj.optString("text", ""),
 					delayBefore = delayBefore,
 					name = name
 				)
 			}
-			"key" -> KeyEventInteraction(obj.optString("key", "BACK"), delayBefore, name)
-			"launch" -> LaunchAppInteraction(obj.optString("package", ""), delayBefore, name)
-			"shell" -> ShellInteraction(obj.optString("command", ""), delayBefore, name)
-			"wait" -> WaitInteraction(delayBefore, name)
-			"toast" -> ToastInteraction(obj.optString("message", ""), delayBefore, name)
-			"break" -> BreakInteraction(delayBefore, name)
-			"focus_field" -> FocusFieldInteraction(
+			"key" -> KeyEventStep(obj.optString("key", "BACK"), delayBefore, name)
+			"launch" -> LaunchAppStep(obj.optString("package", ""), delayBefore, name)
+			"shell" -> ShellStep(obj.optString("command", ""), delayBefore, name)
+			"wait" -> WaitStep(delayBefore, name)
+			"toast" -> ToastStep(obj.optString("message", ""), delayBefore, name)
+			"break" -> BreakStep(delayBefore, name)
+			"focus_field" -> FocusFieldStep(
 				variable = obj.optString("variable", "field"),
 				delayBefore = delayBefore,
 				name = name
 			)
-			"set" -> SetVariableInteraction(
+			"set" -> SetVariableStep(
 				variable = obj.optString("variable", ""),
 				expression = obj.optString("expression", "0"),
 				delayBefore = delayBefore,
 				name = name
 			)
-			"wait_code" -> WaitCodeInteraction(
+			"wait_code" -> WaitCodeStep(
 				variable = obj.optString("variable", "codes"),
 				maxAgeSeconds = obj.optLong("maxAgeSeconds", DEFAULT_CODE_MAX_AGE_S),
 				timeoutMs = obj.optLong("timeoutMs", DEFAULT_CODE_TIMEOUT_MS),
@@ -636,27 +636,27 @@ object RecordingManager {
 						branches.add(
 							ConditionBranch(
 								condition = branchObj.optString("condition", "false"),
-								interactions = jsonToEvents(branchObj.optJSONArray("events"))
+								steps = jsonToEvents(branchObj.optJSONArray("events"))
 							)
 						)
 					}
 				}
-				IfInteraction(branches, jsonToEvents(obj.optJSONArray("else")), delayBefore, name)
+				IfStep(branches, jsonToEvents(obj.optJSONArray("else")), delayBefore, name)
 			}
-			"while" -> WhileInteraction(
+			"while" -> WhileStep(
 				condition = obj.optString("condition", "false"),
-				interactions = jsonToEvents(obj.optJSONArray("events")),
+				steps = jsonToEvents(obj.optJSONArray("events")),
 				delayBefore = delayBefore,
 				name = name
 			)
-			"loop" -> ForLoopInteraction(
+			"loop" -> ForLoopStep(
 				repeatCount = obj.getInt("count"),
-				interactions = jsonToEvents(obj.optJSONArray("events")),
+				steps = jsonToEvents(obj.optJSONArray("events")),
 				delayBefore = delayBefore,
 				name = name
 			)
-			"random_select" -> RandomSelectInteraction(
-				interactions = jsonToEvents(obj.optJSONArray("events")),
+			"random_select" -> RandomSelectStep(
+				steps = jsonToEvents(obj.optJSONArray("events")),
 				delayBefore = delayBefore,
 				name = name
 			)

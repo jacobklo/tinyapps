@@ -40,14 +40,14 @@ private val INDENT_PER_LEVEL = 20.dp
  * the two ends separately made it easy to leave them unbalanced and an
  * unmatched End is dropped when the hierarchy is rebuilt.
  */
-private class StepOption(val label: String, val create: () -> List<Interaction>)
+private class StepOption(val label: String, val create: () -> List<Step>)
 
 // New gestures start in the middle of the screen, which is always somewhere
 // real; a corner default would look like the step was broken.
 private const val NEW_GESTURE_MS = 300L
 
 private fun swipe(fromX: Float, fromY: Float, toX: Float, toY: Float) = listOf(
-	DragInteraction(
+	DragStep(
 		points = listOf(DragPoint(fromX, fromY, 0), DragPoint(toX, toY, NEW_GESTURE_MS)),
 		delayBefore = 0
 	)
@@ -71,7 +71,7 @@ private val STEP_GROUPS = listOf(
 		listOf(
 			// Taps and Hold ms turn this one step into a double tap, a triple
 			// tap or a long press.
-			StepOption("Tap") { listOf(ClickInteraction(0.5f, 0.5f, duration = 50, delayBefore = 0)) },
+			StepOption("Tap") { listOf(ClickStep(0.5f, 0.5f, duration = 50, delayBefore = 0)) },
 			// Starts as a swipe up, which scrolls a page down; the ends are
 			// editable and are what make it any other direction.
 			StepOption("Swipe") { swipe(0.5f, 0.7f, 0.5f, 0.3f) }
@@ -80,18 +80,18 @@ private val STEP_GROUPS = listOf(
 	StepGroup(
 		"Typing",
 		listOf(
-			StepOption("Type text") { listOf(TextInteraction(text = "", delayBefore = 0)) },
-			StepOption("Focus field") { listOf(FocusFieldInteraction("field", 0)) },
-			StepOption("Key press") { listOf(KeyEventInteraction("BACK", 0)) }
+			StepOption("Type text") { listOf(TextStep(text = "", delayBefore = 0)) },
+			StepOption("Focus field") { listOf(FocusFieldStep("field", 0)) },
+			StepOption("Key press") { listOf(KeyEventStep("BACK", 0)) }
 		)
 	),
 	StepGroup(
 		"Waiting",
 		listOf(
-			StepOption("Wait") { listOf(WaitInteraction(delayBefore = 1000)) },
+			StepOption("Wait") { listOf(WaitStep(delayBefore = 1000)) },
 			StepOption("Wait for code") {
 				listOf(
-					WaitCodeInteraction(
+					WaitCodeStep(
 						variable = "codes",
 						maxAgeSeconds = DEFAULT_CODE_MAX_AGE_S,
 						timeoutMs = DEFAULT_CODE_TIMEOUT_MS,
@@ -104,22 +104,22 @@ private val STEP_GROUPS = listOf(
 	StepGroup(
 		"Logic",
 		listOf(
-			StepOption("Set variable") { listOf(SetVariableInteraction("count", "0", 0)) },
-			StepOption("If block") { listOf(IfStartInteraction("1 == 1"), IfEndInteraction()) },
-			StepOption("Else if") { listOf(ElseIfInteraction("1 == 1")) },
-			StepOption("Else") { listOf(ElseInteraction()) },
-			StepOption("Repeat block") { listOf(LoopStartInteraction(repeatCount = 2), LoopEndInteraction()) },
-			StepOption("While block") { listOf(WhileStartInteraction("1 == 1"), WhileEndInteraction()) },
-			StepOption("Random block") { listOf(RandomSelectStartInteraction(), RandomSelectEndInteraction()) },
-			StepOption("Break") { listOf(BreakInteraction()) }
+			StepOption("Set variable") { listOf(SetVariableStep("count", "0", 0)) },
+			StepOption("If block") { listOf(IfStartStep("1 == 1"), IfEndStep()) },
+			StepOption("Else if") { listOf(ElseIfStep("1 == 1")) },
+			StepOption("Else") { listOf(ElseStep()) },
+			StepOption("Repeat block") { listOf(LoopStartStep(repeatCount = 2), LoopEndStep()) },
+			StepOption("While block") { listOf(WhileStartStep("1 == 1"), WhileEndStep()) },
+			StepOption("Random block") { listOf(RandomSelectStartStep(), RandomSelectEndStep()) },
+			StepOption("Break") { listOf(BreakStep()) }
 		)
 	),
 	StepGroup(
 		"System",
 		listOf(
-			StepOption("Launch app") { listOf(LaunchAppInteraction("", 0)) },
-			StepOption("Shell command") { listOf(ShellInteraction("", 0)) },
-			StepOption("Toast") { listOf(ToastInteraction("", 0)) }
+			StepOption("Launch app") { listOf(LaunchAppStep("", 0)) },
+			StepOption("Shell command") { listOf(ShellStep("", 0)) },
+			StepOption("Toast") { listOf(ToastStep("", 0)) }
 		)
 	)
 )
@@ -143,8 +143,8 @@ private const val RELATIVE_HELP =
 		"was cropped from; a phrase costs a little more and survives the words " +
 		"moving or being restyled."
 
-private fun helpFor(interaction: Interaction): StepHelp = when (interaction) {
-	is ClickInteraction -> StepHelp(
+private fun helpFor(step: Step): StepHelp = when (step) {
+	is ClickStep -> StepHelp(
 		"Touches one point. Hold ms is how long the finger stays down and Taps " +
 			"is how many times it presses, so this one step is also a double " +
 			"tap, a triple tap and a long press. Rand px scatters the point a " +
@@ -158,7 +158,7 @@ private fun helpFor(interaction: Interaction): StepHelp = when (interaction) {
 		)
 	)
 
-	is DragInteraction -> StepHelp(
+	is DragStep -> StepHelp(
 		"Drags from one point to another, which is how you scroll, flick or " +
 			"move something. A swipe up scrolls the page down. Swipe ms is how " +
 			"long the finger takes to travel, so slower reads as a drag and " +
@@ -173,7 +173,7 @@ private fun helpFor(interaction: Interaction): StepHelp = when (interaction) {
 		)
 	)
 
-	is TextInteraction -> StepHelp(
+	is TextStep -> StepHelp(
 		"Types into whatever field has focus, one character at a time with a " +
 			"human-sized gap between them. Put a Focus field step in front of " +
 			"it unless the screen already opened with the cursor in place. " +
@@ -187,7 +187,7 @@ private fun helpFor(interaction: Interaction): StepHelp = when (interaction) {
 		)
 	)
 
-	is FocusFieldInteraction -> StepHelp(
+	is FocusFieldStep -> StepHelp(
 		"Puts the cursor in the text field on screen by asking the window " +
 			"where it is, rather than tapping a remembered spot. Touches " +
 			"nothing if the field already has focus. The variable is left " +
@@ -201,14 +201,14 @@ private fun helpFor(interaction: Interaction): StepHelp = when (interaction) {
 		)
 	)
 
-	is WaitInteraction -> StepHelp(
+	is WaitStep -> StepHelp(
 		"Pauses and does nothing else. The Wait ms field is the whole step. " +
 			"Every other step has the same field, so use this one only where a " +
 			"pause is the point.",
 		listOf("1000        a second", "5000        five seconds")
 	)
 
-	is ToastInteraction -> StepHelp(
+	is ToastStep -> StepHelp(
 		"Shows a short message on screen, which is the simplest way to see " +
 			"what a run is doing. Plain text is shown as written; anything in " +
 			"braces is worked out first.",
@@ -220,7 +220,7 @@ private fun helpFor(interaction: Interaction): StepHelp = when (interaction) {
 		)
 	)
 
-	is SetVariableInteraction -> StepHelp(
+	is SetVariableStep -> StepHelp(
 		"Stores a value under a name for the rest of this run. Variables start " +
 			"at 0 and are forgotten when playback ends. The same expressions " +
 			"work here as in a condition, so this is also how you ask about " +
@@ -235,7 +235,7 @@ private fun helpFor(interaction: Interaction): StepHelp = when (interaction) {
 		)
 	)
 
-	is WaitCodeInteraction -> StepHelp(
+	is WaitCodeStep -> StepHelp(
 		"Waits for six-digit verification codes from the gmail-six-digit " +
 			"service and stores them in the variable as a list, best guess " +
 			"first. Max age s is what makes it a wait rather than a read: the " +
@@ -250,7 +250,7 @@ private fun helpFor(interaction: Interaction): StepHelp = when (interaction) {
 		)
 	)
 
-	is KeyEventInteraction -> StepHelp(
+	is KeyEventStep -> StepHelp(
 		"Presses a hardware or system key by name. Several names separated by " +
 			"spaces are pressed in order. Needs root.",
 		listOf(
@@ -262,7 +262,7 @@ private fun helpFor(interaction: Interaction): StepHelp = when (interaction) {
 		)
 	)
 
-	is LaunchAppInteraction -> StepHelp(
+	is LaunchAppStep -> StepHelp(
 		"Opens an app by package name, as though it were tapped on the home " +
 			"screen. Find one with a Shell step running \"pm list packages\". " +
 			"Needs root.",
@@ -272,7 +272,7 @@ private fun helpFor(interaction: Interaction): StepHelp = when (interaction) {
 		)
 	)
 
-	is ShellInteraction -> StepHelp(
+	is ShellStep -> StepHelp(
 		"Runs a command as root. Output is not shown, only logged, so this is " +
 			"for doing something rather than reading something back.",
 		listOf(
@@ -283,7 +283,7 @@ private fun helpFor(interaction: Interaction): StepHelp = when (interaction) {
 		)
 	)
 
-	is IfStartInteraction, is ElseIfInteraction, is WhileStartInteraction -> StepHelp(
+	is IfStartStep, is ElseIfStep, is WhileStartStep -> StepHelp(
 		"Runs the steps inside when the condition holds; While repeats them " +
 			"for as long as it does. Compare with == != < > <= >=, combine " +
 			"with && || !, and ask about the screen with textAppear() or " +
@@ -304,7 +304,7 @@ private fun helpFor(interaction: Interaction): StepHelp = when (interaction) {
 		)
 	)
 
-	is LoopStartInteraction -> StepHelp(
+	is LoopStartStep -> StepHelp(
 		"Repeats the steps inside a set number of times. Set the count to 0 to " +
 			"repeat until a Break step or the stop button.",
 		listOf(
@@ -313,26 +313,26 @@ private fun helpFor(interaction: Interaction): StepHelp = when (interaction) {
 		)
 	)
 
-	is RandomSelectStartInteraction -> StepHelp(
+	is RandomSelectStartStep -> StepHelp(
 		"Runs exactly one of the steps inside, chosen at random each time it " +
 			"is reached. Useful for varying a run so it does not repeat itself " +
 			"identically."
 	)
 
-	is BreakInteraction -> StepHelp(
+	is BreakStep -> StepHelp(
 		"Leaves the innermost Repeat or While immediately and carries on after " +
 			"it. Usually sits inside an If, so the loop stops once something " +
 			"has worked.",
 		listOf("If textAppear(\"Welcome\") then Break      stop once it is done")
 	)
 
-	is ElseInteraction -> StepHelp("Runs when none of the conditions above it held.")
+	is ElseStep -> StepHelp("Runs when none of the conditions above it held.")
 
 	else -> StepHelp("Marks the end of the block above it.")
 }
 
-/** An interaction plus a stable id, so reordering can key rows by identity. */
-private data class EditorRow(val id: Long, val interaction: Interaction)
+/** An step plus a stable id, so reordering can key rows by identity. */
+private data class EditorRow(val id: Long, val step: Step)
 
 class EditorActivity : ComponentActivity() {
 	override fun onCreate(savedInstanceState: Bundle?) {
@@ -364,15 +364,15 @@ class EditorActivity : ComponentActivity() {
 fun EditorScreen(file: File, onBack: () -> Unit) {
 	val recordingData = remember { RecordingManager.loadRecording(file) }
 	// The hierarchy is flattened for editing and rebuilt on save.
-	val initialInteractions = remember { flatten(recordingData.events) }
+	val initialSteps = remember { flatten(recordingData.events) }
 	// Rows carry an id because reordering needs stable identity: keying by
 	// position would attach a row's field state to the slot, not the item.
 	val rows = remember {
 		mutableStateListOf<EditorRow>().apply {
-			initialInteractions.forEachIndexed { index, item -> add(EditorRow(index.toLong(), item)) }
+			initialSteps.forEachIndexed { index, item -> add(EditorRow(index.toLong(), item)) }
 		}
 	}
-	var nextRowId by remember { mutableLongStateOf(initialInteractions.size.toLong()) }
+	var nextRowId by remember { mutableLongStateOf(initialSteps.size.toLong()) }
 
 	var globalRandom by remember { mutableIntStateOf(recordingData.globalRandom) }
 	var groupToAdd by remember { mutableStateOf(STEP_GROUPS.first()) }
@@ -381,16 +381,16 @@ fun EditorScreen(file: File, onBack: () -> Unit) {
 	var expandedId by remember { mutableStateOf<Long?>(null) }
 	var confirmDiscard by remember { mutableStateOf(false) }
 
-	val interactions = rows.map { it.interaction }
-	val dirty = interactions != initialInteractions || globalRandom != recordingData.globalRandom
-	val depths = blockDepths(interactions)
+	val steps = rows.map { it.step }
+	val dirty = steps != initialSteps || globalRandom != recordingData.globalRandom
+	val depths = blockDepths(steps)
 
-	fun add(interaction: Interaction) {
-		rows.add(EditorRow(nextRowId++, interaction))
+	fun add(step: Step) {
+		rows.add(EditorRow(nextRowId++, step))
 	}
 
 	fun save() {
-		RecordingManager.saveRecordingToFile(file, buildHierarchy(interactions), globalRandom)
+		RecordingManager.saveRecordingToFile(file, buildHierarchy(steps), globalRandom)
 		onBack()
 	}
 
@@ -478,7 +478,7 @@ fun EditorScreen(file: File, onBack: () -> Unit) {
 				)
 			}
 
-			if (!isBalanced(interactions)) {
+			if (!isBalanced(steps)) {
 				Text(
 					"Unbalanced blocks: every Repeat/Random needs a matching End, or the extra one is dropped on save.",
 					style = MaterialTheme.typography.bodySmall,
@@ -501,8 +501,8 @@ fun EditorScreen(file: File, onBack: () -> Unit) {
 			) {
 				itemsIndexed(rows, key = { _, row -> row.id }) { index, row ->
 					ReorderableItem(reorderState, key = row.id) { dragging ->
-						InteractionRow(
-							interaction = row.interaction,
+						StepRow(
+							step = row.step,
 							depth = depths.getOrElse(index) { 0 },
 							expanded = expandedId == row.id,
 							dragging = dragging,
@@ -522,7 +522,7 @@ fun EditorScreen(file: File, onBack: () -> Unit) {
 							onToggleExpand = {
 								expandedId = if (expandedId == row.id) null else row.id
 							},
-							onUpdate = { updated -> rows[index] = row.copy(interaction = updated) },
+							onUpdate = { updated -> rows[index] = row.copy(step = updated) },
 							onDelete = {
 								rows.removeAt(index)
 								expandedId = null
@@ -604,14 +604,14 @@ private fun DropdownPicker(
 }
 
 @Composable
-fun InteractionRow(
-	interaction: Interaction,
+fun StepRow(
+	step: Step,
 	depth: Int,
 	expanded: Boolean,
 	dragging: Boolean,
 	dragHandle: @Composable () -> Unit,
 	onToggleExpand: () -> Unit,
-	onUpdate: (Interaction) -> Unit,
+	onUpdate: (Step) -> Unit,
 	onDelete: () -> Unit,
 	modifier: Modifier = Modifier
 ) {
@@ -646,9 +646,9 @@ fun InteractionRow(
 		) {
 			Row(verticalAlignment = Alignment.CenterVertically) {
 				Text(
-					text = describeInteraction(interaction, screen),
+					text = describeStep(step, screen),
 					style = MaterialTheme.typography.bodyMedium,
-					color = if (interaction.isBlockMarker()) accent else MaterialTheme.colorScheme.onSurface,
+					color = if (step.isBlockMarker()) accent else MaterialTheme.colorScheme.onSurface,
 					modifier = Modifier.weight(1f)
 				)
 				IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
@@ -659,9 +659,9 @@ fun InteractionRow(
 
 			if (expanded) {
 				Spacer(modifier = Modifier.height(8.dp))
-				InteractionFields(interaction = interaction, onUpdate = onUpdate)
+				StepFields(step = step, onUpdate = onUpdate)
 				Spacer(modifier = Modifier.height(8.dp))
-				StepHelpPanel(helpFor(interaction))
+				StepHelpPanel(helpFor(step))
 			}
 		}
 	}
@@ -702,7 +702,7 @@ private fun StepHelpPanel(help: StepHelp) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun InteractionFields(interaction: Interaction, onUpdate: (Interaction) -> Unit) {
+private fun StepFields(step: Step, onUpdate: (Step) -> Unit) {
 	// Coordinates are stored as fractions of the screen so scripts stay
 	// portable, but they are shown and edited as pixels for this display.
 	val screen = remember { ScreenGeometry.current(AppSettings.appContext) }
@@ -713,83 +713,83 @@ private fun InteractionFields(interaction: Interaction, onUpdate: (Interaction) 
 	) {
 		// End markers are discarded when the hierarchy is rebuilt, so a delay
 		// on them would go nowhere.
-		if (!interaction.isBlockEnd()) {
+		if (!step.isBlockEnd()) {
 			NumberField(
-				value = interaction.delayBefore,
-				onValueChange = { onUpdate(interaction.withDelay(it)) },
+				value = step.delayBefore,
+				onValueChange = { onUpdate(step.withDelay(it)) },
 				label = "Wait ms",
 				modifier = Modifier.width(100.dp)
 			)
 		}
 
-		when (interaction) {
-			is ClickInteraction -> {
+		when (step) {
+			is ClickStep -> {
 				var mode by remember {
-					mutableStateOf(AnchorMode.of(interaction.anchor, interaction.anchorText))
+					mutableStateOf(AnchorMode.of(step.anchor, step.anchorText))
 				}
 				// A mode that is picked but not yet filled in still means the
 				// coordinates are offsets, or dX 100 would be reread as 108000.
 				val anchored = mode != AnchorMode.SCREEN
 				AnchorPicker(
-					selected = interaction.anchor,
-					selectedText = interaction.anchorText,
+					selected = step.anchor,
+					selectedText = step.anchorText,
 					mode = mode,
 					onModeChange = { mode = it },
 					onAnchor = { image, phrase ->
-						onUpdate(interaction.copy(anchor = image, anchorText = phrase))
+						onUpdate(step.copy(anchor = image, anchorText = phrase))
 					}
 				)
 				CoordField(
-					value = interaction.x,
-					onValueChange = { onUpdate(interaction.copy(x = it)) },
+					value = step.x,
+					onValueChange = { onUpdate(step.copy(x = it)) },
 					label = if (anchored) "dX px" else "X px",
 					screenSize = screen.width,
 					anchored = anchored
 				)
 				CoordField(
-					value = interaction.y,
-					onValueChange = { onUpdate(interaction.copy(y = it)) },
+					value = step.y,
+					onValueChange = { onUpdate(step.copy(y = it)) },
 					label = if (anchored) "dY px" else "Y px",
 					screenSize = screen.height,
 					anchored = anchored
 				)
 				NumberField(
-					value = interaction.duration,
-					onValueChange = { onUpdate(interaction.copy(duration = it)) },
+					value = step.duration,
+					onValueChange = { onUpdate(step.copy(duration = it)) },
 					label = "Hold ms",
 					modifier = Modifier.width(100.dp)
 				)
 				NumberField(
-					value = interaction.taps.toLong(),
-					onValueChange = { onUpdate(interaction.copy(taps = it.toInt().coerceAtLeast(1))) },
+					value = step.taps.toLong(),
+					onValueChange = { onUpdate(step.copy(taps = it.toInt().coerceAtLeast(1))) },
 					label = "Taps",
 					modifier = Modifier.width(80.dp)
 				)
 				NumberField(
-					value = interaction.randomFactor.toLong(),
-					onValueChange = { onUpdate(interaction.copy(randomFactor = it.toInt())) },
+					value = step.randomFactor.toLong(),
+					onValueChange = { onUpdate(step.copy(randomFactor = it.toInt())) },
 					label = "Rand px",
 					modifier = Modifier.width(100.dp)
 				)
 			}
-			is DragInteraction -> {
+			is DragStep -> {
 				var mode by remember {
-					mutableStateOf(AnchorMode.of(interaction.anchor, interaction.anchorText))
+					mutableStateOf(AnchorMode.of(step.anchor, step.anchorText))
 				}
 				val anchored = mode != AnchorMode.SCREEN
-				val start = interaction.points.firstOrNull()
-				val end = interaction.points.lastOrNull()
+				val start = step.points.firstOrNull()
+				val end = step.points.lastOrNull()
 				// A recorded path has many points and only its start is
 				// meaningful to edit; a two-point swipe is defined by its ends.
-				val simple = interaction.points.size == 2
+				val simple = step.points.size == 2
 
 				AnchorPicker(
-					selected = interaction.anchor,
-					selectedText = interaction.anchorText,
+					selected = step.anchor,
+					selectedText = step.anchorText,
 					mode = mode,
 					onModeChange = { mode = it },
 					onAnchor = { image, phrase ->
-						onUpdate(interaction.copy(anchor = image, anchorText = phrase))
+						onUpdate(step.copy(anchor = image, anchorText = phrase))
 					}
 				)
 				if (start != null) {
@@ -797,7 +797,7 @@ private fun InteractionFields(interaction: Interaction, onUpdate: (Interaction) 
 					// you want when a recorded gesture landed slightly off.
 					CoordField(
 						value = start.x,
-						onValueChange = { onUpdate(interaction.translatedTo(it, start.y)) },
+						onValueChange = { onUpdate(step.translatedTo(it, start.y)) },
 						label = if (anchored) "Start dX" else "Start X px",
 						screenSize = screen.width,
 						anchored = anchored,
@@ -805,7 +805,7 @@ private fun InteractionFields(interaction: Interaction, onUpdate: (Interaction) 
 					)
 					CoordField(
 						value = start.y,
-						onValueChange = { onUpdate(interaction.translatedTo(start.x, it)) },
+						onValueChange = { onUpdate(step.translatedTo(start.x, it)) },
 						label = if (anchored) "Start dY" else "Start Y px",
 						screenSize = screen.height,
 						anchored = anchored,
@@ -815,7 +815,7 @@ private fun InteractionFields(interaction: Interaction, onUpdate: (Interaction) 
 				if (simple && end != null) {
 					CoordField(
 						value = end.x,
-						onValueChange = { onUpdate(interaction.withEnd(it, end.y)) },
+						onValueChange = { onUpdate(step.withEnd(it, end.y)) },
 						label = if (anchored) "End dX" else "End X px",
 						screenSize = screen.width,
 						anchored = anchored,
@@ -823,7 +823,7 @@ private fun InteractionFields(interaction: Interaction, onUpdate: (Interaction) 
 					)
 					CoordField(
 						value = end.y,
-						onValueChange = { onUpdate(interaction.withEnd(end.x, it)) },
+						onValueChange = { onUpdate(step.withEnd(end.x, it)) },
 						label = if (anchored) "End dY" else "End Y px",
 						screenSize = screen.height,
 						anchored = anchored,
@@ -831,132 +831,132 @@ private fun InteractionFields(interaction: Interaction, onUpdate: (Interaction) 
 					)
 					NumberField(
 						value = end.dt,
-						onValueChange = { onUpdate(interaction.withSwipeDuration(it)) },
+						onValueChange = { onUpdate(step.withSwipeDuration(it)) },
 						label = "Swipe ms",
 						modifier = Modifier.width(110.dp)
 					)
 				}
 				NumberField(
-					value = interaction.randomFactorStart.toLong(),
-					onValueChange = { onUpdate(interaction.copy(randomFactorStart = it.toInt())) },
+					value = step.randomFactorStart.toLong(),
+					onValueChange = { onUpdate(step.copy(randomFactorStart = it.toInt())) },
 					label = "Rand start",
 					modifier = Modifier.width(110.dp)
 				)
 				NumberField(
-					value = interaction.randomFactorHighest.toLong(),
-					onValueChange = { onUpdate(interaction.copy(randomFactorHighest = it.toInt())) },
+					value = step.randomFactorHighest.toLong(),
+					onValueChange = { onUpdate(step.copy(randomFactorHighest = it.toInt())) },
 					label = "Rand mid",
 					modifier = Modifier.width(110.dp)
 				)
 			}
-			is TextInteraction -> {
+			is TextStep -> {
 				OutlinedTextField(
-					value = interaction.text,
-					onValueChange = { onUpdate(interaction.copy(text = it)) },
+					value = step.text,
+					onValueChange = { onUpdate(step.copy(text = it)) },
 					label = { Text("Text") },
 					modifier = Modifier.width(220.dp),
 					singleLine = true
 				)
 			}
-			is LoopStartInteraction -> {
+			is LoopStartStep -> {
 				NumberField(
-					value = interaction.repeatCount.toLong(),
-					onValueChange = { onUpdate(interaction.copy(repeatCount = it.toInt())) },
+					value = step.repeatCount.toLong(),
+					onValueChange = { onUpdate(step.copy(repeatCount = it.toInt())) },
 					label = "Repeat (0 = forever)",
 					modifier = Modifier.width(180.dp)
 				)
 			}
-			is ToastInteraction -> {
+			is ToastStep -> {
 				TextFieldEntry(
-					value = interaction.message,
-					onValueChange = { onUpdate(interaction.copy(message = it)) },
+					value = step.message,
+					onValueChange = { onUpdate(step.copy(message = it)) },
 					label = "Message ({...} is evaluated)",
 					width = 280.dp
 				)
 			}
-			is KeyEventInteraction -> {
+			is KeyEventStep -> {
 				TextFieldEntry(
-					value = interaction.key,
-					onValueChange = { onUpdate(interaction.copy(key = it)) },
+					value = step.key,
+					onValueChange = { onUpdate(step.copy(key = it)) },
 					label = "Key (BACK, HOME, APP_SWITCH...)",
 					width = 280.dp
 				)
 			}
-			is LaunchAppInteraction -> {
+			is LaunchAppStep -> {
 				TextFieldEntry(
-					value = interaction.packageName,
-					onValueChange = { onUpdate(interaction.copy(packageName = it)) },
+					value = step.packageName,
+					onValueChange = { onUpdate(step.copy(packageName = it)) },
 					label = "Package name",
 					width = 280.dp
 				)
 			}
-			is ShellInteraction -> {
+			is ShellStep -> {
 				TextFieldEntry(
-					value = interaction.command,
-					onValueChange = { onUpdate(interaction.copy(command = it)) },
+					value = step.command,
+					onValueChange = { onUpdate(step.copy(command = it)) },
 					label = "Shell command (root)",
 					width = 280.dp
 				)
 			}
-			is SetVariableInteraction -> {
+			is SetVariableStep -> {
 				TextFieldEntry(
-					value = interaction.variable,
-					onValueChange = { onUpdate(interaction.copy(variable = it)) },
+					value = step.variable,
+					onValueChange = { onUpdate(step.copy(variable = it)) },
 					label = "Variable",
 					width = 140.dp
 				)
 				ExpressionField(
-					value = interaction.expression,
-					onValueChange = { onUpdate(interaction.copy(expression = it)) },
+					value = step.expression,
+					onValueChange = { onUpdate(step.copy(expression = it)) },
 					label = "= expression"
 				)
 			}
-			is FocusFieldInteraction -> {
+			is FocusFieldStep -> {
 				TextFieldEntry(
-					value = interaction.variable,
-					onValueChange = { onUpdate(interaction.copy(variable = it)) },
+					value = step.variable,
+					onValueChange = { onUpdate(step.copy(variable = it)) },
 					label = "Length into",
 					width = 140.dp
 				)
 			}
-			is WaitCodeInteraction -> {
+			is WaitCodeStep -> {
 				TextFieldEntry(
-					value = interaction.variable,
-					onValueChange = { onUpdate(interaction.copy(variable = it)) },
+					value = step.variable,
+					onValueChange = { onUpdate(step.copy(variable = it)) },
 					label = "Variable",
 					width = 140.dp
 				)
 				NumberField(
-					value = interaction.maxAgeSeconds,
-					onValueChange = { onUpdate(interaction.copy(maxAgeSeconds = it)) },
+					value = step.maxAgeSeconds,
+					onValueChange = { onUpdate(step.copy(maxAgeSeconds = it)) },
 					label = "Max age s",
 					modifier = Modifier.width(120.dp)
 				)
 				NumberField(
-					value = interaction.timeoutMs,
-					onValueChange = { onUpdate(interaction.copy(timeoutMs = it)) },
+					value = step.timeoutMs,
+					onValueChange = { onUpdate(step.copy(timeoutMs = it)) },
 					label = "Timeout ms",
 					modifier = Modifier.width(120.dp)
 				)
 			}
-			is IfStartInteraction -> {
+			is IfStartStep -> {
 				ExpressionField(
-					value = interaction.condition,
-					onValueChange = { onUpdate(interaction.copy(condition = it)) },
+					value = step.condition,
+					onValueChange = { onUpdate(step.copy(condition = it)) },
 					label = "Condition"
 				)
 			}
-			is ElseIfInteraction -> {
+			is ElseIfStep -> {
 				ExpressionField(
-					value = interaction.condition,
-					onValueChange = { onUpdate(interaction.copy(condition = it)) },
+					value = step.condition,
+					onValueChange = { onUpdate(step.copy(condition = it)) },
 					label = "Condition"
 				)
 			}
-			is WhileStartInteraction -> {
+			is WhileStartStep -> {
 				ExpressionField(
-					value = interaction.condition,
-					onValueChange = { onUpdate(interaction.copy(condition = it)) },
+					value = step.condition,
+					onValueChange = { onUpdate(step.copy(condition = it)) },
 					label = "While condition"
 				)
 			}
@@ -964,8 +964,8 @@ private fun InteractionFields(interaction: Interaction, onUpdate: (Interaction) 
 		}
 
 		OutlinedTextField(
-			value = interaction.name,
-			onValueChange = { onUpdate(interaction.withName(it)) },
+			value = step.name,
+			onValueChange = { onUpdate(step.withName(it)) },
 			label = { Text("Name") },
 			modifier = Modifier.width(180.dp),
 			singleLine = true
@@ -1180,12 +1180,12 @@ private fun blockAccent(depth: Int): Color {
 private fun repeatLabel(count: Int): String =
 	if (count <= 0) "Repeat forever" else "Repeat ${count}x"
 
-private fun Interaction.isBlockMarker(): Boolean =
+private fun Step.isBlockMarker(): Boolean =
 	opensBlock(this) || closesBlock(this) || isMidBlock(this)
 
-private fun Interaction.isBlockEnd(): Boolean = closesBlock(this) || isMidBlock(this)
+private fun Step.isBlockEnd(): Boolean = closesBlock(this) || isMidBlock(this)
 
-private fun describeInteraction(interaction: Interaction, screen: ScreenGeometry): String {
+private fun describeStep(step: Step, screen: ScreenGeometry): String {
 	// Anchored coordinates are already pixels, and are an offset rather than a
 	// place, so they are shown signed to make that obvious.
 	fun px(x: Float, y: Float, anchor: AnchorImage, anchorText: String = "") =
@@ -1199,73 +1199,73 @@ private fun describeInteraction(interaction: Interaction, screen: ScreenGeometry
 		else -> ""
 	}
 
-	val wait = if (interaction.delayBefore > 0) "wait ${interaction.delayBefore}ms  " else ""
-	val label = when (interaction) {
-		is ClickInteraction -> {
+	val wait = if (step.delayBefore > 0) "wait ${step.delayBefore}ms  " else ""
+	val label = when (step) {
+		is ClickStep -> {
 			val what = when {
-				interaction.taps > 1 -> "Tap x${interaction.taps}"
-				interaction.duration >= 500 -> "Long press"
+				step.taps > 1 -> "Tap x${step.taps}"
+				step.duration >= 500 -> "Long press"
 				else -> "Click"
 			}
-			"$what ${px(interaction.x, interaction.y, interaction.anchor, interaction.anchorText)}" +
-				"  ${interaction.duration}ms${from(interaction.anchor, interaction.anchorText)}"
+			"$what ${px(step.x, step.y, step.anchor, step.anchorText)}" +
+				"  ${step.duration}ms${from(step.anchor, step.anchorText)}"
 		}
-		is DragInteraction -> {
-			val start = interaction.points.firstOrNull()
-			val end = interaction.points.lastOrNull()
+		is DragStep -> {
+			val start = step.points.firstOrNull()
+			val end = step.points.lastOrNull()
 			if (start == null || end == null) {
 				"Drag (empty)"
 			} else {
-				"Drag ${px(start.x, start.y, interaction.anchor, interaction.anchorText)} to " +
-					"${px(end.x, end.y, interaction.anchor, interaction.anchorText)}" +
-					"  ${interaction.points.size} pts" + from(interaction.anchor, interaction.anchorText)
+				"Drag ${px(start.x, start.y, step.anchor, step.anchorText)} to " +
+					"${px(end.x, end.y, step.anchor, step.anchorText)}" +
+					"  ${step.points.size} pts" + from(step.anchor, step.anchorText)
 			}
 		}
-		is TextInteraction ->
-			if (interaction.text.isBlank()) "Text (empty)" else "Text \"${interaction.text}\""
-		is KeyEventInteraction -> "Key ${interaction.key}"
-		is LaunchAppInteraction -> "Launch ${interaction.packageName.ifBlank { "(no package)" }}"
-		is ShellInteraction -> "Shell: ${interaction.command.ifBlank { "(empty)" }}"
-		is WaitInteraction -> "Wait"
-		is ToastInteraction -> "Toast: ${interaction.message.ifBlank { "(empty)" }}"
-		is SetVariableInteraction -> "Set ${interaction.variable} = ${interaction.expression}"
-		is FocusFieldInteraction -> "Focus field  length -> ${interaction.variable}"
-		is WaitCodeInteraction ->
-			"Wait for code -> ${interaction.variable}  max age ${interaction.maxAgeSeconds}s"
-		is BreakInteraction -> "Break"
-		is LoopStartInteraction -> repeatLabel(interaction.repeatCount)
-		is LoopEndInteraction -> "End repeat"
-		is RandomSelectStartInteraction -> "Random one of"
-		is RandomSelectEndInteraction -> "End random"
-		is IfStartInteraction -> "If ${interaction.condition}"
-		is ElseIfInteraction -> "Else if ${interaction.condition}"
-		is ElseInteraction -> "Else"
-		is IfEndInteraction -> "End if"
-		is WhileStartInteraction -> "While ${interaction.condition}"
-		is WhileEndInteraction -> "End while"
-		is ForLoopInteraction -> repeatLabel(interaction.repeatCount)
-		is RandomSelectInteraction -> "Random one of"
-		is IfInteraction -> "If ${interaction.branches.firstOrNull()?.condition ?: ""}"
-		is WhileInteraction -> "While ${interaction.condition}"
+		is TextStep ->
+			if (step.text.isBlank()) "Text (empty)" else "Text \"${step.text}\""
+		is KeyEventStep -> "Key ${step.key}"
+		is LaunchAppStep -> "Launch ${step.packageName.ifBlank { "(no package)" }}"
+		is ShellStep -> "Shell: ${step.command.ifBlank { "(empty)" }}"
+		is WaitStep -> "Wait"
+		is ToastStep -> "Toast: ${step.message.ifBlank { "(empty)" }}"
+		is SetVariableStep -> "Set ${step.variable} = ${step.expression}"
+		is FocusFieldStep -> "Focus field  length -> ${step.variable}"
+		is WaitCodeStep ->
+			"Wait for code -> ${step.variable}  max age ${step.maxAgeSeconds}s"
+		is BreakStep -> "Break"
+		is LoopStartStep -> repeatLabel(step.repeatCount)
+		is LoopEndStep -> "End repeat"
+		is RandomSelectStartStep -> "Random one of"
+		is RandomSelectEndStep -> "End random"
+		is IfStartStep -> "If ${step.condition}"
+		is ElseIfStep -> "Else if ${step.condition}"
+		is ElseStep -> "Else"
+		is IfEndStep -> "End if"
+		is WhileStartStep -> "While ${step.condition}"
+		is WhileEndStep -> "End while"
+		is ForLoopStep -> repeatLabel(step.repeatCount)
+		is RandomSelectStep -> "Random one of"
+		is IfStep -> "If ${step.branches.firstOrNull()?.condition ?: ""}"
+		is WhileStep -> "While ${step.condition}"
 	}
-	val name = if (interaction.name.isBlank()) "" else "  -  ${interaction.name}"
+	val name = if (step.name.isBlank()) "" else "  -  ${step.name}"
 	return "$wait$label$name"
 }
 
-private fun opensBlock(item: Interaction): Boolean =
-	item is LoopStartInteraction || item is RandomSelectStartInteraction ||
-		item is WhileStartInteraction || item is IfStartInteraction
+private fun opensBlock(item: Step): Boolean =
+	item is LoopStartStep || item is RandomSelectStartStep ||
+		item is WhileStartStep || item is IfStartStep
 
-private fun closesBlock(item: Interaction): Boolean =
-	item is LoopEndInteraction || item is RandomSelectEndInteraction ||
-		item is WhileEndInteraction || item is IfEndInteraction
+private fun closesBlock(item: Step): Boolean =
+	item is LoopEndStep || item is RandomSelectEndStep ||
+		item is WhileEndStep || item is IfEndStep
 
 /** ElseIf and Else sit at the parent's level but keep the block open. */
-private fun isMidBlock(item: Interaction): Boolean =
-	item is ElseIfInteraction || item is ElseInteraction
+private fun isMidBlock(item: Step): Boolean =
+	item is ElseIfStep || item is ElseStep
 
 /** Indent level of each row, so nested blocks can be drawn as nested. */
-fun blockDepths(items: List<Interaction>): List<Int> {
+fun blockDepths(items: List<Step>): List<Int> {
 	var depth = 0
 	return items.map { item ->
 		when {
@@ -1280,7 +1280,7 @@ fun blockDepths(items: List<Interaction>): List<Int> {
 	}
 }
 
-fun isBalanced(items: List<Interaction>): Boolean {
+fun isBalanced(items: List<Step>): Boolean {
 	var depth = 0
 	items.forEach { item ->
 		when {
@@ -1298,69 +1298,69 @@ fun isBalanced(items: List<Interaction>): Boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Interaction copy helpers -- every subclass carries its own fields
+// Step copy helpers -- every subclass carries its own fields
 // ---------------------------------------------------------------------------
 
-fun Interaction.withDelay(delay: Long): Interaction = when (this) {
-	is ClickInteraction -> copy(delayBefore = delay)
-	is DragInteraction -> copy(delayBefore = delay)
-	is TextInteraction -> copy(delayBefore = delay)
-	is KeyEventInteraction -> copy(delayBefore = delay)
-	is LaunchAppInteraction -> copy(delayBefore = delay)
-	is ShellInteraction -> copy(delayBefore = delay)
-	is WaitInteraction -> copy(delayBefore = delay)
-	is ToastInteraction -> copy(delayBefore = delay)
-	is SetVariableInteraction -> copy(delayBefore = delay)
-	is WaitCodeInteraction -> copy(delayBefore = delay)
-	is FocusFieldInteraction -> copy(delayBefore = delay)
-	is BreakInteraction -> copy(delayBefore = delay)
-	is ForLoopInteraction -> copy(delayBefore = delay)
-	is RandomSelectInteraction -> copy(delayBefore = delay)
-	is IfInteraction -> copy(delayBefore = delay)
-	is WhileInteraction -> copy(delayBefore = delay)
-	is LoopStartInteraction -> copy(delayBefore = delay)
-	is LoopEndInteraction -> copy(delayBefore = delay)
-	is RandomSelectStartInteraction -> copy(delayBefore = delay)
-	is RandomSelectEndInteraction -> copy(delayBefore = delay)
-	is IfStartInteraction -> copy(delayBefore = delay)
-	is ElseIfInteraction -> copy(delayBefore = delay)
-	is ElseInteraction -> copy(delayBefore = delay)
-	is IfEndInteraction -> copy(delayBefore = delay)
-	is WhileStartInteraction -> copy(delayBefore = delay)
-	is WhileEndInteraction -> copy(delayBefore = delay)
+fun Step.withDelay(delay: Long): Step = when (this) {
+	is ClickStep -> copy(delayBefore = delay)
+	is DragStep -> copy(delayBefore = delay)
+	is TextStep -> copy(delayBefore = delay)
+	is KeyEventStep -> copy(delayBefore = delay)
+	is LaunchAppStep -> copy(delayBefore = delay)
+	is ShellStep -> copy(delayBefore = delay)
+	is WaitStep -> copy(delayBefore = delay)
+	is ToastStep -> copy(delayBefore = delay)
+	is SetVariableStep -> copy(delayBefore = delay)
+	is WaitCodeStep -> copy(delayBefore = delay)
+	is FocusFieldStep -> copy(delayBefore = delay)
+	is BreakStep -> copy(delayBefore = delay)
+	is ForLoopStep -> copy(delayBefore = delay)
+	is RandomSelectStep -> copy(delayBefore = delay)
+	is IfStep -> copy(delayBefore = delay)
+	is WhileStep -> copy(delayBefore = delay)
+	is LoopStartStep -> copy(delayBefore = delay)
+	is LoopEndStep -> copy(delayBefore = delay)
+	is RandomSelectStartStep -> copy(delayBefore = delay)
+	is RandomSelectEndStep -> copy(delayBefore = delay)
+	is IfStartStep -> copy(delayBefore = delay)
+	is ElseIfStep -> copy(delayBefore = delay)
+	is ElseStep -> copy(delayBefore = delay)
+	is IfEndStep -> copy(delayBefore = delay)
+	is WhileStartStep -> copy(delayBefore = delay)
+	is WhileEndStep -> copy(delayBefore = delay)
 }
 
-fun Interaction.withName(newName: String): Interaction = when (this) {
-	is ClickInteraction -> copy(name = newName)
-	is DragInteraction -> copy(name = newName)
-	is TextInteraction -> copy(name = newName)
-	is KeyEventInteraction -> copy(name = newName)
-	is LaunchAppInteraction -> copy(name = newName)
-	is ShellInteraction -> copy(name = newName)
-	is WaitInteraction -> copy(name = newName)
-	is ToastInteraction -> copy(name = newName)
-	is SetVariableInteraction -> copy(name = newName)
-	is WaitCodeInteraction -> copy(name = newName)
-	is FocusFieldInteraction -> copy(name = newName)
-	is BreakInteraction -> copy(name = newName)
-	is ForLoopInteraction -> copy(name = newName)
-	is RandomSelectInteraction -> copy(name = newName)
-	is IfInteraction -> copy(name = newName)
-	is WhileInteraction -> copy(name = newName)
-	is LoopStartInteraction -> copy(name = newName)
-	is LoopEndInteraction -> copy(name = newName)
-	is RandomSelectStartInteraction -> copy(name = newName)
-	is RandomSelectEndInteraction -> copy(name = newName)
-	is IfStartInteraction -> copy(name = newName)
-	is ElseIfInteraction -> copy(name = newName)
-	is ElseInteraction -> copy(name = newName)
-	is IfEndInteraction -> copy(name = newName)
-	is WhileStartInteraction -> copy(name = newName)
-	is WhileEndInteraction -> copy(name = newName)
+fun Step.withName(newName: String): Step = when (this) {
+	is ClickStep -> copy(name = newName)
+	is DragStep -> copy(name = newName)
+	is TextStep -> copy(name = newName)
+	is KeyEventStep -> copy(name = newName)
+	is LaunchAppStep -> copy(name = newName)
+	is ShellStep -> copy(name = newName)
+	is WaitStep -> copy(name = newName)
+	is ToastStep -> copy(name = newName)
+	is SetVariableStep -> copy(name = newName)
+	is WaitCodeStep -> copy(name = newName)
+	is FocusFieldStep -> copy(name = newName)
+	is BreakStep -> copy(name = newName)
+	is ForLoopStep -> copy(name = newName)
+	is RandomSelectStep -> copy(name = newName)
+	is IfStep -> copy(name = newName)
+	is WhileStep -> copy(name = newName)
+	is LoopStartStep -> copy(name = newName)
+	is LoopEndStep -> copy(name = newName)
+	is RandomSelectStartStep -> copy(name = newName)
+	is RandomSelectEndStep -> copy(name = newName)
+	is IfStartStep -> copy(name = newName)
+	is ElseIfStep -> copy(name = newName)
+	is ElseStep -> copy(name = newName)
+	is IfEndStep -> copy(name = newName)
+	is WhileStartStep -> copy(name = newName)
+	is WhileEndStep -> copy(name = newName)
 }
 
 /** Moves the whole path so its first point lands on the given coordinates. */
-fun DragInteraction.translatedTo(x: Float, y: Float): DragInteraction {
+fun DragStep.translatedTo(x: Float, y: Float): DragStep {
 	val start = points.firstOrNull() ?: return this
 	val dx = x - start.x
 	val dy = y - start.y
@@ -1368,7 +1368,7 @@ fun DragInteraction.translatedTo(x: Float, y: Float): DragInteraction {
 }
 
 /** Moves only the last point, which for a two-point swipe is its destination. */
-fun DragInteraction.withEnd(x: Float, y: Float): DragInteraction {
+fun DragStep.withEnd(x: Float, y: Float): DragStep {
 	if (points.isEmpty()) return this
 	return copy(points = points.mapIndexed { index, point ->
 		if (index == points.lastIndex) point.copy(x = x, y = y) else point
@@ -1376,7 +1376,7 @@ fun DragInteraction.withEnd(x: Float, y: Float): DragInteraction {
 }
 
 /** How long the finger takes to travel; the last point carries the whole gap. */
-fun DragInteraction.withSwipeDuration(ms: Long): DragInteraction {
+fun DragStep.withSwipeDuration(ms: Long): DragStep {
 	if (points.isEmpty()) return this
 	return copy(points = points.mapIndexed { index, point ->
 		if (index == points.lastIndex) point.copy(dt = ms) else point
@@ -1387,71 +1387,71 @@ fun DragInteraction.withSwipeDuration(ms: Long): DragInteraction {
 // Flattening / Unflattening
 // ---------------------------------------------------------------------------
 
-fun flatten(interactions: List<Interaction>): List<Interaction> {
-	val flatList = mutableListOf<Interaction>()
-	interactions.forEach { interaction ->
-		when (interaction) {
-			is ForLoopInteraction -> {
-				flatList.add(LoopStartInteraction(interaction.repeatCount, interaction.delayBefore, interaction.name))
-				flatList.addAll(flatten(interaction.interactions))
-				flatList.add(LoopEndInteraction(0))
+fun flatten(steps: List<Step>): List<Step> {
+	val flatList = mutableListOf<Step>()
+	steps.forEach { step ->
+		when (step) {
+			is ForLoopStep -> {
+				flatList.add(LoopStartStep(step.repeatCount, step.delayBefore, step.name))
+				flatList.addAll(flatten(step.steps))
+				flatList.add(LoopEndStep(0))
 			}
-			is RandomSelectInteraction -> {
-				flatList.add(RandomSelectStartInteraction(interaction.delayBefore, interaction.name))
-				flatList.addAll(flatten(interaction.interactions))
-				flatList.add(RandomSelectEndInteraction(0))
+			is RandomSelectStep -> {
+				flatList.add(RandomSelectStartStep(step.delayBefore, step.name))
+				flatList.addAll(flatten(step.steps))
+				flatList.add(RandomSelectEndStep(0))
 			}
-			is WhileInteraction -> {
-				flatList.add(WhileStartInteraction(interaction.condition, interaction.delayBefore, interaction.name))
-				flatList.addAll(flatten(interaction.interactions))
-				flatList.add(WhileEndInteraction(0))
+			is WhileStep -> {
+				flatList.add(WhileStartStep(step.condition, step.delayBefore, step.name))
+				flatList.addAll(flatten(step.steps))
+				flatList.add(WhileEndStep(0))
 			}
-			is IfInteraction -> {
-				interaction.branches.forEachIndexed { index, branch ->
+			is IfStep -> {
+				step.branches.forEachIndexed { index, branch ->
 					if (index == 0) {
-						flatList.add(IfStartInteraction(branch.condition, interaction.delayBefore, interaction.name))
+						flatList.add(IfStartStep(branch.condition, step.delayBefore, step.name))
 					} else {
-						flatList.add(ElseIfInteraction(branch.condition))
+						flatList.add(ElseIfStep(branch.condition))
 					}
-					flatList.addAll(flatten(branch.interactions))
+					flatList.addAll(flatten(branch.steps))
 				}
-				if (interaction.elseBranch.isNotEmpty()) {
-					flatList.add(ElseInteraction())
-					flatList.addAll(flatten(interaction.elseBranch))
+				if (step.elseBranch.isNotEmpty()) {
+					flatList.add(ElseStep())
+					flatList.addAll(flatten(step.elseBranch))
 				}
-				flatList.add(IfEndInteraction(0))
+				flatList.add(IfEndStep(0))
 			}
-			else -> flatList.add(interaction)
+			else -> flatList.add(step)
 		}
 	}
 	return flatList
 }
 
-fun buildHierarchy(flatInteractions: List<Interaction>): List<Interaction> =
-	readSequence(flatInteractions, 0) { false }.children
+fun buildHierarchy(flatSteps: List<Step>): List<Step> =
+	readSequence(flatSteps, 0) { false }.children
 
-private class ParsedSequence(val children: List<Interaction>, val terminator: Interaction?, val next: Int)
+private class ParsedSequence(val children: List<Step>, val terminator: Step?, val next: Int)
 
-private fun isBlockOpener(item: Interaction): Boolean =
-	item is LoopStartInteraction || item is RandomSelectStartInteraction ||
-		item is WhileStartInteraction || item is IfStartInteraction
+private fun isBlockOpener(item: Step): Boolean =
+	item is LoopStartStep || item is RandomSelectStartStep ||
+		item is WhileStartStep || item is IfStartStep
 
-private fun isStrayMarker(item: Interaction): Boolean =
-	item is LoopEndInteraction || item is RandomSelectEndInteraction ||
-		item is WhileEndInteraction || item is IfEndInteraction ||
-		item is ElseIfInteraction || item is ElseInteraction
+private fun isStrayMarker(item: Step): Boolean =
+	item is LoopEndStep || item is RandomSelectEndStep ||
+		item is WhileEndStep || item is IfEndStep ||
+		item is ElseIfStep || item is ElseStep
 
 /**
- * Reads interactions until [isTerminator] matches, recursing into any block it
+ * Reads steps until [isTerminator] matches, recursing into any block it
  * meets. Returns which terminator stopped it, which is what lets an If chain
  * tell ElseIf from Else from End.
  */
 private fun readSequence(
-	flat: List<Interaction>,
+	flat: List<Step>,
 	start: Int,
-	isTerminator: (Interaction) -> Boolean
+	isTerminator: (Step) -> Boolean
 ): ParsedSequence {
-	val children = mutableListOf<Interaction>()
+	val children = mutableListOf<Step>()
 	var i = start
 	while (i < flat.size) {
 		val item = flat[i]
@@ -1474,48 +1474,48 @@ private fun readSequence(
 	return ParsedSequence(children, null, i)
 }
 
-private fun readBlock(flat: List<Interaction>, opener: Interaction, start: Int): Pair<Interaction, Int> =
+private fun readBlock(flat: List<Step>, opener: Step, start: Int): Pair<Step, Int> =
 	when (opener) {
-		is LoopStartInteraction -> {
-			val body = readSequence(flat, start) { it is LoopEndInteraction || it is RandomSelectEndInteraction }
-			ForLoopInteraction(opener.repeatCount, body.children, opener.delayBefore, opener.name) to body.next
+		is LoopStartStep -> {
+			val body = readSequence(flat, start) { it is LoopEndStep || it is RandomSelectEndStep }
+			ForLoopStep(opener.repeatCount, body.children, opener.delayBefore, opener.name) to body.next
 		}
-		is RandomSelectStartInteraction -> {
-			val body = readSequence(flat, start) { it is LoopEndInteraction || it is RandomSelectEndInteraction }
-			RandomSelectInteraction(body.children, opener.delayBefore, opener.name) to body.next
+		is RandomSelectStartStep -> {
+			val body = readSequence(flat, start) { it is LoopEndStep || it is RandomSelectEndStep }
+			RandomSelectStep(body.children, opener.delayBefore, opener.name) to body.next
 		}
-		is WhileStartInteraction -> {
-			val body = readSequence(flat, start) { it is WhileEndInteraction }
-			WhileInteraction(opener.condition, body.children, opener.delayBefore, opener.name) to body.next
+		is WhileStartStep -> {
+			val body = readSequence(flat, start) { it is WhileEndStep }
+			WhileStep(opener.condition, body.children, opener.delayBefore, opener.name) to body.next
 		}
-		is IfStartInteraction -> readIf(flat, opener, start)
+		is IfStartStep -> readIf(flat, opener, start)
 		else -> opener to start
 	}
 
-private fun readIf(flat: List<Interaction>, opener: IfStartInteraction, start: Int): Pair<Interaction, Int> {
+private fun readIf(flat: List<Step>, opener: IfStartStep, start: Int): Pair<Step, Int> {
 	val branches = mutableListOf<ConditionBranch>()
 	var condition = opener.condition
 	var index = start
 
 	while (true) {
 		val body = readSequence(flat, index) {
-			it is ElseIfInteraction || it is ElseInteraction || it is IfEndInteraction
+			it is ElseIfStep || it is ElseStep || it is IfEndStep
 		}
 		index = body.next
 		when (val terminator = body.terminator) {
-			is ElseIfInteraction -> {
+			is ElseIfStep -> {
 				branches.add(ConditionBranch(condition, body.children))
 				condition = terminator.condition
 			}
-			is ElseInteraction -> {
+			is ElseStep -> {
 				branches.add(ConditionBranch(condition, body.children))
-				val elseBody = readSequence(flat, index) { it is IfEndInteraction }
-				return IfInteraction(branches, elseBody.children, opener.delayBefore, opener.name) to elseBody.next
+				val elseBody = readSequence(flat, index) { it is IfEndStep }
+				return IfStep(branches, elseBody.children, opener.delayBefore, opener.name) to elseBody.next
 			}
 			// IfEnd, or the list ran out
 			else -> {
 				branches.add(ConditionBranch(condition, body.children))
-				return IfInteraction(branches, emptyList(), opener.delayBefore, opener.name) to index
+				return IfStep(branches, emptyList(), opener.delayBefore, opener.name) to index
 			}
 		}
 	}

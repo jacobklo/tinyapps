@@ -13,7 +13,7 @@ private const val TAG = "autoclicker.root.shell"
  * Spawning `su` per gesture costs hundreds of milliseconds, so the process is
  * kept open for the lifetime of the app. Each command is followed by an echoed
  * marker so [exec] can block until the command actually finished -- playback
- * paces the next interaction off that return.
+ * paces the next step off that return.
  */
 object RootShell {
 

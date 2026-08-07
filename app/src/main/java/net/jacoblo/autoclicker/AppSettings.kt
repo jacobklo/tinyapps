@@ -85,7 +85,7 @@ object AppSettings {
 
 	/**
 	 * Humanization applied to every replayed evdev sample. Distinct from the
-	 * per-interaction randomFactor, which varies behaviour rather than
+	 * per-step randomFactor, which varies behaviour rather than
 	 * disguising it, and which still applies on top.
 	 */
 	var jitter: JitterConfig

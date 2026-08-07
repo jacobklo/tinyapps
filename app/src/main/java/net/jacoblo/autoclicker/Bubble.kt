@@ -41,7 +41,7 @@ class Bubble(private val context: Context) {
 
 	private var isRecording = false
 	private var recordingOverlay: View? = null
-	private val recordedEvents = mutableListOf<Interaction>()
+	private val recordedEvents = mutableListOf<Step>()
 	private var lastEventTime = 0L
 
 	// New variables for tracking multi-point drag
@@ -414,7 +414,7 @@ class Bubble(private val context: Context) {
 			shouldIgnore = { x, y -> isOnBubble(x, y) },
 			// Hop to the main thread so recordedEvents is only ever touched
 			// there, exactly as the overlay recorder does.
-			onGesture = { interaction -> mainThread.post { recordedEvents.add(interaction) } }
+			onGesture = { step -> mainThread.post { recordedEvents.add(step) } }
 		)
 	}
 
@@ -533,7 +533,7 @@ class Bubble(private val context: Context) {
 					}
 				}
 
-				// The overlay reports pixels; interactions are stored and
+				// The overlay reports pixels; steps are stored and
 				// replayed as fractions of the screen.
 				val screen = ScreenGeometry.current(context)
 
@@ -541,7 +541,7 @@ class Bubble(private val context: Context) {
 					// Click
 					val fx = startX / screen.width
 					val fy = startY / screen.height
-					recordedEvents.add(ClickInteraction(fx, fy, duration, 0, delayBefore = delay))
+					recordedEvents.add(ClickStep(fx, fy, duration, 0, delayBefore = delay))
 					GestureExecutor.click(fx, fy, duration, 0, completionCallback)
 				} else {
 					// Drag
@@ -554,7 +554,7 @@ class Bubble(private val context: Context) {
 					val points = currentDragPoints.map {
 						it.copy(x = it.x / screen.width, y = it.y / screen.height)
 					}
-					recordedEvents.add(DragInteraction(points, 0, 0, delayBefore = delay))
+					recordedEvents.add(DragStep(points, 0, 0, delayBefore = delay))
 					GestureExecutor.drag(points, 0,0,completionCallback)
 				}
 

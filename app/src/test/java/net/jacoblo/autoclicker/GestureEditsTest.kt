@@ -9,7 +9,7 @@ import org.junit.Test
  */
 class GestureEditsTest {
 
-    private fun swipe(vararg points: DragPoint) = DragInteraction(points.toList(), delayBefore = 0)
+    private fun swipe(vararg points: DragPoint) = DragStep(points.toList(), delayBefore = 0)
 
     @Test
     fun translatingMovesEveryPointByTheSameAmount() {
@@ -50,7 +50,7 @@ class GestureEditsTest {
 
     @Test
     fun editingAnEmptyPathIsHarmless() {
-        val empty = DragInteraction(emptyList(), delayBefore = 0)
+        val empty = DragStep(emptyList(), delayBefore = 0)
 
         assertEquals(empty, empty.withEnd(0.5f, 0.5f))
         assertEquals(empty, empty.withSwipeDuration(100))
@@ -60,9 +60,9 @@ class GestureEditsTest {
     /** A double tap presses twice, so it takes twice as long as one tap. */
     @Test
     fun theEstimateCountsEveryTap() {
-        val once = summarize(listOf(ClickInteraction(0.5f, 0.5f, duration = 50, delayBefore = 0)))
+        val once = summarize(listOf(ClickStep(0.5f, 0.5f, duration = 50, delayBefore = 0)))
         val twice = summarize(
-            listOf(ClickInteraction(0.5f, 0.5f, duration = 50, taps = 2, delayBefore = 0))
+            listOf(ClickStep(0.5f, 0.5f, duration = 50, taps = 2, delayBefore = 0))
         )
 
         assertEquals(50L, once.durationMs)
