@@ -363,15 +363,12 @@ object RecordingManager {
     }
 
     fun saveRecordingToFile(file: File, events: List<Interaction>, globalRandom: Int = 0) {
-        val timestamp = System.currentTimeMillis() // Or preserve original timestamp if needed, but updating it is fine for modification time
-
         val jsonArray = JSONArray()
         events.forEach { event ->
             eventToJson(event)?.let { jsonArray.put(it) }
         }
 
         val finalJson = JSONObject().apply {
-            put("timestamp", timestamp)
             put("globalRandom", globalRandom)
             put("events", jsonArray)
         }
