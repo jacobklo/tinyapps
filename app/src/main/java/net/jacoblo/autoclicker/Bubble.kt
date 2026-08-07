@@ -610,7 +610,6 @@ class Bubble(private val context: Context) {
         if (isRecording) stopRecording()
         val intent = Intent(context, NotificationService::class.java)
         context.stopService(intent)
-        System.exit(0)
     }
 
     fun remove() {
