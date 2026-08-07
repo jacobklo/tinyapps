@@ -1,5 +1,6 @@
 package net.jacoblo.autoclicker
 
+import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -9,6 +10,8 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+private const val TAG = "autoclicker.recording"
 
 // Data holder for recording and its metadata
 data class RecordingData(val events: List<RuntimeStep>, val globalRandom: Int = 0)
@@ -499,7 +502,7 @@ object RecordingManager {
 				parseEvent(obj)?.let { events.add(it) }
 			}
 		} catch (e: Exception) {
-			e.printStackTrace()
+			Log.w(TAG, "cannot read recording ${file.name}", e)
 		}
 		return RecordingData(events, globalRandom)
 	}
