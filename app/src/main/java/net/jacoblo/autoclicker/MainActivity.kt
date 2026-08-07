@@ -141,11 +141,6 @@ class MainActivity : ComponentActivity() {
         return overlay && storage
     }
 
-    private fun isAccessibilityServiceEnabled(): Boolean {
-        val prefString = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
-        return prefString?.contains("$packageName/${RecorderService::class.java.name}") == true
-    }
-
     private fun startBubbleService() {
         val serviceIntent = Intent(this, NotificationService::class.java)
         startForegroundService(serviceIntent)
