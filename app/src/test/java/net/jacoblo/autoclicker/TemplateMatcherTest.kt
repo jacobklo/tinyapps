@@ -151,21 +151,6 @@ class TemplateMatcherTest {
         assertNull(TemplateMatcher.find(builder.build(), different, threshold = 0.95f))
     }
 
-    @Test
-    fun regionOfInterestExcludesMatchesOutsideIt() {
-        val builder = FrameBuilder(400, 600)
-        builder.fill(250, 250, 250)
-        val template = patternedTemplate(40, 40, seed = 5)
-        stamp(builder, template, 300, 500)
-        val frame = builder.build()
-
-        assertNotNull(TemplateMatcher.find(frame, template, 0.95f))
-        assertNull(
-            "a region of interest that excludes the patch must not match",
-            TemplateMatcher.find(frame, template, 0.95f, android.graphics.Rect(0, 0, 200, 200))
-        )
-    }
-
     /**
      * The app-drawer case: a screen full of short dark captions on white, one of
      * which is the saved area. Every caption reduces to nearly the same handful

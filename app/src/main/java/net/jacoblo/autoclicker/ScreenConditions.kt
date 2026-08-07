@@ -1,7 +1,6 @@
 package net.jacoblo.autoclicker
 
 import android.graphics.BitmapFactory
-import android.graphics.Rect
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -24,10 +23,10 @@ private const val POLL_INTERVAL_MS = 250L
  * indistinguishable from a typo in the area name unless the reason is reported.
  */
 sealed class AreaSearch {
-    data class Found(val match: TemplateMatcher.Match) : AreaSearch()
+	data class Found(val match: TemplateMatcher.Match) : AreaSearch()
 
-    /** Phrased for showing to the user, so it names the thing to fix. */
-    data class Missing(val reason: String) : AreaSearch()
+	/** Phrased for showing to the user, so it names the thing to fix. */
+	data class Missing(val reason: String) : AreaSearch()
 }
 
 /**
@@ -48,20 +47,13 @@ object ScreenConditions {
 	private val cache = mutableMapOf<String, CachedTemplate>()
 
 	/** Blocks on capture; callers run it off the main thread. */
-	fun matches(name: String, threshold: Float = DEFAULT_MATCH_THRESHOLD, roi: Rect? = null): Boolean =
-		locate(name, threshold, roi) != null
-
-	fun locate(
-		name: String,
-		threshold: Float = DEFAULT_MATCH_THRESHOLD,
-		roi: Rect? = null
-	): TemplateMatcher.Match? = (search(name, threshold, roi) as? AreaSearch.Found)?.match
+	fun matches(name: String, threshold: Float = DEFAULT_MATCH_THRESHOLD): Boolean =
+		search(name, threshold) is AreaSearch.Found
 
 	/** Blocks on capture; callers run it off the main thread. */
 	fun search(
 		name: String,
-		threshold: Float = DEFAULT_MATCH_THRESHOLD,
-		roi: Rect? = null
+		threshold: Float = DEFAULT_MATCH_THRESHOLD
 	): AreaSearch {
 		val template = template(name)
 		if (template == null) {
@@ -81,7 +73,7 @@ object ScreenConditions {
 		}
 		val captured = System.currentTimeMillis()
 
-		val match = TemplateMatcher.find(frame, template, threshold, roi)
+		val match = TemplateMatcher.find(frame, template, threshold)
 		val finished = System.currentTimeMillis()
 
 		Log.d(
@@ -97,14 +89,13 @@ object ScreenConditions {
 	suspend fun waitFor(
 		name: String,
 		timeoutMs: Long,
-		threshold: Float = DEFAULT_MATCH_THRESHOLD,
-		roi: Rect? = null
+		threshold: Float = DEFAULT_MATCH_THRESHOLD
 	): Boolean {
 		val deadline = System.currentTimeMillis() + timeoutMs
 		while (true) {
 			// withContext keeps the capture off the main thread while leaving
 			// the wait cancellable by the stop button.
-			if (withContext(Dispatchers.IO) { matches(name, threshold, roi) }) return true
+			if (withContext(Dispatchers.IO) { matches(name, threshold) }) return true
 			if (System.currentTimeMillis() >= deadline) return false
 			delay(POLL_INTERVAL_MS)
 		}

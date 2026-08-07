@@ -1,7 +1,6 @@
 package net.jacoblo.autoclicker
 
 import android.graphics.Bitmap
-import android.graphics.Rect
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -73,24 +72,17 @@ object TemplateMatcher {
 	/** Averaged downscale; each entry is packed 0xRRGGBB. */
 	private class Reduced(val width: Int, val height: Int, val rgb: IntArray)
 
-	/**
-	 * [threshold] is the similarity required, 0..1. [roi] limits where the
-	 * top-left corner may land.
-	 */
+	/** [threshold] is the similarity required, 0..1. */
 	fun find(
 		frame: ScreenCapture.Frame,
 		template: Template,
-		threshold: Float,
-		roi: Rect? = null
+		threshold: Float
 	): Match? {
 		if (template.width <= 0 || template.height <= 0) return null
 		if (template.width > frame.width || template.height > frame.height) return null
 
-		val minX = max(0, roi?.left ?: 0)
-		val minY = max(0, roi?.top ?: 0)
-		val maxX = min(frame.width - template.width, (roi?.right ?: frame.width) - template.width)
-		val maxY = min(frame.height - template.height, (roi?.bottom ?: frame.height) - template.height)
-		if (maxX < minX || maxY < minY) return null
+		val maxX = frame.width - template.width
+		val maxY = frame.height - template.height
 
 		val factor = reduceFactor(frame, template)
 		val smallFrame = reduceFrame(frame, factor)
@@ -98,7 +90,7 @@ object TemplateMatcher {
 		if (smallTemplate.width == 0 || smallTemplate.height == 0) return null
 
 		val candidates = coarsePass(
-			smallFrame, smallTemplate, threshold - COARSE_SLACK, factor, minX, minY, maxX, maxY
+			smallFrame, smallTemplate, threshold - COARSE_SLACK, factor, maxX, maxY
 		)
 		if (candidates.isEmpty()) return null
 
@@ -110,14 +102,14 @@ object TemplateMatcher {
 			val placed = bestInWindow(
 				frame, template, cx, cy,
 				radius = factor, step = refineStep,
-				minX = minX, minY = minY, maxX = maxX, maxY = maxY,
+				maxX = maxX, maxY = maxY,
 				floor = threshold - COARSE_SLACK
 			) ?: continue
 
 			val scored = bestInWindow(
 				frame, template, placed.x, placed.y,
 				radius = FINAL_RADIUS, step = finalStep,
-				minX = minX, minY = minY, maxX = maxX, maxY = maxY,
+				maxX = maxX, maxY = maxY,
 				floor = threshold
 			) ?: continue
 
@@ -203,8 +195,6 @@ object TemplateMatcher {
 		template: Reduced,
 		floor: Float,
 		factor: Int,
-		minX: Int,
-		minY: Int,
 		maxX: Int,
 		maxY: Int
 	): List<Pair<Int, Int>> {
@@ -212,18 +202,16 @@ object TemplateMatcher {
 		if (samples == 0) return emptyList()
 		val budget = ((1f - floor) * samples * MAX_PIXEL_DIFF).toInt()
 
-		val firstX = minX / factor
-		val firstY = minY / factor
 		val lastX = min(frame.width - template.width, maxX / factor)
 		val lastY = min(frame.height - template.height, maxY / factor)
-		if (lastX < firstX || lastY < firstY) return emptyList()
+		if (lastX < 0 || lastY < 0) return emptyList()
 
-		val cols = lastX - firstX + 1
-		val rows = lastY - firstY + 1
+		val cols = lastX + 1
+		val rows = lastY + 1
 		val scores = FloatArray(cols * rows)
 
-		for (y in firstY..lastY) {
-			for (x in firstX..lastX) {
+		for (y in 0..lastY) {
+			for (x in 0..lastX) {
 				var total = 0
 				var aborted = false
 				loop@ for (ty in 0 until template.height) {
@@ -241,13 +229,13 @@ object TemplateMatcher {
 						}
 					}
 				}
-				scores[(y - firstY) * cols + (x - firstX)] =
+				scores[y * cols + x] =
 					if (aborted) 0f else 1f - total.toFloat() / (samples * MAX_PIXEL_DIFF)
 			}
 		}
 
 		return peaks(scores, cols, rows, template.width, template.height)
-			.map { (x, y) -> (firstX + x) * factor to (firstY + y) * factor }
+			.map { (x, y) -> x * factor to y * factor }
 	}
 
 	/**
@@ -289,15 +277,13 @@ object TemplateMatcher {
 		centreY: Int,
 		radius: Int,
 		step: Int,
-		minX: Int,
-		minY: Int,
 		maxX: Int,
 		maxY: Int,
 		floor: Float
 	): Match? {
 		var best: Match? = null
-		for (y in max(minY, centreY - radius)..min(maxY, centreY + radius)) {
-			for (x in max(minX, centreX - radius)..min(maxX, centreX + radius)) {
+		for (y in max(0, centreY - radius)..min(maxY, centreY + radius)) {
+			for (x in max(0, centreX - radius)..min(maxX, centreX + radius)) {
 				val score = similarityAt(frame, template, x, y, step, floor)
 				if (score > 0f && (best == null || score > best.similarity)) {
 					best = Match(x, y, score)
