@@ -2,7 +2,6 @@ package net.jacoblo.autoclicker
 
 import android.os.PowerManager
 import android.util.Log
-import android.widget.Toast
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -14,11 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
-import kotlin.coroutines.resume
 import kotlin.math.abs
-import kotlin.math.roundToInt
 import kotlin.random.Random
 
 private const val TAG = "autoclicker.gesture.executor"
@@ -39,12 +34,6 @@ private const val ERROR_REPEAT_MS = 5000L
 // so the press is described here rather than in every recording.
 private const val FIELD_TAP_MS = 120L
 private const val FIELD_TAP_JITTER_PX = 6
-
-// Gap between typed characters. Unhurried touch typing sits around 150-250ms
-// per character, and the spread matters as much as the mean: a fixed interval
-// is as unlike a person as no interval at all.
-private const val MIN_KEY_GAP_MS = 90L
-private const val MAX_KEY_GAP_MS = 240L
 
 /**
  * How a playback ended.
@@ -108,8 +97,16 @@ object GestureExecutor {
 		evdevDevice = null
 	}
 
-	fun isReady(): Boolean =
-		if (AppSettings.useRoot) RootShell.isOpen else RecorderService.instance != null
+	/**
+	 * Which way touches are injected. Read per call rather than held, so turning
+	 * Use Root on or off takes effect without restarting anything.
+	 */
+	private val backend: Backend
+		get() = if (AppSettings.useRoot) RootBackend else AccessibilityBackend
+
+	fun isReady(): Boolean = backend.isReady
+
+	private val finder: Finder = DeviceFinder
 
 	private var playJob: Job? = null
 	private var wakeLock: PowerManager.WakeLock? = null
@@ -313,7 +310,7 @@ object GestureExecutor {
 		// A phrase wins when both are set: it is the more specific thing to have
 		// said, and a script carrying both was written around the words.
 		if (anchorText.isNotBlank()) {
-			return when (val result = withContext(Dispatchers.IO) { ScreenText.find(anchorText) }) {
+			return when (val result = finder.findText(anchorText)) {
 				is TextSearch.Found -> result.box.left.toFloat() to result.box.top.toFloat()
 				is TextSearch.Missing -> {
 					Log.w(TAG, "anchor text '$anchorText' unusable: ${result.reason}, skipping gesture")
@@ -323,7 +320,7 @@ object GestureExecutor {
 			}
 		}
 		if (anchor.isBlank()) return 0f to 0f
-		return when (val result = withContext(Dispatchers.IO) { ScreenConditions.search(anchor) }) {
+		return when (val result = finder.findArea(anchor)) {
 			is AreaSearch.Found -> result.match.x.toFloat() to result.match.y.toFloat()
 			is AreaSearch.Missing -> {
 				Log.w(TAG, "anchor '$anchor' unusable: ${result.reason}, skipping gesture")
@@ -390,28 +387,10 @@ object GestureExecutor {
 		anchored: Boolean
 	) {
 		// Everything downstream of here works in pixels for the current display.
-		val screen = ScreenGeometry.current(AppSettings.appContext)
+		val screen = backend.screen
 		val finalX = place(x, screen.width, originX, anchored) + jitter(randomFactor)
 		val finalY = place(y, screen.height, originY, anchored) + jitter(randomFactor)
-
-		if (AppSettings.useRoot) {
-			if (evdevReady) {
-				withContext(Dispatchers.IO) { EvdevInjector.playClick(finalX, finalY, duration, sample) }
-				return
-			}
-			val px = finalX.roundToInt()
-			val py = finalY.roundToInt()
-			// A zero-length swipe is the only `input` form that honours a press duration.
-			withContext(Dispatchers.IO) { RootShell.swipe(px, py, px, py, duration) }
-			return
-		}
-
-		val service = RecorderService.instance
-		if (service == null) {
-			Log.w(TAG, "no accessibility service, dropping click")
-			return
-		}
-		awaitDispatch { done -> service.dispatchClick(finalX, finalY, duration, done) }
+		backend.click(finalX, finalY, duration, sample)
 	}
 
 	private suspend fun runDrag(
@@ -424,64 +403,19 @@ object GestureExecutor {
 		if (points.isEmpty()) return
 		val (originX, originY) = anchorOrigin(anchor, anchorText) ?: return
 		val anchored = anchor.isNotBlank() || anchorText.isNotBlank()
-		val screen = ScreenGeometry.current(AppSettings.appContext)
+		val screen = backend.screen
 		val pixels = points.map {
 			it.copy(
 				x = place(it.x, screen.width, originX, anchored),
 				y = place(it.y, screen.height, originY, anchored)
 			)
 		}
-		val randomized = randomizePath(pixels, randomFactorStart, randomFactorHighest)
-
-		if (AppSettings.useRoot) {
-			if (evdevReady) {
-				// Every recorded point is replayed with its own timing, pressure
-				// and contact size, instead of collapsing to a linear swipe.
-				withContext(Dispatchers.IO) { EvdevInjector.playDrag(randomized) }
-				return
-			}
-			val first = randomized.first()
-			val last = randomized.last()
-			val duration = randomized.sumOf { it.dt }
-			withContext(Dispatchers.IO) {
-				RootShell.swipe(
-					first.x.roundToInt(), first.y.roundToInt(),
-					last.x.roundToInt(), last.y.roundToInt(),
-					duration
-				)
-			}
-			return
-		}
-
-		val service = RecorderService.instance
-		if (service == null) {
-			Log.w(TAG, "no accessibility service, dropping drag")
-			return
-		}
-		awaitDispatch { done -> service.dispatchDrag(randomized, done) }
+		backend.drag(randomizePath(pixels, randomFactorStart, randomFactorHighest))
 	}
 
 	private suspend fun runText(text: String) {
 		if (text.isEmpty()) return
-
-		if (AppSettings.useRoot) {
-			// One character at a time with a varying gap. A whole field arriving
-			// in a single frame is not something a person can produce, and the
-			// per-character cost is only about 40ms, so the pacing is the delay
-			// rather than the command.
-			for (character in text) {
-				withContext(Dispatchers.IO) { RootShell.text(character.toString()) }
-				delay(Random.nextLong(MIN_KEY_GAP_MS, MAX_KEY_GAP_MS + 1))
-			}
-			return
-		}
-
-		val service = RecorderService.instance
-		if (service == null) {
-			Log.w(TAG, "no accessibility service, dropping text")
-			return
-		}
-		service.dispatchText(text)
+		backend.text(text)
 	}
 
 	/**
@@ -492,7 +426,7 @@ object GestureExecutor {
 	 */
 	private suspend fun runFocusField(event: FocusFieldStep, context: ScriptContext) {
 		val variable = event.variable.ifBlank { "field" }
-		when (val result = withContext(Dispatchers.IO) { ViewHierarchy.findField() }) {
+		when (val result = finder.findField()) {
 			is FieldSearch.Found -> {
 				val field = result.field
 				context.set(variable, Value.Num(field.textLength.toLong()))
@@ -522,9 +456,7 @@ object GestureExecutor {
 	 */
 	private suspend fun runWaitCode(event: WaitCodeStep, context: ScriptContext) {
 		val variable = event.variable.ifBlank { "codes" }
-		when (val result = withContext(Dispatchers.IO) {
-			CodeServer.waitForCodes(event.maxAgeSeconds, event.timeoutMs)
-		}) {
+		when (val result = finder.awaitCodes(event.maxAgeSeconds, event.timeoutMs)) {
 			is CodeServer.Result.Found -> {
 				context.set(variable, Value.Arr(result.codes.map { Value.Str(it) }))
 				Log.d(TAG, "stored ${result.codes.size} code(s) in '$variable'")
@@ -537,45 +469,19 @@ object GestureExecutor {
 		}
 	}
 
-	// Deliberately not root-gated: a toast is the script telling you what it is
-	// doing, which is most wanted when the rest is not working.
-	private suspend fun runToast(message: String) {
-		if (message.isEmpty()) return
-		withContext(Dispatchers.Main) {
-			Toast.makeText(AppSettings.appContext, message, Toast.LENGTH_SHORT).show()
-		}
-	}
+	private suspend fun runToast(message: String) = backend.toast(message)
 
-	// The actions below are root-only. The accessibility backend has no
-	// equivalent for launching an app or running a command, and offering half
-	// of them would make a script silently behave differently per backend.
-	private suspend fun runKeyEvent(key: String) {
-		if (!requireRoot("key event")) return
-		withContext(Dispatchers.IO) { RootShell.exec("input keyevent ${key.trim()}") }
-	}
+	private suspend fun runKeyEvent(key: String) = backend.keyEvent(key)
 
 	private suspend fun runLaunchApp(packageName: String) {
-		if (packageName.isBlank() || !requireRoot("launch app")) return
-		withContext(Dispatchers.IO) {
-			RootShell.exec("monkey -p ${packageName.trim()} -c android.intent.category.LAUNCHER 1")
-		}
+		if (packageName.isBlank()) return
+		backend.launchApp(packageName)
 	}
 
 	private suspend fun runShell(command: String) {
-		if (command.isBlank() || !requireRoot("shell")) return
-		withContext(Dispatchers.IO) { RootShell.exec(command) }
+		if (command.isBlank()) return
+		backend.shell(command)
 	}
-
-	private fun requireRoot(what: String): Boolean {
-		if (AppSettings.useRoot && RootShell.isOpen) return true
-		Log.w(TAG, "$what needs root, skipping")
-		return false
-	}
-
-	private suspend fun awaitDispatch(dispatch: (() -> Unit) -> Unit) =
-		suspendCancellableCoroutine { cont ->
-			dispatch { if (cont.isActive) cont.resume(Unit) }
-		}
 
 	private fun jitter(factor: Int): Int =
 		if (factor > 0) Random.nextInt(-factor, factor + 1) else 0
