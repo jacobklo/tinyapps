@@ -47,10 +47,10 @@ private class StepOption(val label: String, val create: () -> List<Interaction>)
 private const val NEW_GESTURE_MS = 300L
 
 private fun swipe(fromX: Float, fromY: Float, toX: Float, toY: Float) = listOf(
-    DragInteraction(
-        points = listOf(DragPoint(fromX, fromY, 0), DragPoint(toX, toY, NEW_GESTURE_MS)),
-        delayBefore = 0
-    )
+	DragInteraction(
+		points = listOf(DragPoint(fromX, fromY, 0), DragPoint(toX, toY, NEW_GESTURE_MS)),
+		delayBefore = 0
+	)
 )
 
 /** A named set of steps, so the picker is two short lists instead of one long one. */
@@ -66,62 +66,62 @@ private class StepGroup(val label: String, val options: List<StepOption>)
  * is where the coordinates start and end, which the step already shows.
  */
 private val STEP_GROUPS = listOf(
-    StepGroup(
-        "Touch",
-        listOf(
-            // Taps and Hold ms turn this one step into a double tap, a triple
-            // tap or a long press.
-            StepOption("Tap") { listOf(ClickInteraction(0.5f, 0.5f, duration = 50, delayBefore = 0)) },
-            // Starts as a swipe up, which scrolls a page down; the ends are
-            // editable and are what make it any other direction.
-            StepOption("Swipe") { swipe(0.5f, 0.7f, 0.5f, 0.3f) }
-        )
-    ),
-    StepGroup(
-        "Typing",
-        listOf(
-            StepOption("Type text") { listOf(TextInteraction(text = "", delayBefore = 0)) },
-            StepOption("Focus field") { listOf(FocusFieldInteraction("field", 0)) },
-            StepOption("Key press") { listOf(KeyEventInteraction("BACK", 0)) }
-        )
-    ),
-    StepGroup(
-        "Waiting",
-        listOf(
-            StepOption("Wait") { listOf(WaitInteraction(delayBefore = 1000)) },
-            StepOption("Wait for code") {
-                listOf(
-                    WaitCodeInteraction(
-                        variable = "codes",
-                        maxAgeSeconds = DEFAULT_CODE_MAX_AGE_S,
-                        timeoutMs = DEFAULT_CODE_TIMEOUT_MS,
-                        delayBefore = 0
-                    )
-                )
-            }
-        )
-    ),
-    StepGroup(
-        "Logic",
-        listOf(
-            StepOption("Set variable") { listOf(SetVariableInteraction("count", "0", 0)) },
-            StepOption("If block") { listOf(IfStartInteraction("1 == 1"), IfEndInteraction()) },
-            StepOption("Else if") { listOf(ElseIfInteraction("1 == 1")) },
-            StepOption("Else") { listOf(ElseInteraction()) },
-            StepOption("Repeat block") { listOf(LoopStartInteraction(repeatCount = 2), LoopEndInteraction()) },
-            StepOption("While block") { listOf(WhileStartInteraction("1 == 1"), WhileEndInteraction()) },
-            StepOption("Random block") { listOf(RandomSelectStartInteraction(), RandomSelectEndInteraction()) },
-            StepOption("Break") { listOf(BreakInteraction()) }
-        )
-    ),
-    StepGroup(
-        "System",
-        listOf(
-            StepOption("Launch app") { listOf(LaunchAppInteraction("", 0)) },
-            StepOption("Shell command") { listOf(ShellInteraction("", 0)) },
-            StepOption("Toast") { listOf(ToastInteraction("", 0)) }
-        )
-    )
+	StepGroup(
+		"Touch",
+		listOf(
+			// Taps and Hold ms turn this one step into a double tap, a triple
+			// tap or a long press.
+			StepOption("Tap") { listOf(ClickInteraction(0.5f, 0.5f, duration = 50, delayBefore = 0)) },
+			// Starts as a swipe up, which scrolls a page down; the ends are
+			// editable and are what make it any other direction.
+			StepOption("Swipe") { swipe(0.5f, 0.7f, 0.5f, 0.3f) }
+		)
+	),
+	StepGroup(
+		"Typing",
+		listOf(
+			StepOption("Type text") { listOf(TextInteraction(text = "", delayBefore = 0)) },
+			StepOption("Focus field") { listOf(FocusFieldInteraction("field", 0)) },
+			StepOption("Key press") { listOf(KeyEventInteraction("BACK", 0)) }
+		)
+	),
+	StepGroup(
+		"Waiting",
+		listOf(
+			StepOption("Wait") { listOf(WaitInteraction(delayBefore = 1000)) },
+			StepOption("Wait for code") {
+				listOf(
+					WaitCodeInteraction(
+						variable = "codes",
+						maxAgeSeconds = DEFAULT_CODE_MAX_AGE_S,
+						timeoutMs = DEFAULT_CODE_TIMEOUT_MS,
+						delayBefore = 0
+					)
+				)
+			}
+		)
+	),
+	StepGroup(
+		"Logic",
+		listOf(
+			StepOption("Set variable") { listOf(SetVariableInteraction("count", "0", 0)) },
+			StepOption("If block") { listOf(IfStartInteraction("1 == 1"), IfEndInteraction()) },
+			StepOption("Else if") { listOf(ElseIfInteraction("1 == 1")) },
+			StepOption("Else") { listOf(ElseInteraction()) },
+			StepOption("Repeat block") { listOf(LoopStartInteraction(repeatCount = 2), LoopEndInteraction()) },
+			StepOption("While block") { listOf(WhileStartInteraction("1 == 1"), WhileEndInteraction()) },
+			StepOption("Random block") { listOf(RandomSelectStartInteraction(), RandomSelectEndInteraction()) },
+			StepOption("Break") { listOf(BreakInteraction()) }
+		)
+	),
+	StepGroup(
+		"System",
+		listOf(
+			StepOption("Launch app") { listOf(LaunchAppInteraction("", 0)) },
+			StepOption("Shell command") { listOf(ShellInteraction("", 0)) },
+			StepOption("Toast") { listOf(ToastInteraction("", 0)) }
+		)
+	)
 )
 
 /**
@@ -134,859 +134,859 @@ private class StepHelp(val summary: String, val examples: List<String> = emptyLi
 
 // Shared by every gesture, since the anchor works the same way for all of them.
 private const val RELATIVE_HELP =
-    "Relative to picks what the coordinates are measured from. On Screen they " +
-        "are a place on the display; on a saved area or a phrase they are " +
-        "pixels from wherever that area is found or those words are read when " +
-        "the step runs, and may be negative. Either is looked for each time, " +
-        "which needs root, and the gesture is skipped if it is not there. A " +
-        "saved area costs about half a second and matches only the pixels it " +
-        "was cropped from; a phrase costs a little more and survives the words " +
-        "moving or being restyled."
+	"Relative to picks what the coordinates are measured from. On Screen they " +
+		"are a place on the display; on a saved area or a phrase they are " +
+		"pixels from wherever that area is found or those words are read when " +
+		"the step runs, and may be negative. Either is looked for each time, " +
+		"which needs root, and the gesture is skipped if it is not there. A " +
+		"saved area costs about half a second and matches only the pixels it " +
+		"was cropped from; a phrase costs a little more and survives the words " +
+		"moving or being restyled."
 
 private fun helpFor(interaction: Interaction): StepHelp = when (interaction) {
-    is ClickInteraction -> StepHelp(
-        "Touches one point. Hold ms is how long the finger stays down and Taps " +
-            "is how many times it presses, so this one step is also a double " +
-            "tap, a triple tap and a long press. Rand px scatters the point a " +
-            "little on every replay. " + RELATIVE_HELP,
-        listOf(
-            "Hold 50, Taps 1                     a normal tap",
-            "Hold 50, Taps 2                     a double tap",
-            "Hold 800, Taps 1                    a long press",
-            "Text \"Continue\", dX 90, dY 16      the middle of that word",
-            "Image \"calc\", dX 0, dY -60         just above the image"
-        )
-    )
+	is ClickInteraction -> StepHelp(
+		"Touches one point. Hold ms is how long the finger stays down and Taps " +
+			"is how many times it presses, so this one step is also a double " +
+			"tap, a triple tap and a long press. Rand px scatters the point a " +
+			"little on every replay. " + RELATIVE_HELP,
+		listOf(
+			"Hold 50, Taps 1                     a normal tap",
+			"Hold 50, Taps 2                     a double tap",
+			"Hold 800, Taps 1                    a long press",
+			"Text \"Continue\", dX 90, dY 16      the middle of that word",
+			"Image \"calc\", dX 0, dY -60         just above the image"
+		)
+	)
 
-    is DragInteraction -> StepHelp(
-        "Drags from one point to another, which is how you scroll, flick or " +
-            "move something. A swipe up scrolls the page down. Swipe ms is how " +
-            "long the finger takes to travel, so slower reads as a drag and " +
-            "faster as a fling. Rand start scatters the ends and Rand mid the " +
-            "middle. A recorded swipe keeps its own path, pressure and timing, " +
-            "and only its start can be moved. " + RELATIVE_HELP,
-        listOf(
-            "Start 540,1700 to end 540,700       swipe up, scrolls down",
-            "Start 540,700 to end 540,1700       swipe down, scrolls up",
-            "Swipe ms 120                        a fling",
-            "Swipe ms 600                        a slow drag"
-        )
-    )
+	is DragInteraction -> StepHelp(
+		"Drags from one point to another, which is how you scroll, flick or " +
+			"move something. A swipe up scrolls the page down. Swipe ms is how " +
+			"long the finger takes to travel, so slower reads as a drag and " +
+			"faster as a fling. Rand start scatters the ends and Rand mid the " +
+			"middle. A recorded swipe keeps its own path, pressure and timing, " +
+			"and only its start can be moved. " + RELATIVE_HELP,
+		listOf(
+			"Start 540,1700 to end 540,700       swipe up, scrolls down",
+			"Start 540,700 to end 540,1700       swipe down, scrolls up",
+			"Swipe ms 120                        a fling",
+			"Swipe ms 600                        a slow drag"
+		)
+	)
 
-    is TextInteraction -> StepHelp(
-        "Types into whatever field has focus, one character at a time with a " +
-            "human-sized gap between them. Put a Focus field step in front of " +
-            "it unless the screen already opened with the cursor in place. " +
-            "Plain text is typed as written; anything in braces is worked out " +
-            "first, which is how a code that was looked up gets typed.",
-        listOf(
-            "hello world",
-            "{codes[0]}                          the best code found",
-            "{codes[i]}                          the one this loop is on",
-            "user{count}@example.com"
-        )
-    )
+	is TextInteraction -> StepHelp(
+		"Types into whatever field has focus, one character at a time with a " +
+			"human-sized gap between them. Put a Focus field step in front of " +
+			"it unless the screen already opened with the cursor in place. " +
+			"Plain text is typed as written; anything in braces is worked out " +
+			"first, which is how a code that was looked up gets typed.",
+		listOf(
+			"hello world",
+			"{codes[0]}                          the best code found",
+			"{codes[i]}                          the one this loop is on",
+			"user{count}@example.com"
+		)
+	)
 
-    is FocusFieldInteraction -> StepHelp(
-        "Puts the cursor in the text field on screen by asking the window " +
-            "where it is, rather than tapping a remembered spot. Touches " +
-            "nothing if the field already has focus. The variable is left " +
-            "holding how many characters the field already contains, so a " +
-            "While guarded on it clears the field exactly. Needs root. If " +
-            "there is no field, or several with none focused, nothing is " +
-            "touched and an error is shown.",
-        listOf(
-            "field       then While field > 0:  Key DEL,  Set field = field - 1",
-            "chars       any name you like"
-        )
-    )
+	is FocusFieldInteraction -> StepHelp(
+		"Puts the cursor in the text field on screen by asking the window " +
+			"where it is, rather than tapping a remembered spot. Touches " +
+			"nothing if the field already has focus. The variable is left " +
+			"holding how many characters the field already contains, so a " +
+			"While guarded on it clears the field exactly. Needs root. If " +
+			"there is no field, or several with none focused, nothing is " +
+			"touched and an error is shown.",
+		listOf(
+			"field       then While field > 0:  Key DEL,  Set field = field - 1",
+			"chars       any name you like"
+		)
+	)
 
-    is WaitInteraction -> StepHelp(
-        "Pauses and does nothing else. The Wait ms field is the whole step. " +
-            "Every other step has the same field, so use this one only where a " +
-            "pause is the point.",
-        listOf("1000        a second", "5000        five seconds")
-    )
+	is WaitInteraction -> StepHelp(
+		"Pauses and does nothing else. The Wait ms field is the whole step. " +
+			"Every other step has the same field, so use this one only where a " +
+			"pause is the point.",
+		listOf("1000        a second", "5000        five seconds")
+	)
 
-    is ToastInteraction -> StepHelp(
-        "Shows a short message on screen, which is the simplest way to see " +
-            "what a run is doing. Plain text is shown as written; anything in " +
-            "braces is worked out first.",
-        listOf(
-            "Finished",
-            "attempt {count} of 3",
-            "{codes[i]} is next",
-            "{total - done} left to go"
-        )
-    )
+	is ToastInteraction -> StepHelp(
+		"Shows a short message on screen, which is the simplest way to see " +
+			"what a run is doing. Plain text is shown as written; anything in " +
+			"braces is worked out first.",
+		listOf(
+			"Finished",
+			"attempt {count} of 3",
+			"{codes[i]} is next",
+			"{total - done} left to go"
+		)
+	)
 
-    is SetVariableInteraction -> StepHelp(
-        "Stores a value under a name for the rest of this run. Variables start " +
-            "at 0 and are forgotten when playback ends. The same expressions " +
-            "work here as in a condition, so this is also how you ask about " +
-            "the screen and keep the answer.",
-        listOf(
-            "0",
-            "count + 1",
-            "random(2, 5)                        a number in that range",
-            "count % 3",
-            "\"page \" + count",
-            "waitTextAppear(\"Inbox\", 8000)      wait, and store whether it came"
-        )
-    )
+	is SetVariableInteraction -> StepHelp(
+		"Stores a value under a name for the rest of this run. Variables start " +
+			"at 0 and are forgotten when playback ends. The same expressions " +
+			"work here as in a condition, so this is also how you ask about " +
+			"the screen and keep the answer.",
+		listOf(
+			"0",
+			"count + 1",
+			"random(2, 5)                        a number in that range",
+			"count % 3",
+			"\"page \" + count",
+			"waitTextAppear(\"Inbox\", 8000)      wait, and store whether it came"
+		)
+	)
 
-    is WaitCodeInteraction -> StepHelp(
-        "Waits for six-digit verification codes from the gmail-six-digit " +
-            "service and stores them in the variable as a list, best guess " +
-            "first. Max age s is what makes it a wait rather than a read: the " +
-            "service keeps ten minutes of history, so without it you would get " +
-            "the code from your last login straight away. Set the service " +
-            "address in Settings. If nothing arrives before the timeout the " +
-            "variable is left empty and an error is shown.",
-        listOf(
-            "{codes[0]}                          in a Type text step, the best code",
-            "count(codes)                        how many arrived",
-            "While i < count(codes)              try each in turn"
-        )
-    )
+	is WaitCodeInteraction -> StepHelp(
+		"Waits for six-digit verification codes from the gmail-six-digit " +
+			"service and stores them in the variable as a list, best guess " +
+			"first. Max age s is what makes it a wait rather than a read: the " +
+			"service keeps ten minutes of history, so without it you would get " +
+			"the code from your last login straight away. Set the service " +
+			"address in Settings. If nothing arrives before the timeout the " +
+			"variable is left empty and an error is shown.",
+		listOf(
+			"{codes[0]}                          in a Type text step, the best code",
+			"count(codes)                        how many arrived",
+			"While i < count(codes)              try each in turn"
+		)
+	)
 
-    is KeyEventInteraction -> StepHelp(
-        "Presses a hardware or system key by name. Several names separated by " +
-            "spaces are pressed in order. Needs root.",
-        listOf(
-            "BACK, HOME, APP_SWITCH",
-            "ENTER, TAB, DEL",
-            "MOVE_END                            cursor to the end of the field",
-            "MOVE_END DEL DEL DEL                and rub out three characters",
-            "VOLUME_UP, VOLUME_DOWN, POWER"
-        )
-    )
+	is KeyEventInteraction -> StepHelp(
+		"Presses a hardware or system key by name. Several names separated by " +
+			"spaces are pressed in order. Needs root.",
+		listOf(
+			"BACK, HOME, APP_SWITCH",
+			"ENTER, TAB, DEL",
+			"MOVE_END                            cursor to the end of the field",
+			"MOVE_END DEL DEL DEL                and rub out three characters",
+			"VOLUME_UP, VOLUME_DOWN, POWER"
+		)
+	)
 
-    is LaunchAppInteraction -> StepHelp(
-        "Opens an app by package name, as though it were tapped on the home " +
-            "screen. Find one with a Shell step running \"pm list packages\". " +
-            "Needs root.",
-        listOf(
-            "com.android.settings",
-            "com.android.chrome"
-        )
-    )
+	is LaunchAppInteraction -> StepHelp(
+		"Opens an app by package name, as though it were tapped on the home " +
+			"screen. Find one with a Shell step running \"pm list packages\". " +
+			"Needs root.",
+		listOf(
+			"com.android.settings",
+			"com.android.chrome"
+		)
+	)
 
-    is ShellInteraction -> StepHelp(
-        "Runs a command as root. Output is not shown, only logged, so this is " +
-            "for doing something rather than reading something back.",
-        listOf(
-            "am force-stop com.example.app       close an app",
-            "pm clear com.example.app            wipe its data",
-            "svc wifi disable",
-            "input keycombination KEYCODE_CTRL_LEFT KEYCODE_A     select all"
-        )
-    )
+	is ShellInteraction -> StepHelp(
+		"Runs a command as root. Output is not shown, only logged, so this is " +
+			"for doing something rather than reading something back.",
+		listOf(
+			"am force-stop com.example.app       close an app",
+			"pm clear com.example.app            wipe its data",
+			"svc wifi disable",
+			"input keycombination KEYCODE_CTRL_LEFT KEYCODE_A     select all"
+		)
+	)
 
-    is IfStartInteraction, is ElseIfInteraction, is WhileStartInteraction -> StepHelp(
-        "Runs the steps inside when the condition holds; While repeats them " +
-            "for as long as it does. Compare with == != < > <= >=, combine " +
-            "with && || !, and ask about the screen with textAppear() or " +
-            "image(). The waiting forms, waitTextAppear() and waitImage(), " +
-            "poll up to the milliseconds given and answer as soon as it shows " +
-            "up. Text is read by the on-device recogniser and matches " +
-            "capitals unless a final false says otherwise; an image is matched " +
-            "against a saved area and takes an optional percentage instead.",
-        listOf(
-            "count < 3",
-            "textAppear(\"Continue\")             those words are on screen",
-            "textAppear(\"continue\", false)      ignoring capitals",
-            "waitTextAppear(\"Inbox\", 5000)      wait up to 5s for them",
-            "!textAppear(\"Wrong code\")          they are not there",
-            "image(\"start_button\")              a saved area is on screen",
-            "image(\"button\", 95)                needing a 95% match",
-            "i < count(codes)                    once per code found"
-        )
-    )
+	is IfStartInteraction, is ElseIfInteraction, is WhileStartInteraction -> StepHelp(
+		"Runs the steps inside when the condition holds; While repeats them " +
+			"for as long as it does. Compare with == != < > <= >=, combine " +
+			"with && || !, and ask about the screen with textAppear() or " +
+			"image(). The waiting forms, waitTextAppear() and waitImage(), " +
+			"poll up to the milliseconds given and answer as soon as it shows " +
+			"up. Text is read by the on-device recogniser and matches " +
+			"capitals unless a final false says otherwise; an image is matched " +
+			"against a saved area and takes an optional percentage instead.",
+		listOf(
+			"count < 3",
+			"textAppear(\"Continue\")             those words are on screen",
+			"textAppear(\"continue\", false)      ignoring capitals",
+			"waitTextAppear(\"Inbox\", 5000)      wait up to 5s for them",
+			"!textAppear(\"Wrong code\")          they are not there",
+			"image(\"start_button\")              a saved area is on screen",
+			"image(\"button\", 95)                needing a 95% match",
+			"i < count(codes)                    once per code found"
+		)
+	)
 
-    is LoopStartInteraction -> StepHelp(
-        "Repeats the steps inside a set number of times. Set the count to 0 to " +
-            "repeat until a Break step or the stop button.",
-        listOf(
-            "3           three times",
-            "0           until Break or stop"
-        )
-    )
+	is LoopStartInteraction -> StepHelp(
+		"Repeats the steps inside a set number of times. Set the count to 0 to " +
+			"repeat until a Break step or the stop button.",
+		listOf(
+			"3           three times",
+			"0           until Break or stop"
+		)
+	)
 
-    is RandomSelectStartInteraction -> StepHelp(
-        "Runs exactly one of the steps inside, chosen at random each time it " +
-            "is reached. Useful for varying a run so it does not repeat itself " +
-            "identically."
-    )
+	is RandomSelectStartInteraction -> StepHelp(
+		"Runs exactly one of the steps inside, chosen at random each time it " +
+			"is reached. Useful for varying a run so it does not repeat itself " +
+			"identically."
+	)
 
-    is BreakInteraction -> StepHelp(
-        "Leaves the innermost Repeat or While immediately and carries on after " +
-            "it. Usually sits inside an If, so the loop stops once something " +
-            "has worked.",
-        listOf("If textAppear(\"Welcome\") then Break      stop once it is done")
-    )
+	is BreakInteraction -> StepHelp(
+		"Leaves the innermost Repeat or While immediately and carries on after " +
+			"it. Usually sits inside an If, so the loop stops once something " +
+			"has worked.",
+		listOf("If textAppear(\"Welcome\") then Break      stop once it is done")
+	)
 
-    is ElseInteraction -> StepHelp("Runs when none of the conditions above it held.")
+	is ElseInteraction -> StepHelp("Runs when none of the conditions above it held.")
 
-    else -> StepHelp("Marks the end of the block above it.")
+	else -> StepHelp("Marks the end of the block above it.")
 }
 
 /** An interaction plus a stable id, so reordering can key rows by identity. */
 private data class EditorRow(val id: Long, val interaction: Interaction)
 
 class EditorActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+	override fun onCreate(savedInstanceState: Bundle?) {
+		super.onCreate(savedInstanceState)
+		enableEdgeToEdge()
 
-        val filePath = intent.getStringExtra("FILE_PATH")
-        val file = if (filePath != null) File(filePath) else null
+		val filePath = intent.getStringExtra("FILE_PATH")
+		val file = if (filePath != null) File(filePath) else null
 
-        setContent {
-            AutoClickerTheme {
-                if (file != null && file.exists()) {
-                    EditorScreen(file = file, onBack = { finish() })
-                } else {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("File not found")
-                        Button(onClick = { finish() }) {
-                            Text("Back")
-                        }
-                    }
-                }
-            }
-        }
-    }
+		setContent {
+			AutoClickerTheme {
+				if (file != null && file.exists()) {
+					EditorScreen(file = file, onBack = { finish() })
+				} else {
+					Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+						Text("File not found")
+						Button(onClick = { finish() }) {
+							Text("Back")
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditorScreen(file: File, onBack: () -> Unit) {
-    val recordingData = remember { RecordingManager.loadRecording(file) }
-    // The hierarchy is flattened for editing and rebuilt on save.
-    val initialInteractions = remember { flatten(recordingData.events) }
-    // Rows carry an id because reordering needs stable identity: keying by
-    // position would attach a row's field state to the slot, not the item.
-    val rows = remember {
-        mutableStateListOf<EditorRow>().apply {
-            initialInteractions.forEachIndexed { index, item -> add(EditorRow(index.toLong(), item)) }
-        }
-    }
-    var nextRowId by remember { mutableLongStateOf(initialInteractions.size.toLong()) }
+	val recordingData = remember { RecordingManager.loadRecording(file) }
+	// The hierarchy is flattened for editing and rebuilt on save.
+	val initialInteractions = remember { flatten(recordingData.events) }
+	// Rows carry an id because reordering needs stable identity: keying by
+	// position would attach a row's field state to the slot, not the item.
+	val rows = remember {
+		mutableStateListOf<EditorRow>().apply {
+			initialInteractions.forEachIndexed { index, item -> add(EditorRow(index.toLong(), item)) }
+		}
+	}
+	var nextRowId by remember { mutableLongStateOf(initialInteractions.size.toLong()) }
 
-    var globalRandom by remember { mutableIntStateOf(recordingData.globalRandom) }
-    var groupToAdd by remember { mutableStateOf(STEP_GROUPS.first()) }
-    var stepToAdd by remember { mutableStateOf(STEP_GROUPS.first().options.first()) }
-    // Only one row is expanded at a time; collapsed rows are a single summary line.
-    var expandedId by remember { mutableStateOf<Long?>(null) }
-    var confirmDiscard by remember { mutableStateOf(false) }
+	var globalRandom by remember { mutableIntStateOf(recordingData.globalRandom) }
+	var groupToAdd by remember { mutableStateOf(STEP_GROUPS.first()) }
+	var stepToAdd by remember { mutableStateOf(STEP_GROUPS.first().options.first()) }
+	// Only one row is expanded at a time; collapsed rows are a single summary line.
+	var expandedId by remember { mutableStateOf<Long?>(null) }
+	var confirmDiscard by remember { mutableStateOf(false) }
 
-    val interactions = rows.map { it.interaction }
-    val dirty = interactions != initialInteractions || globalRandom != recordingData.globalRandom
-    val depths = blockDepths(interactions)
+	val interactions = rows.map { it.interaction }
+	val dirty = interactions != initialInteractions || globalRandom != recordingData.globalRandom
+	val depths = blockDepths(interactions)
 
-    fun add(interaction: Interaction) {
-        rows.add(EditorRow(nextRowId++, interaction))
-    }
+	fun add(interaction: Interaction) {
+		rows.add(EditorRow(nextRowId++, interaction))
+	}
 
-    fun save() {
-        RecordingManager.saveRecordingToFile(file, buildHierarchy(interactions), globalRandom)
-        onBack()
-    }
+	fun save() {
+		RecordingManager.saveRecordingToFile(file, buildHierarchy(interactions), globalRandom)
+		onBack()
+	}
 
-    fun leave() {
-        if (dirty) confirmDiscard = true else onBack()
-    }
+	fun leave() {
+		if (dirty) confirmDiscard = true else onBack()
+	}
 
-    BackHandler { leave() }
+	BackHandler { leave() }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(file.nameWithoutExtension) },
-                navigationIcon = {
-                    IconButton(onClick = { leave() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { save() }) {
-                        Icon(Icons.Default.Save, contentDescription = "Save")
-                    }
-                }
-            )
-        }
-    ) { innerPadding ->
-        Column(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+	Scaffold(
+		topBar = {
+			TopAppBar(
+				title = { Text(file.nameWithoutExtension) },
+				navigationIcon = {
+					IconButton(onClick = { leave() }) {
+						Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+					}
+				},
+				actions = {
+					IconButton(onClick = { save() }) {
+						Icon(Icons.Default.Save, contentDescription = "Save")
+					}
+				}
+			)
+		}
+	) { innerPadding ->
+		Column(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
 
-            // One row: the global delay, a picker for what to insert, and the
-            // button that inserts it. Fourteen chips in a horizontally scrolling
-            // strip hid most of the options off the right edge.
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                DropdownPicker(
-                    label = "Group",
-                    selected = groupToAdd.label,
-                    options = STEP_GROUPS.map { it.label },
-                    onSelected = { picked ->
-                        groupToAdd = STEP_GROUPS.first { it.label == picked }
-                        // The step below it has to belong to the group above, or
-                        // the button would insert whatever was left selected.
-                        stepToAdd = groupToAdd.options.first()
-                    },
-                    modifier = Modifier.weight(1f)
-                )
+			// One row: the global delay, a picker for what to insert, and the
+			// button that inserts it. Fourteen chips in a horizontally scrolling
+			// strip hid most of the options off the right edge.
+			Row(
+				modifier = Modifier
+					.fillMaxWidth()
+					.padding(horizontal = 8.dp, vertical = 4.dp),
+				verticalAlignment = Alignment.CenterVertically,
+				horizontalArrangement = Arrangement.spacedBy(8.dp)
+			) {
+				DropdownPicker(
+					label = "Group",
+					selected = groupToAdd.label,
+					options = STEP_GROUPS.map { it.label },
+					onSelected = { picked ->
+						groupToAdd = STEP_GROUPS.first { it.label == picked }
+						// The step below it has to belong to the group above, or
+						// the button would insert whatever was left selected.
+						stepToAdd = groupToAdd.options.first()
+					},
+					modifier = Modifier.weight(1f)
+				)
 
-                DropdownPicker(
-                    label = "Step",
-                    selected = stepToAdd.label,
-                    options = groupToAdd.options.map { it.label },
-                    onSelected = { picked ->
-                        stepToAdd = groupToAdd.options.first { it.label == picked }
-                    },
-                    modifier = Modifier.weight(1f)
-                )
+				DropdownPicker(
+					label = "Step",
+					selected = stepToAdd.label,
+					options = groupToAdd.options.map { it.label },
+					onSelected = { picked ->
+						stepToAdd = groupToAdd.options.first { it.label == picked }
+					},
+					modifier = Modifier.weight(1f)
+				)
 
-                FilledIconButton(onClick = { stepToAdd.create().forEach { add(it) } }) {
-                    Icon(Icons.Default.Add, contentDescription = "Add step")
-                }
-            }
+				FilledIconButton(onClick = { stepToAdd.create().forEach { add(it) } }) {
+					Icon(Icons.Default.Add, contentDescription = "Add step")
+				}
+			}
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp)
-                    .padding(bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                NumberField(
-                    value = globalRandom.toLong(),
-                    onValueChange = { globalRandom = it.toInt() },
-                    label = "Rand ms",
-                    modifier = Modifier.width(110.dp)
-                )
-                Text(
-                    "added to every step's wait, so a run is not identically timed",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+			Row(
+				modifier = Modifier
+					.fillMaxWidth()
+					.padding(horizontal = 8.dp)
+					.padding(bottom = 4.dp),
+				verticalAlignment = Alignment.CenterVertically,
+				horizontalArrangement = Arrangement.spacedBy(8.dp)
+			) {
+				NumberField(
+					value = globalRandom.toLong(),
+					onValueChange = { globalRandom = it.toInt() },
+					label = "Rand ms",
+					modifier = Modifier.width(110.dp)
+				)
+				Text(
+					"added to every step's wait, so a run is not identically timed",
+					style = MaterialTheme.typography.bodySmall,
+					color = MaterialTheme.colorScheme.onSurfaceVariant
+				)
+			}
 
-            if (!isBalanced(interactions)) {
-                Text(
-                    "Unbalanced blocks: every Repeat/Random needs a matching End, or the extra one is dropped on save.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                )
-            }
+			if (!isBalanced(interactions)) {
+				Text(
+					"Unbalanced blocks: every Repeat/Random needs a matching End, or the extra one is dropped on save.",
+					style = MaterialTheme.typography.bodySmall,
+					color = MaterialTheme.colorScheme.error,
+					modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+				)
+			}
 
-            val listState = rememberLazyListState()
-            val reorderState = rememberReorderableLazyListState(listState) { from, to ->
-                rows.add(to.index, rows.removeAt(from.index))
-                expandedId = null
-            }
+			val listState = rememberLazyListState()
+			val reorderState = rememberReorderableLazyListState(listState) { from, to ->
+				rows.add(to.index, rows.removeAt(from.index))
+				expandedId = null
+			}
 
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-            ) {
-                itemsIndexed(rows, key = { _, row -> row.id }) { index, row ->
-                    ReorderableItem(reorderState, key = row.id) { dragging ->
-                        InteractionRow(
-                            interaction = row.interaction,
-                            depth = depths.getOrElse(index) { 0 },
-                            expanded = expandedId == row.id,
-                            dragging = dragging,
-                            dragHandle = {
-                                Box(
-                                    modifier = Modifier
-                                        .draggableHandle(onDragStarted = { expandedId = null })
-                                        .size(48.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.DragHandle,
-                                        contentDescription = "Reorder"
-                                    )
-                                }
-                            },
-                            onToggleExpand = {
-                                expandedId = if (expandedId == row.id) null else row.id
-                            },
-                            onUpdate = { updated -> rows[index] = row.copy(interaction = updated) },
-                            onDelete = {
-                                rows.removeAt(index)
-                                expandedId = null
-                            },
-                            // Long-pressing the row drags it too. The handle
-                            // alone was a 28dp target at the screen edge, so a
-                            // finger that missed it just scrolled or expanded.
-                            modifier = Modifier.longPressDraggableHandle(
-                                onDragStarted = { expandedId = null }
-                            )
-                        )
-                    }
-                    HorizontalDivider()
-                }
-            }
-        }
-    }
+			LazyColumn(
+				state = listState,
+				modifier = Modifier
+					.weight(1f)
+					.fillMaxWidth()
+			) {
+				itemsIndexed(rows, key = { _, row -> row.id }) { index, row ->
+					ReorderableItem(reorderState, key = row.id) { dragging ->
+						InteractionRow(
+							interaction = row.interaction,
+							depth = depths.getOrElse(index) { 0 },
+							expanded = expandedId == row.id,
+							dragging = dragging,
+							dragHandle = {
+								Box(
+									modifier = Modifier
+										.draggableHandle(onDragStarted = { expandedId = null })
+										.size(48.dp),
+									contentAlignment = Alignment.Center
+								) {
+									Icon(
+										imageVector = Icons.Default.DragHandle,
+										contentDescription = "Reorder"
+									)
+								}
+							},
+							onToggleExpand = {
+								expandedId = if (expandedId == row.id) null else row.id
+							},
+							onUpdate = { updated -> rows[index] = row.copy(interaction = updated) },
+							onDelete = {
+								rows.removeAt(index)
+								expandedId = null
+							},
+							// Long-pressing the row drags it too. The handle
+							// alone was a 28dp target at the screen edge, so a
+							// finger that missed it just scrolled or expanded.
+							modifier = Modifier.longPressDraggableHandle(
+								onDragStarted = { expandedId = null }
+							)
+						)
+					}
+					HorizontalDivider()
+				}
+			}
+		}
+	}
 
-    if (confirmDiscard) {
-        AlertDialog(
-            onDismissRequest = { confirmDiscard = false },
-            title = { Text("Discard changes?") },
-            text = { Text("Your edits to this recording have not been saved.") },
-            confirmButton = {
-                Button(onClick = {
-                    confirmDiscard = false
-                    onBack()
-                }) {
-                    Text("Discard")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmDiscard = false }) {
-                    Text("Keep editing")
-                }
-            }
-        )
-    }
+	if (confirmDiscard) {
+		AlertDialog(
+			onDismissRequest = { confirmDiscard = false },
+			title = { Text("Discard changes?") },
+			text = { Text("Your edits to this recording have not been saved.") },
+			confirmButton = {
+				Button(onClick = {
+					confirmDiscard = false
+					onBack()
+				}) {
+					Text("Discard")
+				}
+			},
+			dismissButton = {
+				TextButton(onClick = { confirmDiscard = false }) {
+					Text("Keep editing")
+				}
+			}
+		)
+	}
 }
 
 /** A read-only dropdown over a list of labels. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DropdownPicker(
-    label: String,
-    selected: String,
-    options: List<String>,
-    onSelected: (String) -> Unit,
-    modifier: Modifier = Modifier
+	label: String,
+	selected: String,
+	options: List<String>,
+	onSelected: (String) -> Unit,
+	modifier: Modifier = Modifier
 ) {
-    var expanded by remember { mutableStateOf(false) }
+	var expanded by remember { mutableStateOf(false) }
 
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = !expanded },
-        modifier = modifier
-    ) {
-        OutlinedTextField(
-            value = selected,
-            onValueChange = {},
-            readOnly = true,
-            singleLine = true,
-            label = { Text(label) },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
-        )
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            options.forEach { option ->
-                DropdownMenuItem(
-                    text = { Text(option) },
-                    onClick = {
-                        onSelected(option)
-                        expanded = false
-                    }
-                )
-            }
-        }
-    }
+	ExposedDropdownMenuBox(
+		expanded = expanded,
+		onExpandedChange = { expanded = !expanded },
+		modifier = modifier
+	) {
+		OutlinedTextField(
+			value = selected,
+			onValueChange = {},
+			readOnly = true,
+			singleLine = true,
+			label = { Text(label) },
+			trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+			modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
+		)
+		ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+			options.forEach { option ->
+				DropdownMenuItem(
+					text = { Text(option) },
+					onClick = {
+						onSelected(option)
+						expanded = false
+					}
+				)
+			}
+		}
+	}
 }
 
 @Composable
 fun InteractionRow(
-    interaction: Interaction,
-    depth: Int,
-    expanded: Boolean,
-    dragging: Boolean,
-    dragHandle: @Composable () -> Unit,
-    onToggleExpand: () -> Unit,
-    onUpdate: (Interaction) -> Unit,
-    onDelete: () -> Unit,
-    modifier: Modifier = Modifier
+	interaction: Interaction,
+	depth: Int,
+	expanded: Boolean,
+	dragging: Boolean,
+	dragHandle: @Composable () -> Unit,
+	onToggleExpand: () -> Unit,
+	onUpdate: (Interaction) -> Unit,
+	onDelete: () -> Unit,
+	modifier: Modifier = Modifier
 ) {
-    val accent = blockAccent(depth)
-    val screen = remember { ScreenGeometry.current(AppSettings.appContext) }
-    val background =
-        if (dragging) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
+	val accent = blockAccent(depth)
+	val screen = remember { ScreenGeometry.current(AppSettings.appContext) }
+	val background =
+		if (dragging) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
 
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(background)
-            .height(IntrinsicSize.Min)
-    ) {
-        // Indent rails make the nesting visible; the flat Start/End markers
-        // gave no indication of what was inside a block.
-        repeat(depth) { level ->
-            Box(
-                modifier = Modifier
-                    .padding(start = INDENT_PER_LEVEL)
-                    .width(2.dp)
-                    .fillMaxHeight()
-                    .background(blockAccent(level).copy(alpha = 0.4f))
-            )
-        }
+	Row(
+		modifier = modifier
+			.fillMaxWidth()
+			.background(background)
+			.height(IntrinsicSize.Min)
+	) {
+		// Indent rails make the nesting visible; the flat Start/End markers
+		// gave no indication of what was inside a block.
+		repeat(depth) { level ->
+			Box(
+				modifier = Modifier
+					.padding(start = INDENT_PER_LEVEL)
+					.width(2.dp)
+					.fillMaxHeight()
+					.background(blockAccent(level).copy(alpha = 0.4f))
+			)
+		}
 
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .clickable { onToggleExpand() }
-                .padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 8.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = describeInteraction(interaction, screen),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (interaction.isBlockMarker()) accent else MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
-                    Icon(Icons.Default.Delete, contentDescription = "Delete")
-                }
-                dragHandle()
-            }
+		Column(
+			modifier = Modifier
+				.weight(1f)
+				.clickable { onToggleExpand() }
+				.padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 8.dp)
+		) {
+			Row(verticalAlignment = Alignment.CenterVertically) {
+				Text(
+					text = describeInteraction(interaction, screen),
+					style = MaterialTheme.typography.bodyMedium,
+					color = if (interaction.isBlockMarker()) accent else MaterialTheme.colorScheme.onSurface,
+					modifier = Modifier.weight(1f)
+				)
+				IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
+					Icon(Icons.Default.Delete, contentDescription = "Delete")
+				}
+				dragHandle()
+			}
 
-            if (expanded) {
-                Spacer(modifier = Modifier.height(8.dp))
-                InteractionFields(interaction = interaction, onUpdate = onUpdate)
-                Spacer(modifier = Modifier.height(8.dp))
-                StepHelpPanel(helpFor(interaction))
-            }
-        }
-    }
+			if (expanded) {
+				Spacer(modifier = Modifier.height(8.dp))
+				InteractionFields(interaction = interaction, onUpdate = onUpdate)
+				Spacer(modifier = Modifier.height(8.dp))
+				StepHelpPanel(helpFor(interaction))
+			}
+		}
+	}
 }
 
 @Composable
 private fun StepHelpPanel(help: StepHelp) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = RoundedCornerShape(6.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(10.dp)) {
-            Text(
-                text = help.summary,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            if (help.examples.isEmpty()) return@Column
+	Surface(
+		color = MaterialTheme.colorScheme.surfaceVariant,
+		shape = RoundedCornerShape(6.dp),
+		modifier = Modifier.fillMaxWidth()
+	) {
+		Column(modifier = Modifier.padding(10.dp)) {
+			Text(
+				text = help.summary,
+				style = MaterialTheme.typography.bodySmall,
+				color = MaterialTheme.colorScheme.onSurfaceVariant
+			)
+			if (help.examples.isEmpty()) return@Column
 
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = "Examples",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            help.examples.forEach { example ->
-                Text(
-                    text = example,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-            }
-        }
-    }
+			Spacer(modifier = Modifier.height(6.dp))
+			Text(
+				text = "Examples",
+				style = MaterialTheme.typography.labelSmall,
+				color = MaterialTheme.colorScheme.onSurfaceVariant
+			)
+			help.examples.forEach { example ->
+				Text(
+					text = example,
+					style = MaterialTheme.typography.bodySmall,
+					fontFamily = FontFamily.Monospace,
+					modifier = Modifier.padding(top = 2.dp)
+				)
+			}
+		}
+	}
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun InteractionFields(interaction: Interaction, onUpdate: (Interaction) -> Unit) {
-    // Coordinates are stored as fractions of the screen so scripts stay
-    // portable, but they are shown and edited as pixels for this display.
-    val screen = remember { ScreenGeometry.current(AppSettings.appContext) }
+	// Coordinates are stored as fractions of the screen so scripts stay
+	// portable, but they are shown and edited as pixels for this display.
+	val screen = remember { ScreenGeometry.current(AppSettings.appContext) }
 
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        // End markers are discarded when the hierarchy is rebuilt, so a delay
-        // on them would go nowhere.
-        if (!interaction.isBlockEnd()) {
-            NumberField(
-                value = interaction.delayBefore,
-                onValueChange = { onUpdate(interaction.withDelay(it)) },
-                label = "Wait ms",
-                modifier = Modifier.width(100.dp)
-            )
-        }
+	FlowRow(
+		horizontalArrangement = Arrangement.spacedBy(8.dp),
+		verticalArrangement = Arrangement.spacedBy(4.dp)
+	) {
+		// End markers are discarded when the hierarchy is rebuilt, so a delay
+		// on them would go nowhere.
+		if (!interaction.isBlockEnd()) {
+			NumberField(
+				value = interaction.delayBefore,
+				onValueChange = { onUpdate(interaction.withDelay(it)) },
+				label = "Wait ms",
+				modifier = Modifier.width(100.dp)
+			)
+		}
 
-        when (interaction) {
-            is ClickInteraction -> {
-                var mode by remember {
-                    mutableStateOf(AnchorMode.of(interaction.anchor, interaction.anchorText))
-                }
-                // A mode that is picked but not yet filled in still means the
-                // coordinates are offsets, or dX 100 would be reread as 108000.
-                val anchored = mode != AnchorMode.SCREEN
-                AnchorPicker(
-                    selected = interaction.anchor,
-                    selectedText = interaction.anchorText,
-                    mode = mode,
-                    onModeChange = { mode = it },
-                    onAnchor = { image, phrase ->
-                        onUpdate(interaction.copy(anchor = image, anchorText = phrase))
-                    }
-                )
-                CoordField(
-                    value = interaction.x,
-                    onValueChange = { onUpdate(interaction.copy(x = it)) },
-                    label = if (anchored) "dX px" else "X px",
-                    screenSize = screen.width,
-                    anchored = anchored
-                )
-                CoordField(
-                    value = interaction.y,
-                    onValueChange = { onUpdate(interaction.copy(y = it)) },
-                    label = if (anchored) "dY px" else "Y px",
-                    screenSize = screen.height,
-                    anchored = anchored
-                )
-                NumberField(
-                    value = interaction.duration,
-                    onValueChange = { onUpdate(interaction.copy(duration = it)) },
-                    label = "Hold ms",
-                    modifier = Modifier.width(100.dp)
-                )
-                NumberField(
-                    value = interaction.taps.toLong(),
-                    onValueChange = { onUpdate(interaction.copy(taps = it.toInt().coerceAtLeast(1))) },
-                    label = "Taps",
-                    modifier = Modifier.width(80.dp)
-                )
-                NumberField(
-                    value = interaction.randomFactor.toLong(),
-                    onValueChange = { onUpdate(interaction.copy(randomFactor = it.toInt())) },
-                    label = "Rand px",
-                    modifier = Modifier.width(100.dp)
-                )
-            }
-            is DragInteraction -> {
-                var mode by remember {
-                    mutableStateOf(AnchorMode.of(interaction.anchor, interaction.anchorText))
-                }
-                val anchored = mode != AnchorMode.SCREEN
-                val start = interaction.points.firstOrNull()
-                val end = interaction.points.lastOrNull()
-                // A recorded path has many points and only its start is
-                // meaningful to edit; a two-point swipe is defined by its ends.
-                val simple = interaction.points.size == 2
+		when (interaction) {
+			is ClickInteraction -> {
+				var mode by remember {
+					mutableStateOf(AnchorMode.of(interaction.anchor, interaction.anchorText))
+				}
+				// A mode that is picked but not yet filled in still means the
+				// coordinates are offsets, or dX 100 would be reread as 108000.
+				val anchored = mode != AnchorMode.SCREEN
+				AnchorPicker(
+					selected = interaction.anchor,
+					selectedText = interaction.anchorText,
+					mode = mode,
+					onModeChange = { mode = it },
+					onAnchor = { image, phrase ->
+						onUpdate(interaction.copy(anchor = image, anchorText = phrase))
+					}
+				)
+				CoordField(
+					value = interaction.x,
+					onValueChange = { onUpdate(interaction.copy(x = it)) },
+					label = if (anchored) "dX px" else "X px",
+					screenSize = screen.width,
+					anchored = anchored
+				)
+				CoordField(
+					value = interaction.y,
+					onValueChange = { onUpdate(interaction.copy(y = it)) },
+					label = if (anchored) "dY px" else "Y px",
+					screenSize = screen.height,
+					anchored = anchored
+				)
+				NumberField(
+					value = interaction.duration,
+					onValueChange = { onUpdate(interaction.copy(duration = it)) },
+					label = "Hold ms",
+					modifier = Modifier.width(100.dp)
+				)
+				NumberField(
+					value = interaction.taps.toLong(),
+					onValueChange = { onUpdate(interaction.copy(taps = it.toInt().coerceAtLeast(1))) },
+					label = "Taps",
+					modifier = Modifier.width(80.dp)
+				)
+				NumberField(
+					value = interaction.randomFactor.toLong(),
+					onValueChange = { onUpdate(interaction.copy(randomFactor = it.toInt())) },
+					label = "Rand px",
+					modifier = Modifier.width(100.dp)
+				)
+			}
+			is DragInteraction -> {
+				var mode by remember {
+					mutableStateOf(AnchorMode.of(interaction.anchor, interaction.anchorText))
+				}
+				val anchored = mode != AnchorMode.SCREEN
+				val start = interaction.points.firstOrNull()
+				val end = interaction.points.lastOrNull()
+				// A recorded path has many points and only its start is
+				// meaningful to edit; a two-point swipe is defined by its ends.
+				val simple = interaction.points.size == 2
 
-                AnchorPicker(
-                    selected = interaction.anchor,
-                    selectedText = interaction.anchorText,
-                    mode = mode,
-                    onModeChange = { mode = it },
-                    onAnchor = { image, phrase ->
-                        onUpdate(interaction.copy(anchor = image, anchorText = phrase))
-                    }
-                )
-                if (start != null) {
-                    // Editing the start translates the whole path, which is what
-                    // you want when a recorded gesture landed slightly off.
-                    CoordField(
-                        value = start.x,
-                        onValueChange = { onUpdate(interaction.translatedTo(it, start.y)) },
-                        label = if (anchored) "Start dX" else "Start X px",
-                        screenSize = screen.width,
-                        anchored = anchored,
-                        width = 110.dp
-                    )
-                    CoordField(
-                        value = start.y,
-                        onValueChange = { onUpdate(interaction.translatedTo(start.x, it)) },
-                        label = if (anchored) "Start dY" else "Start Y px",
-                        screenSize = screen.height,
-                        anchored = anchored,
-                        width = 110.dp
-                    )
-                }
-                if (simple && end != null) {
-                    CoordField(
-                        value = end.x,
-                        onValueChange = { onUpdate(interaction.withEnd(it, end.y)) },
-                        label = if (anchored) "End dX" else "End X px",
-                        screenSize = screen.width,
-                        anchored = anchored,
-                        width = 110.dp
-                    )
-                    CoordField(
-                        value = end.y,
-                        onValueChange = { onUpdate(interaction.withEnd(end.x, it)) },
-                        label = if (anchored) "End dY" else "End Y px",
-                        screenSize = screen.height,
-                        anchored = anchored,
-                        width = 110.dp
-                    )
-                    NumberField(
-                        value = end.dt,
-                        onValueChange = { onUpdate(interaction.withSwipeDuration(it)) },
-                        label = "Swipe ms",
-                        modifier = Modifier.width(110.dp)
-                    )
-                }
-                NumberField(
-                    value = interaction.randomFactorStart.toLong(),
-                    onValueChange = { onUpdate(interaction.copy(randomFactorStart = it.toInt())) },
-                    label = "Rand start",
-                    modifier = Modifier.width(110.dp)
-                )
-                NumberField(
-                    value = interaction.randomFactorHighest.toLong(),
-                    onValueChange = { onUpdate(interaction.copy(randomFactorHighest = it.toInt())) },
-                    label = "Rand mid",
-                    modifier = Modifier.width(110.dp)
-                )
-            }
-            is TextInteraction -> {
-                OutlinedTextField(
-                    value = interaction.text,
-                    onValueChange = { onUpdate(interaction.copy(text = it)) },
-                    label = { Text("Text") },
-                    modifier = Modifier.width(220.dp),
-                    singleLine = true
-                )
-            }
-            is LoopStartInteraction -> {
-                NumberField(
-                    value = interaction.repeatCount.toLong(),
-                    onValueChange = { onUpdate(interaction.copy(repeatCount = it.toInt())) },
-                    label = "Repeat (0 = forever)",
-                    modifier = Modifier.width(180.dp)
-                )
-            }
-            is ToastInteraction -> {
-                TextFieldEntry(
-                    value = interaction.message,
-                    onValueChange = { onUpdate(interaction.copy(message = it)) },
-                    label = "Message ({...} is evaluated)",
-                    width = 280.dp
-                )
-            }
-            is KeyEventInteraction -> {
-                TextFieldEntry(
-                    value = interaction.key,
-                    onValueChange = { onUpdate(interaction.copy(key = it)) },
-                    label = "Key (BACK, HOME, APP_SWITCH...)",
-                    width = 280.dp
-                )
-            }
-            is LaunchAppInteraction -> {
-                TextFieldEntry(
-                    value = interaction.packageName,
-                    onValueChange = { onUpdate(interaction.copy(packageName = it)) },
-                    label = "Package name",
-                    width = 280.dp
-                )
-            }
-            is ShellInteraction -> {
-                TextFieldEntry(
-                    value = interaction.command,
-                    onValueChange = { onUpdate(interaction.copy(command = it)) },
-                    label = "Shell command (root)",
-                    width = 280.dp
-                )
-            }
-            is SetVariableInteraction -> {
-                TextFieldEntry(
-                    value = interaction.variable,
-                    onValueChange = { onUpdate(interaction.copy(variable = it)) },
-                    label = "Variable",
-                    width = 140.dp
-                )
-                ExpressionField(
-                    value = interaction.expression,
-                    onValueChange = { onUpdate(interaction.copy(expression = it)) },
-                    label = "= expression"
-                )
-            }
-            is FocusFieldInteraction -> {
-                TextFieldEntry(
-                    value = interaction.variable,
-                    onValueChange = { onUpdate(interaction.copy(variable = it)) },
-                    label = "Length into",
-                    width = 140.dp
-                )
-            }
-            is WaitCodeInteraction -> {
-                TextFieldEntry(
-                    value = interaction.variable,
-                    onValueChange = { onUpdate(interaction.copy(variable = it)) },
-                    label = "Variable",
-                    width = 140.dp
-                )
-                NumberField(
-                    value = interaction.maxAgeSeconds,
-                    onValueChange = { onUpdate(interaction.copy(maxAgeSeconds = it)) },
-                    label = "Max age s",
-                    modifier = Modifier.width(120.dp)
-                )
-                NumberField(
-                    value = interaction.timeoutMs,
-                    onValueChange = { onUpdate(interaction.copy(timeoutMs = it)) },
-                    label = "Timeout ms",
-                    modifier = Modifier.width(120.dp)
-                )
-            }
-            is IfStartInteraction -> {
-                ExpressionField(
-                    value = interaction.condition,
-                    onValueChange = { onUpdate(interaction.copy(condition = it)) },
-                    label = "Condition"
-                )
-            }
-            is ElseIfInteraction -> {
-                ExpressionField(
-                    value = interaction.condition,
-                    onValueChange = { onUpdate(interaction.copy(condition = it)) },
-                    label = "Condition"
-                )
-            }
-            is WhileStartInteraction -> {
-                ExpressionField(
-                    value = interaction.condition,
-                    onValueChange = { onUpdate(interaction.copy(condition = it)) },
-                    label = "While condition"
-                )
-            }
-            else -> {}
-        }
+				AnchorPicker(
+					selected = interaction.anchor,
+					selectedText = interaction.anchorText,
+					mode = mode,
+					onModeChange = { mode = it },
+					onAnchor = { image, phrase ->
+						onUpdate(interaction.copy(anchor = image, anchorText = phrase))
+					}
+				)
+				if (start != null) {
+					// Editing the start translates the whole path, which is what
+					// you want when a recorded gesture landed slightly off.
+					CoordField(
+						value = start.x,
+						onValueChange = { onUpdate(interaction.translatedTo(it, start.y)) },
+						label = if (anchored) "Start dX" else "Start X px",
+						screenSize = screen.width,
+						anchored = anchored,
+						width = 110.dp
+					)
+					CoordField(
+						value = start.y,
+						onValueChange = { onUpdate(interaction.translatedTo(start.x, it)) },
+						label = if (anchored) "Start dY" else "Start Y px",
+						screenSize = screen.height,
+						anchored = anchored,
+						width = 110.dp
+					)
+				}
+				if (simple && end != null) {
+					CoordField(
+						value = end.x,
+						onValueChange = { onUpdate(interaction.withEnd(it, end.y)) },
+						label = if (anchored) "End dX" else "End X px",
+						screenSize = screen.width,
+						anchored = anchored,
+						width = 110.dp
+					)
+					CoordField(
+						value = end.y,
+						onValueChange = { onUpdate(interaction.withEnd(end.x, it)) },
+						label = if (anchored) "End dY" else "End Y px",
+						screenSize = screen.height,
+						anchored = anchored,
+						width = 110.dp
+					)
+					NumberField(
+						value = end.dt,
+						onValueChange = { onUpdate(interaction.withSwipeDuration(it)) },
+						label = "Swipe ms",
+						modifier = Modifier.width(110.dp)
+					)
+				}
+				NumberField(
+					value = interaction.randomFactorStart.toLong(),
+					onValueChange = { onUpdate(interaction.copy(randomFactorStart = it.toInt())) },
+					label = "Rand start",
+					modifier = Modifier.width(110.dp)
+				)
+				NumberField(
+					value = interaction.randomFactorHighest.toLong(),
+					onValueChange = { onUpdate(interaction.copy(randomFactorHighest = it.toInt())) },
+					label = "Rand mid",
+					modifier = Modifier.width(110.dp)
+				)
+			}
+			is TextInteraction -> {
+				OutlinedTextField(
+					value = interaction.text,
+					onValueChange = { onUpdate(interaction.copy(text = it)) },
+					label = { Text("Text") },
+					modifier = Modifier.width(220.dp),
+					singleLine = true
+				)
+			}
+			is LoopStartInteraction -> {
+				NumberField(
+					value = interaction.repeatCount.toLong(),
+					onValueChange = { onUpdate(interaction.copy(repeatCount = it.toInt())) },
+					label = "Repeat (0 = forever)",
+					modifier = Modifier.width(180.dp)
+				)
+			}
+			is ToastInteraction -> {
+				TextFieldEntry(
+					value = interaction.message,
+					onValueChange = { onUpdate(interaction.copy(message = it)) },
+					label = "Message ({...} is evaluated)",
+					width = 280.dp
+				)
+			}
+			is KeyEventInteraction -> {
+				TextFieldEntry(
+					value = interaction.key,
+					onValueChange = { onUpdate(interaction.copy(key = it)) },
+					label = "Key (BACK, HOME, APP_SWITCH...)",
+					width = 280.dp
+				)
+			}
+			is LaunchAppInteraction -> {
+				TextFieldEntry(
+					value = interaction.packageName,
+					onValueChange = { onUpdate(interaction.copy(packageName = it)) },
+					label = "Package name",
+					width = 280.dp
+				)
+			}
+			is ShellInteraction -> {
+				TextFieldEntry(
+					value = interaction.command,
+					onValueChange = { onUpdate(interaction.copy(command = it)) },
+					label = "Shell command (root)",
+					width = 280.dp
+				)
+			}
+			is SetVariableInteraction -> {
+				TextFieldEntry(
+					value = interaction.variable,
+					onValueChange = { onUpdate(interaction.copy(variable = it)) },
+					label = "Variable",
+					width = 140.dp
+				)
+				ExpressionField(
+					value = interaction.expression,
+					onValueChange = { onUpdate(interaction.copy(expression = it)) },
+					label = "= expression"
+				)
+			}
+			is FocusFieldInteraction -> {
+				TextFieldEntry(
+					value = interaction.variable,
+					onValueChange = { onUpdate(interaction.copy(variable = it)) },
+					label = "Length into",
+					width = 140.dp
+				)
+			}
+			is WaitCodeInteraction -> {
+				TextFieldEntry(
+					value = interaction.variable,
+					onValueChange = { onUpdate(interaction.copy(variable = it)) },
+					label = "Variable",
+					width = 140.dp
+				)
+				NumberField(
+					value = interaction.maxAgeSeconds,
+					onValueChange = { onUpdate(interaction.copy(maxAgeSeconds = it)) },
+					label = "Max age s",
+					modifier = Modifier.width(120.dp)
+				)
+				NumberField(
+					value = interaction.timeoutMs,
+					onValueChange = { onUpdate(interaction.copy(timeoutMs = it)) },
+					label = "Timeout ms",
+					modifier = Modifier.width(120.dp)
+				)
+			}
+			is IfStartInteraction -> {
+				ExpressionField(
+					value = interaction.condition,
+					onValueChange = { onUpdate(interaction.copy(condition = it)) },
+					label = "Condition"
+				)
+			}
+			is ElseIfInteraction -> {
+				ExpressionField(
+					value = interaction.condition,
+					onValueChange = { onUpdate(interaction.copy(condition = it)) },
+					label = "Condition"
+				)
+			}
+			is WhileStartInteraction -> {
+				ExpressionField(
+					value = interaction.condition,
+					onValueChange = { onUpdate(interaction.copy(condition = it)) },
+					label = "While condition"
+				)
+			}
+			else -> {}
+		}
 
-        OutlinedTextField(
-            value = interaction.name,
-            onValueChange = { onUpdate(interaction.withName(it)) },
-            label = { Text("Name") },
-            modifier = Modifier.width(180.dp),
-            singleLine = true
-        )
-    }
+		OutlinedTextField(
+			value = interaction.name,
+			onValueChange = { onUpdate(interaction.withName(it)) },
+			label = { Text("Name") },
+			modifier = Modifier.width(180.dp),
+			singleLine = true
+		)
+	}
 }
 
 @Composable
 private fun TextFieldEntry(
-    value: String,
-    onValueChange: (String) -> Unit,
-    label: String,
-    width: Dp
+	value: String,
+	onValueChange: (String) -> Unit,
+	label: String,
+	width: Dp
 ) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = { Text(label) },
-        modifier = Modifier.width(width),
-        singleLine = true
-    )
+	OutlinedTextField(
+		value = value,
+		onValueChange = onValueChange,
+		label = { Text(label) },
+		modifier = Modifier.width(width),
+		singleLine = true
+	)
 }
 
 /**
@@ -1007,67 +1007,67 @@ private fun TextFieldEntry(
  */
 @Composable
 private fun AnchorPicker(
-    selected: AnchorImage,
-    selectedText: String,
-    mode: AnchorMode,
-    onModeChange: (AnchorMode) -> Unit,
-    onAnchor: (AnchorImage, String) -> Unit
+	selected: AnchorImage,
+	selectedText: String,
+	mode: AnchorMode,
+	onModeChange: (AnchorMode) -> Unit,
+	onAnchor: (AnchorImage, String) -> Unit
 ) {
-    val revision by ScreenshotStore.revision.collectAsState()
-    val areas = remember(revision) { ScreenshotStore.list().map { it.name } }
+	val revision by ScreenshotStore.revision.collectAsState()
+	val areas = remember(revision) { ScreenshotStore.list().map { it.name } }
 
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("Relative to", style = MaterialTheme.typography.labelMedium)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            AnchorMode.entries.forEach { option ->
-                FilterChip(
-                    selected = mode == option,
-                    onClick = {
-                        onModeChange(option)
-                        // Only ever one origin, so picking a mode clears the other.
-                        when (option) {
-                            AnchorMode.SCREEN -> onAnchor("", "")
-                            AnchorMode.IMAGE -> onAnchor(selected, "")
-                            AnchorMode.TEXT -> onAnchor("", selectedText)
-                        }
-                    },
-                    label = { Text(option.label) }
-                )
-            }
-        }
+	Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+		Text("Relative to", style = MaterialTheme.typography.labelMedium)
+		Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+			AnchorMode.entries.forEach { option ->
+				FilterChip(
+					selected = mode == option,
+					onClick = {
+						onModeChange(option)
+						// Only ever one origin, so picking a mode clears the other.
+						when (option) {
+							AnchorMode.SCREEN -> onAnchor("", "")
+							AnchorMode.IMAGE -> onAnchor(selected, "")
+							AnchorMode.TEXT -> onAnchor("", selectedText)
+						}
+					},
+					label = { Text(option.label) }
+				)
+			}
+		}
 
-        when (mode) {
-            AnchorMode.SCREEN -> {}
-            AnchorMode.IMAGE -> DropdownPicker(
-                label = "Saved image",
-                selected = selected.ifBlank { "Pick one" },
-                options = areas,
-                onSelected = { onAnchor(it, "") },
-                modifier = Modifier.width(220.dp)
-            )
-            AnchorMode.TEXT -> TextFieldEntry(
-                value = selectedText,
-                onValueChange = { onAnchor("", it) },
-                label = "Words on screen",
-                width = 220.dp
-            )
-        }
-    }
+		when (mode) {
+			AnchorMode.SCREEN -> {}
+			AnchorMode.IMAGE -> DropdownPicker(
+				label = "Saved image",
+				selected = selected.ifBlank { "Pick one" },
+				options = areas,
+				onSelected = { onAnchor(it, "") },
+				modifier = Modifier.width(220.dp)
+			)
+			AnchorMode.TEXT -> TextFieldEntry(
+				value = selectedText,
+				onValueChange = { onAnchor("", it) },
+				label = "Words on screen",
+				width = 220.dp
+			)
+		}
+	}
 }
 
 /** Which of the three kinds of origin a gesture is using. */
 enum class AnchorMode(val label: String) {
-    SCREEN("Screen"),
-    IMAGE("Image"),
-    TEXT("Text");
+	SCREEN("Screen"),
+	IMAGE("Image"),
+	TEXT("Text");
 
-    companion object {
-        fun of(anchor: AnchorImage, anchorText: String) = when {
-            anchorText.isNotBlank() -> TEXT
-            anchor.isNotBlank() -> IMAGE
-            else -> SCREEN
-        }
-    }
+	companion object {
+		fun of(anchor: AnchorImage, anchorText: String) = when {
+			anchorText.isNotBlank() -> TEXT
+			anchor.isNotBlank() -> IMAGE
+			else -> SCREEN
+		}
+	}
 }
 
 
@@ -1080,20 +1080,20 @@ enum class AnchorMode(val label: String) {
  */
 @Composable
 private fun CoordField(
-    value: Float,
-    onValueChange: (Float) -> Unit,
-    label: String,
-    screenSize: Int,
-    anchored: Boolean,
-    width: Dp = 90.dp
+	value: Float,
+	onValueChange: (Float) -> Unit,
+	label: String,
+	screenSize: Int,
+	anchored: Boolean,
+	width: Dp = 90.dp
 ) {
-    NumberField(
-        value = if (anchored) value.toLong() else (value * screenSize).toLong(),
-        onValueChange = { onValueChange(if (anchored) it.toFloat() else it / screenSize.toFloat()) },
-        label = label,
-        allowNegative = anchored,
-        modifier = Modifier.width(width)
-    )
+	NumberField(
+		value = if (anchored) value.toLong() else (value * screenSize).toLong(),
+		onValueChange = { onValueChange(if (anchored) it.toFloat() else it / screenSize.toFloat()) },
+		label = label,
+		allowNegative = anchored,
+		modifier = Modifier.width(width)
+	)
 }
 
 /**
@@ -1103,28 +1103,28 @@ private fun CoordField(
  */
 @Composable
 private fun ExpressionField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    label: String
+	value: String,
+	onValueChange: (String) -> Unit,
+	label: String
 ) {
-    val error = remember(value) {
-        if (value.isBlank()) null else try {
-            parseExpression(value)
-            null
-        } catch (e: ExpressionException) {
-            e.message
-        }
-    }
+	val error = remember(value) {
+		if (value.isBlank()) null else try {
+			parseExpression(value)
+			null
+		} catch (e: ExpressionException) {
+			e.message
+		}
+	}
 
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = { Text(label) },
-        isError = error != null,
-        supportingText = error?.let { { Text(it) } },
-        modifier = Modifier.width(280.dp),
-        singleLine = true
-    )
+	OutlinedTextField(
+		value = value,
+		onValueChange = onValueChange,
+		label = { Text(label) },
+		isError = error != null,
+		supportingText = error?.let { { Text(it) } },
+		modifier = Modifier.width(280.dp),
+		singleLine = true
+	)
 }
 
 /**
@@ -1135,32 +1135,32 @@ private fun ExpressionField(
  */
 @Composable
 private fun NumberField(
-    value: Long,
-    onValueChange: (Long) -> Unit,
-    label: String,
-    modifier: Modifier = Modifier,
-    allowNegative: Boolean = false
+	value: Long,
+	onValueChange: (Long) -> Unit,
+	label: String,
+	modifier: Modifier = Modifier,
+	allowNegative: Boolean = false
 ) {
-    var text by remember { mutableStateOf(value.toString()) }
-    // Resync when the value changed from outside this field (row reuse, reorder).
-    if ((text.toLongOrNull() ?: 0L) != value) {
-        text = value.toString()
-    }
+	var text by remember { mutableStateOf(value.toString()) }
+	// Resync when the value changed from outside this field (row reuse, reorder).
+	if ((text.toLongOrNull() ?: 0L) != value) {
+		text = value.toString()
+	}
 
-    OutlinedTextField(
-        value = text,
-        onValueChange = { input ->
-            val digits = input.filter { it.isDigit() }.take(9)
-            // A lone "-" is kept so the sign can be typed before the number.
-            val cleaned = if (allowNegative && input.startsWith("-")) "-$digits" else digits
-            text = cleaned
-            onValueChange(cleaned.toLongOrNull() ?: 0L)
-        },
-        label = { Text(label) },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        modifier = modifier,
-        singleLine = true
-    )
+	OutlinedTextField(
+		value = text,
+		onValueChange = { input ->
+			val digits = input.filter { it.isDigit() }.take(9)
+			// A lone "-" is kept so the sign can be typed before the number.
+			val cleaned = if (allowNegative && input.startsWith("-")) "-$digits" else digits
+			text = cleaned
+			onValueChange(cleaned.toLongOrNull() ?: 0L)
+		},
+		label = { Text(label) },
+		keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+		modifier = modifier,
+		singleLine = true
+	)
 }
 
 // ---------------------------------------------------------------------------
@@ -1169,132 +1169,132 @@ private fun NumberField(
 
 @Composable
 private fun blockAccent(depth: Int): Color {
-    val palette = listOf(
-        MaterialTheme.colorScheme.primary,
-        MaterialTheme.colorScheme.tertiary,
-        MaterialTheme.colorScheme.secondary
-    )
-    return palette[depth % palette.size]
+	val palette = listOf(
+		MaterialTheme.colorScheme.primary,
+		MaterialTheme.colorScheme.tertiary,
+		MaterialTheme.colorScheme.secondary
+	)
+	return palette[depth % palette.size]
 }
 
 private fun repeatLabel(count: Int): String =
-    if (count <= 0) "Repeat forever" else "Repeat ${count}x"
+	if (count <= 0) "Repeat forever" else "Repeat ${count}x"
 
 private fun Interaction.isBlockMarker(): Boolean =
-    opensBlock(this) || closesBlock(this) || isMidBlock(this)
+	opensBlock(this) || closesBlock(this) || isMidBlock(this)
 
 private fun Interaction.isBlockEnd(): Boolean = closesBlock(this) || isMidBlock(this)
 
 private fun describeInteraction(interaction: Interaction, screen: ScreenGeometry): String {
-    // Anchored coordinates are already pixels, and are an offset rather than a
-    // place, so they are shown signed to make that obvious.
-    fun px(x: Float, y: Float, anchor: AnchorImage, anchorText: String = "") =
-        if (anchor.isBlank() && anchorText.isBlank())
-            "(${(x * screen.width).toInt()}, ${(y * screen.height).toInt()})"
-        else "(%+d, %+d)".format(x.toInt(), y.toInt())
+	// Anchored coordinates are already pixels, and are an offset rather than a
+	// place, so they are shown signed to make that obvious.
+	fun px(x: Float, y: Float, anchor: AnchorImage, anchorText: String = "") =
+		if (anchor.isBlank() && anchorText.isBlank())
+			"(${(x * screen.width).toInt()}, ${(y * screen.height).toInt()})"
+		else "(%+d, %+d)".format(x.toInt(), y.toInt())
 
-    fun from(anchor: AnchorImage, anchorText: String = "") = when {
-        anchorText.isNotBlank() -> "  from text \"$anchorText\""
-        anchor.isNotBlank() -> "  from \"$anchor\""
-        else -> ""
-    }
+	fun from(anchor: AnchorImage, anchorText: String = "") = when {
+		anchorText.isNotBlank() -> "  from text \"$anchorText\""
+		anchor.isNotBlank() -> "  from \"$anchor\""
+		else -> ""
+	}
 
-    val wait = if (interaction.delayBefore > 0) "wait ${interaction.delayBefore}ms  " else ""
-    val label = when (interaction) {
-        is ClickInteraction -> {
-            val what = when {
-                interaction.taps > 1 -> "Tap x${interaction.taps}"
-                interaction.duration >= 500 -> "Long press"
-                else -> "Click"
-            }
-            "$what ${px(interaction.x, interaction.y, interaction.anchor, interaction.anchorText)}" +
-                "  ${interaction.duration}ms${from(interaction.anchor, interaction.anchorText)}"
-        }
-        is DragInteraction -> {
-            val start = interaction.points.firstOrNull()
-            val end = interaction.points.lastOrNull()
-            if (start == null || end == null) {
-                "Drag (empty)"
-            } else {
-                "Drag ${px(start.x, start.y, interaction.anchor, interaction.anchorText)} to " +
-                    "${px(end.x, end.y, interaction.anchor, interaction.anchorText)}" +
-                    "  ${interaction.points.size} pts" + from(interaction.anchor, interaction.anchorText)
-            }
-        }
-        is TextInteraction ->
-            if (interaction.text.isBlank()) "Text (empty)" else "Text \"${interaction.text}\""
-        is KeyEventInteraction -> "Key ${interaction.key}"
-        is LaunchAppInteraction -> "Launch ${interaction.packageName.ifBlank { "(no package)" }}"
-        is ShellInteraction -> "Shell: ${interaction.command.ifBlank { "(empty)" }}"
-        is WaitInteraction -> "Wait"
-        is ToastInteraction -> "Toast: ${interaction.message.ifBlank { "(empty)" }}"
-        is SetVariableInteraction -> "Set ${interaction.variable} = ${interaction.expression}"
-        is FocusFieldInteraction -> "Focus field  length -> ${interaction.variable}"
-        is WaitCodeInteraction ->
-            "Wait for code -> ${interaction.variable}  max age ${interaction.maxAgeSeconds}s"
-        is BreakInteraction -> "Break"
-        is LoopStartInteraction -> repeatLabel(interaction.repeatCount)
-        is LoopEndInteraction -> "End repeat"
-        is RandomSelectStartInteraction -> "Random one of"
-        is RandomSelectEndInteraction -> "End random"
-        is IfStartInteraction -> "If ${interaction.condition}"
-        is ElseIfInteraction -> "Else if ${interaction.condition}"
-        is ElseInteraction -> "Else"
-        is IfEndInteraction -> "End if"
-        is WhileStartInteraction -> "While ${interaction.condition}"
-        is WhileEndInteraction -> "End while"
-        is ForLoopInteraction -> repeatLabel(interaction.repeatCount)
-        is RandomSelectInteraction -> "Random one of"
-        is IfInteraction -> "If ${interaction.branches.firstOrNull()?.condition ?: ""}"
-        is WhileInteraction -> "While ${interaction.condition}"
-    }
-    val name = if (interaction.name.isBlank()) "" else "  -  ${interaction.name}"
-    return "$wait$label$name"
+	val wait = if (interaction.delayBefore > 0) "wait ${interaction.delayBefore}ms  " else ""
+	val label = when (interaction) {
+		is ClickInteraction -> {
+			val what = when {
+				interaction.taps > 1 -> "Tap x${interaction.taps}"
+				interaction.duration >= 500 -> "Long press"
+				else -> "Click"
+			}
+			"$what ${px(interaction.x, interaction.y, interaction.anchor, interaction.anchorText)}" +
+				"  ${interaction.duration}ms${from(interaction.anchor, interaction.anchorText)}"
+		}
+		is DragInteraction -> {
+			val start = interaction.points.firstOrNull()
+			val end = interaction.points.lastOrNull()
+			if (start == null || end == null) {
+				"Drag (empty)"
+			} else {
+				"Drag ${px(start.x, start.y, interaction.anchor, interaction.anchorText)} to " +
+					"${px(end.x, end.y, interaction.anchor, interaction.anchorText)}" +
+					"  ${interaction.points.size} pts" + from(interaction.anchor, interaction.anchorText)
+			}
+		}
+		is TextInteraction ->
+			if (interaction.text.isBlank()) "Text (empty)" else "Text \"${interaction.text}\""
+		is KeyEventInteraction -> "Key ${interaction.key}"
+		is LaunchAppInteraction -> "Launch ${interaction.packageName.ifBlank { "(no package)" }}"
+		is ShellInteraction -> "Shell: ${interaction.command.ifBlank { "(empty)" }}"
+		is WaitInteraction -> "Wait"
+		is ToastInteraction -> "Toast: ${interaction.message.ifBlank { "(empty)" }}"
+		is SetVariableInteraction -> "Set ${interaction.variable} = ${interaction.expression}"
+		is FocusFieldInteraction -> "Focus field  length -> ${interaction.variable}"
+		is WaitCodeInteraction ->
+			"Wait for code -> ${interaction.variable}  max age ${interaction.maxAgeSeconds}s"
+		is BreakInteraction -> "Break"
+		is LoopStartInteraction -> repeatLabel(interaction.repeatCount)
+		is LoopEndInteraction -> "End repeat"
+		is RandomSelectStartInteraction -> "Random one of"
+		is RandomSelectEndInteraction -> "End random"
+		is IfStartInteraction -> "If ${interaction.condition}"
+		is ElseIfInteraction -> "Else if ${interaction.condition}"
+		is ElseInteraction -> "Else"
+		is IfEndInteraction -> "End if"
+		is WhileStartInteraction -> "While ${interaction.condition}"
+		is WhileEndInteraction -> "End while"
+		is ForLoopInteraction -> repeatLabel(interaction.repeatCount)
+		is RandomSelectInteraction -> "Random one of"
+		is IfInteraction -> "If ${interaction.branches.firstOrNull()?.condition ?: ""}"
+		is WhileInteraction -> "While ${interaction.condition}"
+	}
+	val name = if (interaction.name.isBlank()) "" else "  -  ${interaction.name}"
+	return "$wait$label$name"
 }
 
 private fun opensBlock(item: Interaction): Boolean =
-    item is LoopStartInteraction || item is RandomSelectStartInteraction ||
-        item is WhileStartInteraction || item is IfStartInteraction
+	item is LoopStartInteraction || item is RandomSelectStartInteraction ||
+		item is WhileStartInteraction || item is IfStartInteraction
 
 private fun closesBlock(item: Interaction): Boolean =
-    item is LoopEndInteraction || item is RandomSelectEndInteraction ||
-        item is WhileEndInteraction || item is IfEndInteraction
+	item is LoopEndInteraction || item is RandomSelectEndInteraction ||
+		item is WhileEndInteraction || item is IfEndInteraction
 
 /** ElseIf and Else sit at the parent's level but keep the block open. */
 private fun isMidBlock(item: Interaction): Boolean =
-    item is ElseIfInteraction || item is ElseInteraction
+	item is ElseIfInteraction || item is ElseInteraction
 
 /** Indent level of each row, so nested blocks can be drawn as nested. */
 fun blockDepths(items: List<Interaction>): List<Int> {
-    var depth = 0
-    return items.map { item ->
-        when {
-            opensBlock(item) -> depth++
-            closesBlock(item) -> {
-                depth = (depth - 1).coerceAtLeast(0)
-                depth
-            }
-            isMidBlock(item) -> (depth - 1).coerceAtLeast(0)
-            else -> depth
-        }
-    }
+	var depth = 0
+	return items.map { item ->
+		when {
+			opensBlock(item) -> depth++
+			closesBlock(item) -> {
+				depth = (depth - 1).coerceAtLeast(0)
+				depth
+			}
+			isMidBlock(item) -> (depth - 1).coerceAtLeast(0)
+			else -> depth
+		}
+	}
 }
 
 fun isBalanced(items: List<Interaction>): Boolean {
-    var depth = 0
-    items.forEach { item ->
-        when {
-            opensBlock(item) -> depth++
-            closesBlock(item) -> {
-                depth--
-                if (depth < 0) return false
-            }
-            // An ElseIf or Else outside any If has nothing to attach to.
-            isMidBlock(item) -> if (depth == 0) return false
-            else -> {}
-        }
-    }
-    return depth == 0
+	var depth = 0
+	items.forEach { item ->
+		when {
+			opensBlock(item) -> depth++
+			closesBlock(item) -> {
+				depth--
+				if (depth < 0) return false
+			}
+			// An ElseIf or Else outside any If has nothing to attach to.
+			isMidBlock(item) -> if (depth == 0) return false
+			else -> {}
+		}
+	}
+	return depth == 0
 }
 
 // ---------------------------------------------------------------------------
@@ -1302,85 +1302,85 @@ fun isBalanced(items: List<Interaction>): Boolean {
 // ---------------------------------------------------------------------------
 
 fun Interaction.withDelay(delay: Long): Interaction = when (this) {
-    is ClickInteraction -> copy(delayBefore = delay)
-    is DragInteraction -> copy(delayBefore = delay)
-    is TextInteraction -> copy(delayBefore = delay)
-    is KeyEventInteraction -> copy(delayBefore = delay)
-    is LaunchAppInteraction -> copy(delayBefore = delay)
-    is ShellInteraction -> copy(delayBefore = delay)
-    is WaitInteraction -> copy(delayBefore = delay)
-    is ToastInteraction -> copy(delayBefore = delay)
-    is SetVariableInteraction -> copy(delayBefore = delay)
-    is WaitCodeInteraction -> copy(delayBefore = delay)
-    is FocusFieldInteraction -> copy(delayBefore = delay)
-    is BreakInteraction -> copy(delayBefore = delay)
-    is ForLoopInteraction -> copy(delayBefore = delay)
-    is RandomSelectInteraction -> copy(delayBefore = delay)
-    is IfInteraction -> copy(delayBefore = delay)
-    is WhileInteraction -> copy(delayBefore = delay)
-    is LoopStartInteraction -> copy(delayBefore = delay)
-    is LoopEndInteraction -> copy(delayBefore = delay)
-    is RandomSelectStartInteraction -> copy(delayBefore = delay)
-    is RandomSelectEndInteraction -> copy(delayBefore = delay)
-    is IfStartInteraction -> copy(delayBefore = delay)
-    is ElseIfInteraction -> copy(delayBefore = delay)
-    is ElseInteraction -> copy(delayBefore = delay)
-    is IfEndInteraction -> copy(delayBefore = delay)
-    is WhileStartInteraction -> copy(delayBefore = delay)
-    is WhileEndInteraction -> copy(delayBefore = delay)
+	is ClickInteraction -> copy(delayBefore = delay)
+	is DragInteraction -> copy(delayBefore = delay)
+	is TextInteraction -> copy(delayBefore = delay)
+	is KeyEventInteraction -> copy(delayBefore = delay)
+	is LaunchAppInteraction -> copy(delayBefore = delay)
+	is ShellInteraction -> copy(delayBefore = delay)
+	is WaitInteraction -> copy(delayBefore = delay)
+	is ToastInteraction -> copy(delayBefore = delay)
+	is SetVariableInteraction -> copy(delayBefore = delay)
+	is WaitCodeInteraction -> copy(delayBefore = delay)
+	is FocusFieldInteraction -> copy(delayBefore = delay)
+	is BreakInteraction -> copy(delayBefore = delay)
+	is ForLoopInteraction -> copy(delayBefore = delay)
+	is RandomSelectInteraction -> copy(delayBefore = delay)
+	is IfInteraction -> copy(delayBefore = delay)
+	is WhileInteraction -> copy(delayBefore = delay)
+	is LoopStartInteraction -> copy(delayBefore = delay)
+	is LoopEndInteraction -> copy(delayBefore = delay)
+	is RandomSelectStartInteraction -> copy(delayBefore = delay)
+	is RandomSelectEndInteraction -> copy(delayBefore = delay)
+	is IfStartInteraction -> copy(delayBefore = delay)
+	is ElseIfInteraction -> copy(delayBefore = delay)
+	is ElseInteraction -> copy(delayBefore = delay)
+	is IfEndInteraction -> copy(delayBefore = delay)
+	is WhileStartInteraction -> copy(delayBefore = delay)
+	is WhileEndInteraction -> copy(delayBefore = delay)
 }
 
 fun Interaction.withName(newName: String): Interaction = when (this) {
-    is ClickInteraction -> copy(name = newName)
-    is DragInteraction -> copy(name = newName)
-    is TextInteraction -> copy(name = newName)
-    is KeyEventInteraction -> copy(name = newName)
-    is LaunchAppInteraction -> copy(name = newName)
-    is ShellInteraction -> copy(name = newName)
-    is WaitInteraction -> copy(name = newName)
-    is ToastInteraction -> copy(name = newName)
-    is SetVariableInteraction -> copy(name = newName)
-    is WaitCodeInteraction -> copy(name = newName)
-    is FocusFieldInteraction -> copy(name = newName)
-    is BreakInteraction -> copy(name = newName)
-    is ForLoopInteraction -> copy(name = newName)
-    is RandomSelectInteraction -> copy(name = newName)
-    is IfInteraction -> copy(name = newName)
-    is WhileInteraction -> copy(name = newName)
-    is LoopStartInteraction -> copy(name = newName)
-    is LoopEndInteraction -> copy(name = newName)
-    is RandomSelectStartInteraction -> copy(name = newName)
-    is RandomSelectEndInteraction -> copy(name = newName)
-    is IfStartInteraction -> copy(name = newName)
-    is ElseIfInteraction -> copy(name = newName)
-    is ElseInteraction -> copy(name = newName)
-    is IfEndInteraction -> copy(name = newName)
-    is WhileStartInteraction -> copy(name = newName)
-    is WhileEndInteraction -> copy(name = newName)
+	is ClickInteraction -> copy(name = newName)
+	is DragInteraction -> copy(name = newName)
+	is TextInteraction -> copy(name = newName)
+	is KeyEventInteraction -> copy(name = newName)
+	is LaunchAppInteraction -> copy(name = newName)
+	is ShellInteraction -> copy(name = newName)
+	is WaitInteraction -> copy(name = newName)
+	is ToastInteraction -> copy(name = newName)
+	is SetVariableInteraction -> copy(name = newName)
+	is WaitCodeInteraction -> copy(name = newName)
+	is FocusFieldInteraction -> copy(name = newName)
+	is BreakInteraction -> copy(name = newName)
+	is ForLoopInteraction -> copy(name = newName)
+	is RandomSelectInteraction -> copy(name = newName)
+	is IfInteraction -> copy(name = newName)
+	is WhileInteraction -> copy(name = newName)
+	is LoopStartInteraction -> copy(name = newName)
+	is LoopEndInteraction -> copy(name = newName)
+	is RandomSelectStartInteraction -> copy(name = newName)
+	is RandomSelectEndInteraction -> copy(name = newName)
+	is IfStartInteraction -> copy(name = newName)
+	is ElseIfInteraction -> copy(name = newName)
+	is ElseInteraction -> copy(name = newName)
+	is IfEndInteraction -> copy(name = newName)
+	is WhileStartInteraction -> copy(name = newName)
+	is WhileEndInteraction -> copy(name = newName)
 }
 
 /** Moves the whole path so its first point lands on the given coordinates. */
 fun DragInteraction.translatedTo(x: Float, y: Float): DragInteraction {
-    val start = points.firstOrNull() ?: return this
-    val dx = x - start.x
-    val dy = y - start.y
-    return copy(points = points.map { it.copy(x = it.x + dx, y = it.y + dy) })
+	val start = points.firstOrNull() ?: return this
+	val dx = x - start.x
+	val dy = y - start.y
+	return copy(points = points.map { it.copy(x = it.x + dx, y = it.y + dy) })
 }
 
 /** Moves only the last point, which for a two-point swipe is its destination. */
 fun DragInteraction.withEnd(x: Float, y: Float): DragInteraction {
-    if (points.isEmpty()) return this
-    return copy(points = points.mapIndexed { index, point ->
-        if (index == points.lastIndex) point.copy(x = x, y = y) else point
-    })
+	if (points.isEmpty()) return this
+	return copy(points = points.mapIndexed { index, point ->
+		if (index == points.lastIndex) point.copy(x = x, y = y) else point
+	})
 }
 
 /** How long the finger takes to travel; the last point carries the whole gap. */
 fun DragInteraction.withSwipeDuration(ms: Long): DragInteraction {
-    if (points.isEmpty()) return this
-    return copy(points = points.mapIndexed { index, point ->
-        if (index == points.lastIndex) point.copy(dt = ms) else point
-    })
+	if (points.isEmpty()) return this
+	return copy(points = points.mapIndexed { index, point ->
+		if (index == points.lastIndex) point.copy(dt = ms) else point
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -1388,58 +1388,58 @@ fun DragInteraction.withSwipeDuration(ms: Long): DragInteraction {
 // ---------------------------------------------------------------------------
 
 fun flatten(interactions: List<Interaction>): List<Interaction> {
-    val flatList = mutableListOf<Interaction>()
-    interactions.forEach { interaction ->
-        when (interaction) {
-            is ForLoopInteraction -> {
-                flatList.add(LoopStartInteraction(interaction.repeatCount, interaction.delayBefore, interaction.name))
-                flatList.addAll(flatten(interaction.interactions))
-                flatList.add(LoopEndInteraction(0))
-            }
-            is RandomSelectInteraction -> {
-                flatList.add(RandomSelectStartInteraction(interaction.delayBefore, interaction.name))
-                flatList.addAll(flatten(interaction.interactions))
-                flatList.add(RandomSelectEndInteraction(0))
-            }
-            is WhileInteraction -> {
-                flatList.add(WhileStartInteraction(interaction.condition, interaction.delayBefore, interaction.name))
-                flatList.addAll(flatten(interaction.interactions))
-                flatList.add(WhileEndInteraction(0))
-            }
-            is IfInteraction -> {
-                interaction.branches.forEachIndexed { index, branch ->
-                    if (index == 0) {
-                        flatList.add(IfStartInteraction(branch.condition, interaction.delayBefore, interaction.name))
-                    } else {
-                        flatList.add(ElseIfInteraction(branch.condition))
-                    }
-                    flatList.addAll(flatten(branch.interactions))
-                }
-                if (interaction.elseBranch.isNotEmpty()) {
-                    flatList.add(ElseInteraction())
-                    flatList.addAll(flatten(interaction.elseBranch))
-                }
-                flatList.add(IfEndInteraction(0))
-            }
-            else -> flatList.add(interaction)
-        }
-    }
-    return flatList
+	val flatList = mutableListOf<Interaction>()
+	interactions.forEach { interaction ->
+		when (interaction) {
+			is ForLoopInteraction -> {
+				flatList.add(LoopStartInteraction(interaction.repeatCount, interaction.delayBefore, interaction.name))
+				flatList.addAll(flatten(interaction.interactions))
+				flatList.add(LoopEndInteraction(0))
+			}
+			is RandomSelectInteraction -> {
+				flatList.add(RandomSelectStartInteraction(interaction.delayBefore, interaction.name))
+				flatList.addAll(flatten(interaction.interactions))
+				flatList.add(RandomSelectEndInteraction(0))
+			}
+			is WhileInteraction -> {
+				flatList.add(WhileStartInteraction(interaction.condition, interaction.delayBefore, interaction.name))
+				flatList.addAll(flatten(interaction.interactions))
+				flatList.add(WhileEndInteraction(0))
+			}
+			is IfInteraction -> {
+				interaction.branches.forEachIndexed { index, branch ->
+					if (index == 0) {
+						flatList.add(IfStartInteraction(branch.condition, interaction.delayBefore, interaction.name))
+					} else {
+						flatList.add(ElseIfInteraction(branch.condition))
+					}
+					flatList.addAll(flatten(branch.interactions))
+				}
+				if (interaction.elseBranch.isNotEmpty()) {
+					flatList.add(ElseInteraction())
+					flatList.addAll(flatten(interaction.elseBranch))
+				}
+				flatList.add(IfEndInteraction(0))
+			}
+			else -> flatList.add(interaction)
+		}
+	}
+	return flatList
 }
 
 fun buildHierarchy(flatInteractions: List<Interaction>): List<Interaction> =
-    readSequence(flatInteractions, 0) { false }.children
+	readSequence(flatInteractions, 0) { false }.children
 
 private class ParsedSequence(val children: List<Interaction>, val terminator: Interaction?, val next: Int)
 
 private fun isBlockOpener(item: Interaction): Boolean =
-    item is LoopStartInteraction || item is RandomSelectStartInteraction ||
-        item is WhileStartInteraction || item is IfStartInteraction
+	item is LoopStartInteraction || item is RandomSelectStartInteraction ||
+		item is WhileStartInteraction || item is IfStartInteraction
 
 private fun isStrayMarker(item: Interaction): Boolean =
-    item is LoopEndInteraction || item is RandomSelectEndInteraction ||
-        item is WhileEndInteraction || item is IfEndInteraction ||
-        item is ElseIfInteraction || item is ElseInteraction
+	item is LoopEndInteraction || item is RandomSelectEndInteraction ||
+		item is WhileEndInteraction || item is IfEndInteraction ||
+		item is ElseIfInteraction || item is ElseInteraction
 
 /**
  * Reads interactions until [isTerminator] matches, recursing into any block it
@@ -1447,76 +1447,76 @@ private fun isStrayMarker(item: Interaction): Boolean =
  * tell ElseIf from Else from End.
  */
 private fun readSequence(
-    flat: List<Interaction>,
-    start: Int,
-    isTerminator: (Interaction) -> Boolean
+	flat: List<Interaction>,
+	start: Int,
+	isTerminator: (Interaction) -> Boolean
 ): ParsedSequence {
-    val children = mutableListOf<Interaction>()
-    var i = start
-    while (i < flat.size) {
-        val item = flat[i]
-        if (isTerminator(item)) return ParsedSequence(children, item, i + 1)
-        if (isBlockOpener(item)) {
-            val (node, next) = readBlock(flat, item, i + 1)
-            children.add(node)
-            i = next
-            continue
-        }
-        // An End with no matching Start cannot be represented; drop it. The
-        // editor warns about this before saving.
-        if (isStrayMarker(item)) {
-            i++
-            continue
-        }
-        children.add(item)
-        i++
-    }
-    return ParsedSequence(children, null, i)
+	val children = mutableListOf<Interaction>()
+	var i = start
+	while (i < flat.size) {
+		val item = flat[i]
+		if (isTerminator(item)) return ParsedSequence(children, item, i + 1)
+		if (isBlockOpener(item)) {
+			val (node, next) = readBlock(flat, item, i + 1)
+			children.add(node)
+			i = next
+			continue
+		}
+		// An End with no matching Start cannot be represented; drop it. The
+		// editor warns about this before saving.
+		if (isStrayMarker(item)) {
+			i++
+			continue
+		}
+		children.add(item)
+		i++
+	}
+	return ParsedSequence(children, null, i)
 }
 
 private fun readBlock(flat: List<Interaction>, opener: Interaction, start: Int): Pair<Interaction, Int> =
-    when (opener) {
-        is LoopStartInteraction -> {
-            val body = readSequence(flat, start) { it is LoopEndInteraction || it is RandomSelectEndInteraction }
-            ForLoopInteraction(opener.repeatCount, body.children, opener.delayBefore, opener.name) to body.next
-        }
-        is RandomSelectStartInteraction -> {
-            val body = readSequence(flat, start) { it is LoopEndInteraction || it is RandomSelectEndInteraction }
-            RandomSelectInteraction(body.children, opener.delayBefore, opener.name) to body.next
-        }
-        is WhileStartInteraction -> {
-            val body = readSequence(flat, start) { it is WhileEndInteraction }
-            WhileInteraction(opener.condition, body.children, opener.delayBefore, opener.name) to body.next
-        }
-        is IfStartInteraction -> readIf(flat, opener, start)
-        else -> opener to start
-    }
+	when (opener) {
+		is LoopStartInteraction -> {
+			val body = readSequence(flat, start) { it is LoopEndInteraction || it is RandomSelectEndInteraction }
+			ForLoopInteraction(opener.repeatCount, body.children, opener.delayBefore, opener.name) to body.next
+		}
+		is RandomSelectStartInteraction -> {
+			val body = readSequence(flat, start) { it is LoopEndInteraction || it is RandomSelectEndInteraction }
+			RandomSelectInteraction(body.children, opener.delayBefore, opener.name) to body.next
+		}
+		is WhileStartInteraction -> {
+			val body = readSequence(flat, start) { it is WhileEndInteraction }
+			WhileInteraction(opener.condition, body.children, opener.delayBefore, opener.name) to body.next
+		}
+		is IfStartInteraction -> readIf(flat, opener, start)
+		else -> opener to start
+	}
 
 private fun readIf(flat: List<Interaction>, opener: IfStartInteraction, start: Int): Pair<Interaction, Int> {
-    val branches = mutableListOf<ConditionBranch>()
-    var condition = opener.condition
-    var index = start
+	val branches = mutableListOf<ConditionBranch>()
+	var condition = opener.condition
+	var index = start
 
-    while (true) {
-        val body = readSequence(flat, index) {
-            it is ElseIfInteraction || it is ElseInteraction || it is IfEndInteraction
-        }
-        index = body.next
-        when (val terminator = body.terminator) {
-            is ElseIfInteraction -> {
-                branches.add(ConditionBranch(condition, body.children))
-                condition = terminator.condition
-            }
-            is ElseInteraction -> {
-                branches.add(ConditionBranch(condition, body.children))
-                val elseBody = readSequence(flat, index) { it is IfEndInteraction }
-                return IfInteraction(branches, elseBody.children, opener.delayBefore, opener.name) to elseBody.next
-            }
-            // IfEnd, or the list ran out
-            else -> {
-                branches.add(ConditionBranch(condition, body.children))
-                return IfInteraction(branches, emptyList(), opener.delayBefore, opener.name) to index
-            }
-        }
-    }
+	while (true) {
+		val body = readSequence(flat, index) {
+			it is ElseIfInteraction || it is ElseInteraction || it is IfEndInteraction
+		}
+		index = body.next
+		when (val terminator = body.terminator) {
+			is ElseIfInteraction -> {
+				branches.add(ConditionBranch(condition, body.children))
+				condition = terminator.condition
+			}
+			is ElseInteraction -> {
+				branches.add(ConditionBranch(condition, body.children))
+				val elseBody = readSequence(flat, index) { it is IfEndInteraction }
+				return IfInteraction(branches, elseBody.children, opener.delayBefore, opener.name) to elseBody.next
+			}
+			// IfEnd, or the list ran out
+			else -> {
+				branches.add(ConditionBranch(condition, body.children))
+				return IfInteraction(branches, emptyList(), opener.delayBefore, opener.name) to index
+			}
+		}
+	}
 }
