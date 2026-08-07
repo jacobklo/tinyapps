@@ -6,34 +6,15 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlin.math.abs
-import kotlin.random.Random
 
 private const val TAG = "autoclicker.gesture.executor"
 
 // Safety net so a runaway script cannot hold the CPU awake indefinitely.
 private const val WAKE_LOCK_TIMEOUT_MS = 30 * 60 * 1000L
-
-// Gap between the taps of a multi-tap. Android treats presses more than about
-// 300ms apart as separate taps, so this has to stay well under that to read as
-// a double tap rather than two single ones.
-private const val TAP_GAP_MS = 60L
-
-// Long enough that a repeating failure shows once rather than once per attempt,
-// short enough that a second, separate failure is not swallowed.
-private const val ERROR_REPEAT_MS = 5000L
-
-// Landing on a field the window itself located needs no help from the caller,
-// so the press is described here rather than in every recording.
-private const val FIELD_TAP_MS = 120L
-private const val FIELD_TAP_JITTER_PX = 6
 
 /**
  * How a playback ended.
@@ -133,10 +114,9 @@ object GestureExecutor {
 		onFinished: ((PlaybackResult) -> Unit)? = null
 	) {
 		stop()
-		// Pressing play again after a failure must show the error again, even
-		// though nothing about it has changed.
-		lastError = null
-		degraded = 0
+		// A fresh interpreter per run, so the previous run's variables and its
+		// count of skipped steps cannot be mistaken for this one's.
+		val interpreter = Interpreter(backend, finder, ScriptContext(), globalRandom)
 		_playing.value = true
 		playJob = scope.launch {
 			acquireWakeLock()
@@ -144,11 +124,11 @@ object GestureExecutor {
 			try {
 				// A run starts from the globals rather than from nothing, so the
 				// same script can be driven with different values.
-				executeEvents(events, globalRandom, ScriptContext())
-				result = PlaybackResult.Completed(degraded)
+				interpreter.run(events)
+				result = PlaybackResult.Completed(interpreter.degraded)
 			} catch (stop: BreakSignal) {
 				Log.w(TAG, "break outside any loop, ending playback")
-				result = PlaybackResult.Completed(degraded)
+				result = PlaybackResult.Completed(interpreter.degraded)
 			} catch (cancel: CancellationException) {
 				Log.i(TAG, "playback stopped")
 				throw cancel
@@ -186,7 +166,7 @@ object GestureExecutor {
 
 	fun click(x: Float, y: Float, duration: Long, randomFactor: Int, onDone: (() -> Unit)? = null) {
 		scope.launch {
-			runClick(x, y, duration, randomFactor)
+			preview().runClick(x, y, duration, randomFactor)
 			onDone?.invoke()
 		}
 	}
@@ -198,312 +178,14 @@ object GestureExecutor {
 		onDone: (() -> Unit)? = null
 	) {
 		scope.launch {
-			runDrag(points, randomFactorStart, randomFactorHighest)
+			preview().runDrag(points, randomFactorStart, randomFactorHighest)
 			onDone?.invoke()
 		}
 	}
 
-	private suspend fun executeEvents(
-		events: List<RuntimeStep>,
-		globalRandom: Int,
-		context: ScriptContext
-	) {
-		events.forEach { event ->
-			// A loop whose body has no delay would otherwise never yield, and
-			// the stop button could not interrupt it.
-			currentCoroutineContext().ensureActive()
-
-			val randDelay = if (globalRandom > 0) Random.nextInt(0, globalRandom + 1) else 0
-			delay(event.delayBefore + randDelay)
-
-			when (event) {
-				is ClickStep -> runClick(
-					event.x, event.y, event.duration, event.randomFactor,
-					TouchSample(event.pressure, event.touchMajor, event.touchMinor),
-					event.anchor, event.anchorText, event.taps
-				)
-				is DragStep -> runDrag(
-					event.points, event.randomFactorStart, event.randomFactorHighest,
-					event.anchor, event.anchorText
-				)
-				// Braces are worked out the same way a Toast does, which is the
-				// only way a script can type something it looked up rather than
-				// something that was written into it.
-				is TextStep -> runText(context.interpolate(event.text))
-				is KeyEventStep -> runKeyEvent(event.key)
-				is LaunchAppStep -> runLaunchApp(event.packageName)
-				is ShellStep -> runShell(event.command)
-				is WaitStep -> {
-					// The delay above is the whole action.
-				}
-				is ToastStep -> runToast(context.interpolate(event.message))
-				is SetVariableStep ->
-					context.set(event.variable, context.evaluateOrZero(event.expression))
-
-				is FocusFieldStep -> runFocusField(event, context)
-
-				is WaitCodeStep -> runWaitCode(event, context)
-
-				is BreakStep -> throw BreakSignal()
-
-				is ForLoopStep -> runLoop(event, globalRandom, context)
-
-				is WhileStep -> {
-					try {
-						while (context.condition(event.condition)) {
-							currentCoroutineContext().ensureActive()
-							executeEvents(event.steps, globalRandom, context)
-						}
-					} catch (stop: BreakSignal) {
-						Log.d(TAG, "break out of while")
-					}
-				}
-
-				is IfStep -> {
-					val taken = event.branches.firstOrNull { context.condition(it.condition) }
-					if (taken != null) {
-						executeEvents(taken.steps, globalRandom, context)
-					} else {
-						executeEvents(event.elseBranch, globalRandom, context)
-					}
-				}
-
-				is RandomSelectStep -> {
-					if (event.steps.isNotEmpty()) {
-						executeEvents(listOf(event.steps.random()), globalRandom, context)
-					}
-				}
-			}
-		}
-	}
-
-	private suspend fun runLoop(		event: ForLoopStep,
-		globalRandom: Int,
-		context: ScriptContext
-	) {
-		try {
-			if (event.repeatCount <= 0) {
-				// Repeat forever, until Break or the stop button.
-				while (true) {
-					currentCoroutineContext().ensureActive()
-					executeEvents(event.steps, globalRandom, context)
-				}
-			}
-			repeat(event.repeatCount) {
-				executeEvents(event.steps, globalRandom, context)
-			}
-		} catch (stop: BreakSignal) {
-			Log.d(TAG, "break out of repeat")
-		}
-	}
-
 	/**
-	 * Pixel origin that a gesture's coordinates are measured from.
-	 *
-	 * Null means the gesture cannot be placed: an anchor image was named but is
-	 * not on screen. Falling back to the raw coordinates would put the touch
-	 * somewhere arbitrary, which is worse than not touching at all -- but a
-	 * gesture that silently does nothing looks the same as a broken script, so
-	 * the reason is shown as well as logged.
+	 * For the single gesture the recorder echoes back as it is captured, which
+	 * has no script around it and so needs no variables of its own.
 	 */
-	private suspend fun anchorOrigin(anchor: AnchorImage, anchorText: String): Pair<Float, Float>? {
-		// A phrase wins when both are set: it is the more specific thing to have
-		// said, and a script carrying both was written around the words.
-		if (anchorText.isNotBlank()) {
-			return when (val result = finder.findText(anchorText)) {
-				is TextSearch.Found -> result.box.left.toFloat() to result.box.top.toFloat()
-				is TextSearch.Missing -> {
-					Log.w(TAG, "anchor text '$anchorText' unusable: ${result.reason}, skipping gesture")
-					reportError(result.reason)
-					null
-				}
-			}
-		}
-		if (anchor.isBlank()) return 0f to 0f
-		return when (val result = finder.findArea(anchor)) {
-			is AreaSearch.Found -> result.match.x.toFloat() to result.match.y.toFloat()
-			is AreaSearch.Missing -> {
-				Log.w(TAG, "anchor '$anchor' unusable: ${result.reason}, skipping gesture")
-				reportError(result.reason)
-				null
-			}
-		}
-	}
-
-	/**
-	 * Shows an error once, then holds the same one back for a while.
-	 *
-	 * Toasts queue rather than replace, so an anchored gesture inside a loop
-	 * would otherwise leave minutes of identical messages playing out long
-	 * after the script stopped.
-	 */
-	private var lastError: String? = null
-	private var lastErrorAt = 0L
-	private var degraded = 0
-
-	private suspend fun reportError(reason: String) {
-		// Counted before the throttle below, so a step failing the same way once
-		// per loop iteration is reported as the many skips it actually was.
-		degraded++
-		val now = System.currentTimeMillis()
-		if (reason == lastError && now - lastErrorAt < ERROR_REPEAT_MS) return
-		lastError = reason
-		lastErrorAt = now
-		runToast("ERROR: $reason")
-	}
-
-	// Fractions of the screen when absolute, pixels from the anchor when not.
-	private fun place(value: Float, screenSize: Int, origin: Float, anchored: Boolean): Float =
-		if (anchored) origin + value else value * screenSize
-
-	private suspend fun runClick(
-		x: Float,
-		y: Float,
-		duration: Long,
-		randomFactor: Int,
-		sample: TouchSample = TouchSample(0, 0, 0),
-		anchor: AnchorImage = "",
-		anchorText: String = "",
-		taps: Int = 1
-	) {
-		val (originX, originY) = anchorOrigin(anchor, anchorText) ?: return
-		val anchored = anchor.isNotBlank() || anchorText.isNotBlank()
-		repeat(taps.coerceAtLeast(1)) { index ->
-			if (index > 0) delay(TAP_GAP_MS)
-			// Re-jittered per tap, so a double tap does not land twice on the
-			// exact same pixel.
-			tap(x, y, duration, randomFactor, sample, originX, originY, anchored)
-		}
-	}
-
-	private suspend fun tap(
-		x: Float,
-		y: Float,
-		duration: Long,
-		randomFactor: Int,
-		sample: TouchSample,
-		originX: Float,
-		originY: Float,
-		anchored: Boolean
-	) {
-		// Everything downstream of here works in pixels for the current display.
-		val screen = backend.screen
-		val finalX = place(x, screen.width, originX, anchored) + jitter(randomFactor)
-		val finalY = place(y, screen.height, originY, anchored) + jitter(randomFactor)
-		backend.click(finalX, finalY, duration, sample)
-	}
-
-	private suspend fun runDrag(
-		points: List<DragPoint>,
-		randomFactorStart: Int,
-		randomFactorHighest: Int,
-		anchor: AnchorImage = "",
-		anchorText: String = ""
-	) {
-		if (points.isEmpty()) return
-		val (originX, originY) = anchorOrigin(anchor, anchorText) ?: return
-		val anchored = anchor.isNotBlank() || anchorText.isNotBlank()
-		val screen = backend.screen
-		val pixels = points.map {
-			it.copy(
-				x = place(it.x, screen.width, originX, anchored),
-				y = place(it.y, screen.height, originY, anchored)
-			)
-		}
-		backend.drag(randomizePath(pixels, randomFactorStart, randomFactorHighest))
-	}
-
-	private suspend fun runText(text: String) {
-		if (text.isEmpty()) return
-		backend.text(text)
-	}
-
-	/**
-	 * Leaves [FocusFieldStep.variable] holding the field's current length
-	 * so the script can clear it exactly, and 0 when there is no field, so a
-	 * clearing loop guarded on it does nothing rather than backspacing through
-	 * whatever is focused instead.
-	 */
-	private suspend fun runFocusField(event: FocusFieldStep, context: ScriptContext) {
-		val variable = event.variable.ifBlank { "field" }
-		when (val result = finder.findField()) {
-			is FieldSearch.Found -> {
-				val field = result.field
-				context.set(variable, Value.Num(field.textLength.toLong()))
-				if (field.focused) {
-					// Already where the text will land. A tap here would be a
-					// synthetic touch that changes nothing.
-					Log.d(TAG, "field already focused, holding ${field.textLength} char(s)")
-					return
-				}
-				Log.d(TAG, "focusing field at ${field.centreX},${field.centreY}")
-				tap(
-					field.centreX, field.centreY, FIELD_TAP_MS, FIELD_TAP_JITTER_PX,
-					TouchSample(45, 130, 120), 0f, 0f, anchored = true
-				)
-			}
-			is FieldSearch.Missing -> {
-				context.set(variable, Value.Num(0))
-				Log.w(TAG, "no field to focus: ${result.reason}")
-				reportError(result.reason)
-			}
-		}
-	}
-
-	/**
-	 * Leaves the variable holding an empty list when no code arrives, so a
-	 * script can branch on count() instead of typing whatever was there before.
-	 */
-	private suspend fun runWaitCode(event: WaitCodeStep, context: ScriptContext) {
-		val variable = event.variable.ifBlank { "codes" }
-		when (val result = finder.awaitCodes(event.maxAgeSeconds, event.timeoutMs)) {
-			is CodeServer.Result.Found -> {
-				context.set(variable, Value.Arr(result.codes.map { Value.Str(it) }))
-				Log.d(TAG, "stored ${result.codes.size} code(s) in '$variable'")
-			}
-			is CodeServer.Result.Failed -> {
-				context.set(variable, Value.Arr(emptyList()))
-				Log.w(TAG, "no codes: ${result.reason}")
-				reportError(result.reason)
-			}
-		}
-	}
-
-	private suspend fun runToast(message: String) = backend.toast(message)
-
-	private suspend fun runKeyEvent(key: String) = backend.keyEvent(key)
-
-	private suspend fun runLaunchApp(packageName: String) {
-		if (packageName.isBlank()) return
-		backend.launchApp(packageName)
-	}
-
-	private suspend fun runShell(command: String) {
-		if (command.isBlank()) return
-		backend.shell(command)
-	}
-
-	private fun jitter(factor: Int): Int =
-		if (factor > 0) Random.nextInt(-factor, factor + 1) else 0
-
-	private fun randomizePath(
-		points: List<DragPoint>,
-		randomFactorStart: Int,
-		randomFactorHighest: Int
-	): List<DragPoint> {
-		// copy() so captured pressure and contact size survive the offsetting.
-		if (points.size <= 1) {
-			return points.map {
-				it.copy(x = it.x + jitter(randomFactorStart), y = it.y + jitter(randomFactorStart))
-			}
-		}
-
-		val mid = (points.size - 1) / 2.0
-		return points.mapIndexed { index, point ->
-			// Jitter ramps from randomFactorStart at both ends to randomFactorHighest at the middle.
-			val t = (1.0 - abs(index - mid) / mid).coerceIn(0.0, 1.0)
-			val factor = (randomFactorStart + (randomFactorHighest - randomFactorStart) * t).toInt()
-			point.copy(x = point.x + jitter(factor), y = point.y + jitter(factor))
-		}
-	}
+	private fun preview() = Interpreter(backend, finder, ScriptContext())
 }
