@@ -1181,9 +1181,9 @@ private fun repeatLabel(count: Int): String =
 	if (count <= 0) "Repeat forever" else "Repeat ${count}x"
 
 private fun Step.isBlockMarker(): Boolean =
-	opensBlock(this) || closesBlock(this) || isMidBlock(this)
+	this is BlockStart || this is BlockEnd || this is BlockMid
 
-private fun Step.isBlockEnd(): Boolean = closesBlock(this) || isMidBlock(this)
+private fun Step.isBlockEnd(): Boolean = this is BlockEnd || this is BlockMid
 
 private fun describeStep(step: Step, screen: ScreenGeometry): String {
 	// Anchored coordinates are already pixels, and are an offset rather than a
@@ -1252,29 +1252,17 @@ private fun describeStep(step: Step, screen: ScreenGeometry): String {
 	return "$wait$label$name"
 }
 
-private fun opensBlock(item: Step): Boolean =
-	item is LoopStartStep || item is RandomSelectStartStep ||
-		item is WhileStartStep || item is IfStartStep
-
-private fun closesBlock(item: Step): Boolean =
-	item is LoopEndStep || item is RandomSelectEndStep ||
-		item is WhileEndStep || item is IfEndStep
-
-/** ElseIf and Else sit at the parent's level but keep the block open. */
-private fun isMidBlock(item: Step): Boolean =
-	item is ElseIfStep || item is ElseStep
-
 /** Indent level of each row, so nested blocks can be drawn as nested. */
 fun blockDepths(items: List<Step>): List<Int> {
 	var depth = 0
 	return items.map { item ->
-		when {
-			opensBlock(item) -> depth++
-			closesBlock(item) -> {
+		when (item) {
+			is BlockStart -> depth++
+			is BlockEnd -> {
 				depth = (depth - 1).coerceAtLeast(0)
 				depth
 			}
-			isMidBlock(item) -> (depth - 1).coerceAtLeast(0)
+			is BlockMid -> (depth - 1).coerceAtLeast(0)
 			else -> depth
 		}
 	}
@@ -1283,14 +1271,14 @@ fun blockDepths(items: List<Step>): List<Int> {
 fun isBalanced(items: List<Step>): Boolean {
 	var depth = 0
 	items.forEach { item ->
-		when {
-			opensBlock(item) -> depth++
-			closesBlock(item) -> {
+		when (item) {
+			is BlockStart -> depth++
+			is BlockEnd -> {
 				depth--
 				if (depth < 0) return false
 			}
 			// An ElseIf or Else outside any If has nothing to attach to.
-			isMidBlock(item) -> if (depth == 0) return false
+			is BlockMid -> if (depth == 0) return false
 			else -> {}
 		}
 	}
@@ -1432,15 +1420,6 @@ fun buildHierarchy(flatSteps: List<Step>): List<Step> =
 
 private class ParsedSequence(val children: List<Step>, val terminator: Step?, val next: Int)
 
-private fun isBlockOpener(item: Step): Boolean =
-	item is LoopStartStep || item is RandomSelectStartStep ||
-		item is WhileStartStep || item is IfStartStep
-
-private fun isStrayMarker(item: Step): Boolean =
-	item is LoopEndStep || item is RandomSelectEndStep ||
-		item is WhileEndStep || item is IfEndStep ||
-		item is ElseIfStep || item is ElseStep
-
 /**
  * Reads steps until [isTerminator] matches, recursing into any block it
  * meets. Returns which terminator stopped it, which is what lets an If chain
@@ -1456,25 +1435,30 @@ private fun readSequence(
 	while (i < flat.size) {
 		val item = flat[i]
 		if (isTerminator(item)) return ParsedSequence(children, item, i + 1)
-		if (isBlockOpener(item)) {
-			val (node, next) = readBlock(flat, item, i + 1)
-			children.add(node)
-			i = next
-			continue
+		when (item) {
+			is BlockStart -> {
+				val (node, next) = readBlock(flat, item, i + 1)
+				children.add(node)
+				i = next
+			}
+			// An End or Else with no matching Start cannot be represented; drop
+			// it. The editor warns about this before saving.
+			is BlockEnd, is BlockMid -> i++
+			else -> {
+				children.add(item)
+				i++
+			}
 		}
-		// An End with no matching Start cannot be represented; drop it. The
-		// editor warns about this before saving.
-		if (isStrayMarker(item)) {
-			i++
-			continue
-		}
-		children.add(item)
-		i++
 	}
 	return ParsedSequence(children, null, i)
 }
 
-private fun readBlock(flat: List<Step>, opener: Step, start: Int): Pair<Step, Int> =
+/**
+ * A Repeat and a Random block accept each other's End on purpose: isBalanced
+ * counts every End alike, so a parser that was stricter than the check the
+ * editor shows would reject a list the editor called balanced.
+ */
+private fun readBlock(flat: List<Step>, opener: BlockStart, start: Int): Pair<Step, Int> =
 	when (opener) {
 		is LoopStartStep -> {
 			val body = readSequence(flat, start) { it is LoopEndStep || it is RandomSelectEndStep }
@@ -1489,7 +1473,6 @@ private fun readBlock(flat: List<Step>, opener: Step, start: Int): Pair<Step, In
 			WhileStep(opener.condition, body.children, opener.delayBefore, opener.name) to body.next
 		}
 		is IfStartStep -> readIf(flat, opener, start)
-		else -> opener to start
 	}
 
 private fun readIf(flat: List<Step>, opener: IfStartStep, start: Int): Pair<Step, Int> {

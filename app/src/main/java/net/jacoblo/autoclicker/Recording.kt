@@ -206,60 +206,77 @@ data class RandomSelectStep(
 	override val name: String = ""
 ) : Step()
 
-// Editor helper types
+/**
+ * Editor helper types.
+ *
+ * A block is a tree node when it runs and a pair of markers when it is edited,
+ * because the editor works on one flat reorderable list. Which of the three
+ * parts of a block a marker is decides everything the editor does with it --
+ * how far the row is indented, whether the markers balance, and where a body
+ * ends when the tree is rebuilt -- so it is the type that says, rather than a
+ * predicate listing the same four classes at each site.
+ */
+sealed class BlockStart : Step()
+
+/** Closes the block a [BlockStart] opened. */
+sealed class BlockEnd : Step()
+
+/** Neither opens nor closes: sits at the parent's level and keeps it open. */
+sealed class BlockMid : Step()
+
 data class LoopStartStep(
 	val repeatCount: Int,
 	override val delayBefore: Long = 0,
 	override val name: String = ""
-) : Step()
+) : BlockStart()
 
 data class LoopEndStep(
 	override val delayBefore: Long = 0,
 	override val name: String = ""
-) : Step()
+) : BlockEnd()
 
 data class RandomSelectStartStep(
 	override val delayBefore: Long = 0,
 	override val name: String = ""
-) : Step()
+) : BlockStart()
 
 data class RandomSelectEndStep(
 	override val delayBefore: Long = 0,
 	override val name: String = ""
-) : Step()
+) : BlockEnd()
 
 data class IfStartStep(
 	val condition: String,
 	override val delayBefore: Long = 0,
 	override val name: String = ""
-) : Step()
+) : BlockStart()
 
 data class ElseIfStep(
 	val condition: String,
 	override val delayBefore: Long = 0,
 	override val name: String = ""
-) : Step()
+) : BlockMid()
 
 data class ElseStep(
 	override val delayBefore: Long = 0,
 	override val name: String = ""
-) : Step()
+) : BlockMid()
 
 data class IfEndStep(
 	override val delayBefore: Long = 0,
 	override val name: String = ""
-) : Step()
+) : BlockEnd()
 
 data class WhileStartStep(
 	val condition: String,
 	override val delayBefore: Long = 0,
 	override val name: String = ""
-) : Step()
+) : BlockStart()
 
 data class WhileEndStep(
 	override val delayBefore: Long = 0,
 	override val name: String = ""
-) : Step()
+) : BlockEnd()
 
 /** At-a-glance description of a recording for the list screen. */
 data class RecordingSummary(val actions: Int, val durationMs: Long, val loops: Int) {
