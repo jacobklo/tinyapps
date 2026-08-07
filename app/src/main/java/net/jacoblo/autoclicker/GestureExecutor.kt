@@ -10,6 +10,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -115,6 +118,14 @@ object GestureExecutor {
 		get() = playJob?.isActive == true
 
 	/**
+	 * Observable form of [isPlaying], so the bubble and the notification can show
+	 * a stop control for a script they did not start themselves -- playback is
+	 * also driven over the control server.
+	 */
+	private val _playing = MutableStateFlow(false)
+	val playing: StateFlow<Boolean> = _playing.asStateFlow()
+
+	/**
 	 * [onFinished] runs on the main thread whether playback completed, was
 	 * stopped or threw, so callers can restore a play/stop button without
 	 * polling.
@@ -129,6 +140,7 @@ object GestureExecutor {
 		// though nothing about it has changed.
 		lastError = null
 		degraded = 0
+		_playing.value = true
 		playJob = scope.launch {
 			acquireWakeLock()
 			var result: PlaybackResult = PlaybackResult.Stopped
@@ -148,6 +160,7 @@ object GestureExecutor {
 				result = PlaybackResult.Failed(e.message ?: e.javaClass.simpleName)
 			} finally {
 				releaseWakeLock()
+				_playing.value = false
 				onFinished?.invoke(result)
 			}
 		}

@@ -393,6 +393,17 @@ class Bubble(private val context: Context) {
         }
     }
 
+    /**
+     * Keeps the play/stop icon honest for a script this bubble did not start.
+     * Playback is also driven over the control server, and a button still showing
+     * "play" while a script runs reads as "nothing is running".
+     */
+    fun setPlaying(playing: Boolean) {
+        playButtonIcon?.post {
+            playButtonIcon?.setImageResource(if (playing) R.drawable.ic_stop else R.drawable.ic_play)
+        }
+    }
+
     private fun startEvdevRecording(): Boolean {
         if (!AppSettings.useRoot) return false
         val device = GestureExecutor.evdevDevice ?: return false
