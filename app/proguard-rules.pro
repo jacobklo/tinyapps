@@ -20,16 +20,6 @@
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
 
-# --- WebView Javascript Interface Protection ---
-# Keep the class and methods explicitly used by WebView.addJavascriptInterface
-# R8 Full Mode is aggressive, so we must be specific.
--keepclassmembers class net.jacoblo.notesoutloud.TocJavascriptInterface {
-    @android.webkit.JavascriptInterface <methods>;
-}
-
-# Protect the class name if you refer to it by string in any reflection (though your code doesn't seem to)
--keepnames class net.jacoblo.notesoutloud.TocJavascriptInterface
-
 # --- Aggressive Size Optimizations ---
 
 # Assumes no side effects in class initializers (helps remove unused static blocks)
