@@ -6,6 +6,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.math.pow
+import kotlin.math.sqrt
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -228,6 +230,51 @@ data class RandomSelectStep(
 	override val delayBefore: Long,
 	override val name: String = ""
 ) : RuntimeStep()
+
+// Anything shorter than this is a tap rather than a drag. Both recorders decide
+// it, so they decide it the same way.
+const val CLICK_DISTANCE_PX = 20f
+
+/**
+ * A finished touch, as the step that would reproduce it.
+ *
+ * There are two recorders -- the overlay one and the evdev one -- and this is
+ * the judgement they share: how far the finger has to travel before a press
+ * becomes a swipe, and that a step is stored as fractions of the screen while
+ * the recorders work in pixels.
+ *
+ * [points] are in screen pixels, first to last. A tap keeps the first point's
+ * pressure and contact size, which only the evdev recorder captures; the
+ * overlay recorder leaves them at zero and the injector substitutes a
+ * device-typical value.
+ */
+fun gestureStep(
+	points: List<DragPoint>,
+	durationMs: Long,
+	delayBefore: Long,
+	screen: ScreenGeometry
+): RuntimeStep {
+	val first = points.first()
+	val last = points.last()
+	val distance = sqrt((last.x - first.x).pow(2) + (last.y - first.y).pow(2))
+
+	if (distance < CLICK_DISTANCE_PX) {
+		return ClickStep(
+			x = first.x / screen.width,
+			y = first.y / screen.height,
+			// A press has to last something, or there is nothing to inject.
+			duration = durationMs.coerceAtLeast(1),
+			pressure = first.pressure,
+			touchMajor = first.touchMajor,
+			touchMinor = first.touchMinor,
+			delayBefore = delayBefore
+		)
+	}
+	return DragStep(
+		points = points.map { it.copy(x = it.x / screen.width, y = it.y / screen.height) },
+		delayBefore = delayBefore
+	)
+}
 
 /** At-a-glance description of a recording for the list screen. */
 data class RecordingSummary(val actions: Int, val durationMs: Long, val loops: Int) {

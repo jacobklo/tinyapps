@@ -8,10 +8,6 @@ import kotlin.math.sqrt
 
 private const val TAG = "autoclicker.evdev.recorder"
 
-// Anything shorter than this is a click rather than a drag, matching the
-// threshold the overlay recorder has always used.
-private const val CLICK_DISTANCE_PX = 20f
-
 /**
  * Captures real touches straight off the touchscreen node.
  *
@@ -116,27 +112,8 @@ private class CapturedGesture(
 	val startX: Float get() = points.first().x
 	val startY: Float get() = points.first().y
 
-	fun toStep(delayBefore: Long, screen: ScreenGeometry): RuntimeStep {
-		val last = points.last()
-		val distance = sqrt((last.x - startX).pow(2) + (last.y - startY).pow(2))
-		if (distance < CLICK_DISTANCE_PX) {
-			val first = points.first()
-			return ClickStep(
-				x = startX / screen.width,
-				y = startY / screen.height,
-				duration = (endMs - startMs).coerceAtLeast(1),
-				randomFactor = 0,
-				pressure = first.pressure,
-				touchMajor = first.touchMajor,
-				touchMinor = first.touchMinor,
-				delayBefore = delayBefore
-			)
-		}
-		val scaled = points.map {
-			it.copy(x = it.x / screen.width, y = it.y / screen.height)
-		}
-		return DragStep(points = scaled, delayBefore = delayBefore)
-	}
+	fun toStep(delayBefore: Long, screen: ScreenGeometry): RuntimeStep =
+		gestureStep(points, endMs - startMs, delayBefore, screen)
 }
 
 /**

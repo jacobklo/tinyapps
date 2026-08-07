@@ -506,8 +506,6 @@ class Bubble(private val context: Context) {
 				val duration = currentTime - touchStartTime
 				val delay = touchStartTime - lastEventTime
 
-				val distance = sqrt((endX - startX).pow(2) + (endY - startY).pow(2))
-
 				// Restore button to GREEN (Recording state)
 				(recordButtonView?.background as? ShapeDrawable)?.paint?.color = Color.GREEN
 				recordButtonView?.invalidate()
@@ -533,29 +531,23 @@ class Bubble(private val context: Context) {
 					}
 				}
 
-				// The overlay reports pixels; steps are stored and
-				// replayed as fractions of the screen.
+				// Where the finger left the screen ends the path, and is what the
+				// tap-or-drag distance is measured to.
+				currentDragPoints.add(DragPoint(endX, endY, currentTime - lastDragPointTime))
+
+				// The overlay reports pixels; steps are stored and replayed as
+				// fractions of the screen.
 				val screen = ScreenGeometry.current(context)
+				val step = gestureStep(currentDragPoints.toList(), duration, delay, screen)
+				recordedEvents.add(step)
 
-				if (distance < 20) {
-					// Click
-					val fx = startX / screen.width
-					val fy = startY / screen.height
-					recordedEvents.add(ClickStep(fx, fy, duration, 0, delayBefore = delay))
-					GestureExecutor.click(fx, fy, duration, 0, completionCallback)
-				} else {
-					// Drag
-					// Add last point
-					val dt = currentTime - lastDragPointTime
-					if (dt > 0) {
-						currentDragPoints.add(DragPoint(endX, endY, dt))
-					}
-
-					val points = currentDragPoints.map {
-						it.copy(x = it.x / screen.width, y = it.y / screen.height)
-					}
-					recordedEvents.add(DragStep(points, 0, 0, delayBefore = delay))
-					GestureExecutor.drag(points, 0,0,completionCallback)
+				// Echoed back, so the touch this overlay swallowed still reaches the
+				// app underneath it.
+				when (step) {
+					is ClickStep ->
+						GestureExecutor.click(step.x, step.y, step.duration, 0, completionCallback)
+					is DragStep -> GestureExecutor.drag(step.points, 0, 0, completionCallback)
+					else -> {}
 				}
 
 				lastEventTime = currentTime
