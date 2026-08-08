@@ -51,10 +51,25 @@ private class FakeFinder : Finder {
 	var field: FieldSearch = FieldSearch.Missing("no text field on screen")
 	var codes: CodeServer.Result = CodeServer.Result.Failed("no code arrived in time")
 
+	/** An answer per look, for hiding a phrase and then letting it appear. */
+	var textPerLook: List<TextSearch> = emptyList()
+
+	var textLooks = 0
+		private set
+
 	override suspend fun findArea(name: String) = area
-	override suspend fun findText(phrase: String) = text
 	override suspend fun findField() = field
 	override suspend fun awaitCodes(maxAgeSeconds: Long, timeoutMs: Long) = codes
+
+	/** The looks taken, in the order asked for, so a test can see how it escalated. */
+	val textThoroughness = mutableListOf<Boolean>()
+
+	override suspend fun findText(phrase: String, thorough: Boolean): TextSearch {
+		val answer = textPerLook.getOrNull(textLooks) ?: text
+		textLooks++
+		textThoroughness.add(thorough)
+		return answer
+	}
 }
 
 class InterpreterTest {
@@ -132,6 +147,55 @@ class InterpreterTest {
 		assertEquals(1, run.degraded)
 		// The toast is the report; no touch was injected.
 		assertTrue(backend.calls.none { it.startsWith("click") })
+	}
+
+	/**
+	 * Most of what hides a phrase is passing -- a press ripple over the label, a
+	 * toast across the bottom of the screen, a screen still animating in. A wait
+	 * polls, but a gesture's anchor is resolved once, so it looks more than once.
+	 */
+	@Test
+	fun aPhraseHiddenForAMomentIsStillFound() {
+		finder.textPerLook = listOf(
+			TextSearch.Missing("covered"),
+			TextSearch.Found(Rect().apply { left = 10; top = 20 })
+		)
+
+		val run = play(tap(0f, 0f, anchorText = "Not now"))
+
+		assertEquals(listOf("click 10,20 50ms"), backend.calls)
+		assertEquals(0, run.degraded)
+	}
+
+	@Test
+	fun aPhraseThatIsNeverThereIsGivenUpOnAfterSeveralLooks() {
+		val run = play(tap(0f, 0f, anchorText = "Not now"))
+
+		assertTrue("looked only ${finder.textLooks} time(s)", finder.textLooks > 1)
+		assertEquals(1, run.degraded)
+		assertTrue(backend.calls.none { it.startsWith("click") })
+	}
+
+	/**
+	 * Taking the frame apart costs seconds, so it is what the last look does
+	 * rather than every look: three thorough looks would find nothing three
+	 * quick ones and one thorough one did not, and would cost three times over.
+	 */
+	@Test
+	fun onlyTheLastLookTakesTheFrameApart() {
+		play(tap(0f, 0f, anchorText = "Not now"))
+
+		assertEquals(listOf(false, false, true), finder.textThoroughness)
+	}
+
+	/** A phrase found by a quick look never pays for the thorough one. */
+	@Test
+	fun aPhraseFoundQuicklyIsNotSearchedFor() {
+		finder.textPerLook = listOf(TextSearch.Found(Rect().apply { left = 10; top = 20 }))
+
+		play(tap(0f, 0f, anchorText = "Continue"))
+
+		assertEquals(listOf(false), finder.textThoroughness)
 	}
 
 	@Test

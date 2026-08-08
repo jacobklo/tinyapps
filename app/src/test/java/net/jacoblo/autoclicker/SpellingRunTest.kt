@@ -54,6 +54,30 @@ class SpellingRunTest {
 		assertEquals(0..0, spellingRun(listOf("Skip"), "Skip"))
 		assertNull(spellingRun(listOf("Slip"), "Skip"))
 		assertNull(spellingRun(listOf("Ski"), "Skip"))
+		// Five characters is below the floor, so even one wrong letter is fatal.
+		assertNull(spellingRun(listOf("Memez"), "Memes"))
+	}
+
+	/**
+	 * Six characters is the floor: short enough to be a button, long enough that
+	 * one wrong character does not turn it into another word.
+	 */
+	@Test
+	fun `allows one wrong character from six characters up`() {
+		assertEquals(0..1, spellingRun(listOf("Not", "nov"), "Not now"))
+		assertNull(spellingRun(listOf("Nut", "cap"), "Not now"))
+	}
+
+	/**
+	 * A digit standing in for the letter it looks like is what the recogniser
+	 * actually does, so it costs nothing at any length -- unlike slack, which
+	 * would also accept a different word.
+	 */
+	@Test
+	fun `forgives a digit that looks like its letter, even when short`() {
+		assertEquals(0..0, spellingRun(listOf("5kip"), "Skip"))
+		assertEquals(0..0, spellingRun(listOf("C0nt1nue"), "Continue"))
+		assertNull(spellingRun(listOf("Slip"), "Skip"))
 	}
 
 	@Test

@@ -23,6 +23,12 @@ private const val ERROR_REPEAT_MS = 5000L
 private const val FIELD_TAP_MS = 120L
 private const val FIELD_TAP_JITTER_PX = 6
 
+// How many frames an anchor gets before the gesture is given up on, and how long
+// to leave between them. Long enough that a ripple has faded and a screen has
+// settled, short enough that a phrase which really is absent is not waited on.
+private const val ANCHOR_LOOKS = 3
+private const val ANCHOR_LOOK_GAP_MS = 500L
+
 /**
  * Runs a list of steps, once.
  *
@@ -149,14 +155,29 @@ class Interpreter(
 		// A phrase wins when both are set: it is the more specific thing to have
 		// said, and a script carrying both was written around the words.
 		if (anchorText.isNotBlank()) {
-			return when (val result = finder.findText(anchorText)) {
-				is TextSearch.Found -> result.box.left.toFloat() to result.box.top.toFloat()
-				is TextSearch.Missing -> {
-					Log.w(TAG, "anchor text '$anchorText' unusable: ${result.reason}, skipping gesture")
-					reportError(result.reason)
-					null
+			var reason = "\"$anchorText\" is not on screen"
+			// More than one look, because most of what hides a phrase is passing:
+			// a button's own press ripple over the label, a toast across the
+			// bottom of the screen, a screen still animating in. The words stay
+			// put and the thing over them does not, so a second frame a moment
+			// later usually has it. A wait already polls; a gesture's anchor is
+			// resolved once and would otherwise be skipped on that one look.
+			repeat(ANCHOR_LOOKS) { look ->
+				if (look > 0) delay(ANCHOR_LOOK_GAP_MS)
+				// Quick looks first, since a phrase hidden by something passing is
+				// there to be read plainly a moment later. Only once it has not
+				// turned up at all is the frame worth taking apart, and one
+				// thorough look is as good as three.
+				when (val result = finder.findText(anchorText, thorough = look == ANCHOR_LOOKS - 1)) {
+					is TextSearch.Found ->
+						return result.box.left.toFloat() to result.box.top.toFloat()
+
+					is TextSearch.Missing -> reason = result.reason
 				}
 			}
+			Log.w(TAG, "anchor text '$anchorText' unusable: $reason, skipping gesture")
+			reportError(reason)
+			return null
 		}
 		if (anchor.isBlank()) return 0f to 0f
 		return when (val result = finder.findArea(anchor)) {

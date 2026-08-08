@@ -17,7 +17,11 @@ interface Finder {
 
 	suspend fun findArea(name: String): AreaSearch
 
-	suspend fun findText(phrase: String): TextSearch
+	/**
+	 * [thorough] asks for the frame to be taken apart rather than simply read,
+	 * which is slower by seconds and finds phrases a single reading cannot.
+	 */
+	suspend fun findText(phrase: String, thorough: Boolean = true): TextSearch
 
 	suspend fun findField(): FieldSearch
 
@@ -30,8 +34,8 @@ object DeviceFinder : Finder {
 	override suspend fun findArea(name: String): AreaSearch =
 		withContext(Dispatchers.IO) { ScreenConditions.search(name) }
 
-	override suspend fun findText(phrase: String): TextSearch =
-		withContext(Dispatchers.IO) { ScreenText.find(phrase) }
+	override suspend fun findText(phrase: String, thorough: Boolean): TextSearch =
+		withContext(Dispatchers.IO) { ScreenText.find(phrase, thorough = thorough) }
 
 	override suspend fun findField(): FieldSearch =
 		withContext(Dispatchers.IO) { ViewHierarchy.findField() }
