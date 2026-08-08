@@ -448,6 +448,51 @@ class InterpreterTest {
 		)
 	}
 
+	/** A switched-off step stays in the script and is not run. */
+	@Test
+	fun aSwitchedOffStepDoesNothing() {
+		play(tap(0.1f, 0.1f).copy(enabled = false), tap(0.5f, 0.5f))
+
+		assertEquals(listOf("click 500,1000 50ms"), backend.calls)
+	}
+
+	/**
+	 * A block holds its body, so switching the block off is all it takes. The
+	 * repeat is bounded rather than a While, so a regression fails the test
+	 * instead of hanging it.
+	 */
+	@Test
+	fun aSwitchedOffBlockTakesItsBodyWithIt() {
+		play(
+			ForLoopStep(
+				repeatCount = 2,
+				steps = listOf(tap(0.1f, 0.1f)),
+				delayBefore = 0,
+				enabled = false
+			),
+			tap(0.5f, 0.5f)
+		)
+
+		assertEquals(listOf("click 500,1000 50ms"), backend.calls)
+	}
+
+	/**
+	 * A comment does not hold anything, so the section it heads has to be
+	 * skipped by hand -- and it stops at the next comment, not at the end.
+	 */
+	@Test
+	fun aSwitchedOffCommentTakesItsSectionWithIt() {
+		play(
+			CommentStep("skip this part", enabled = false),
+			tap(0.1f, 0.1f),
+			tap(0.2f, 0.2f),
+			CommentStep("but not this one"),
+			tap(0.3f, 0.3f)
+		)
+
+		assertEquals(listOf("click 300,600 50ms"), backend.calls)
+	}
+
 	/** Doing nothing is the whole of what a comment is for. */
 	@Test
 	fun aCommentReachesTheDeviceAsNothingAtAll() {

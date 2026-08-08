@@ -2,6 +2,7 @@ package net.jacoblo.autoclicker
 
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -77,7 +78,7 @@ class RecordingFileTest {
 		KeyEventStep("BACK", delayBefore = 20),
 		LaunchAppStep("com.example.app", delayBefore = 30),
 		ShellStep("am force-stop com.example.app", delayBefore = 40),
-		ToastStep("attempt {count}", delayBefore = 50),
+		ToastStep("attempt {count}", delayBefore = 50, enabled = false),
 		WaitStep(delayBefore = 1000),
 		CommentStep("what the next few steps are for"),
 		HttpGetStep(url = "http://192.168.2.2:5553/codes", variable = "response", timeoutMs = 90000, intervalMs = 2000, delayBefore = 60),
@@ -136,6 +137,24 @@ class RecordingFileTest {
 	@Test
 	fun theGlobalRandomComesBack() {
 		assertEquals(250, roundTrip(listOf(WaitStep(delayBefore = 0)), globalRandom = 250).globalRandom)
+	}
+
+	/**
+	 * Only written when a step is off, so saving a recording that nobody has
+	 * switched anything in does not rewrite every step in the file -- and a
+	 * recording written before the flag existed loads with everything on.
+	 */
+	@Test
+	fun theEnabledFlagIsWrittenOnlyWhenAStepIsOff() {
+		val file = File(temp.root, "flags.json")
+		RecordingManager.saveRecordingToFile(
+			file,
+			listOf(WaitStep(delayBefore = 0), WaitStep(delayBefore = 0, enabled = false))
+		)
+
+		val events = JSONObject(file.readText()).getJSONArray("events")
+		assertFalse(events.getJSONObject(0).has("enabled"))
+		assertFalse(events.getJSONObject(1).getBoolean("enabled"))
 	}
 
 	/**

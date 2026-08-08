@@ -62,10 +62,23 @@ class Interpreter(
 	private var lastErrorAt = 0L
 
 	suspend fun run(steps: List<RuntimeStep>) {
-		steps.forEach { step ->
+		var index = 0
+		while (index < steps.size) {
+			val step = steps[index]
+			index++
+
 			// A loop whose body has no delay would otherwise never yield, and the
 			// stop button could not interrupt it.
 			currentCoroutineContext().ensureActive()
+
+			// A switched-off step does not wait either: its delay was the pause
+			// before it did something, and it is not doing it. A block takes its
+			// body with it for free, since the body is inside it; a comment has
+			// to take its section by hand, because those are only its siblings.
+			if (!step.enabled) {
+				if (step is CommentStep) index = sectionEnd(steps, index)
+				continue
+			}
 
 			val randDelay = if (globalRandom > 0) Random.nextInt(0, globalRandom + 1) else 0
 			delay(step.delayBefore + randDelay)

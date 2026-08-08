@@ -162,4 +162,68 @@ class HierarchyTest {
         )
         assertEquals(listOf(0, 1, 0, 1, 0), blockDepths(flat))
     }
+
+    /** A comment heads the rows below it as far as the next comment beside it. */
+    @Test
+    fun aCommentSectionStopsAtTheNextComment() {
+        val flat = listOf(
+            CommentStep("first"),
+            click("a"),
+            click("b"),
+            CommentStep("second"),
+            click("c")
+        )
+
+        assertEquals(listOf(1, 2), commentSection(flat, 0).toList())
+        assertEquals(listOf(4), commentSection(flat, 3).toList())
+    }
+
+    /** The block a comment sits in ends its section, comment or no comment. */
+    @Test
+    fun aCommentSectionEndsWhereItsBlockDoes() {
+        val flat = listOf(
+            WhileStartStep("1 == 1"),
+            CommentStep("inside"),
+            click("a"),
+            WhileEndStep(),
+            click("after the loop")
+        )
+
+        assertEquals(listOf(2), commentSection(flat, 1).toList())
+    }
+
+    /**
+     * The two ways a row goes dead without being switched off itself, and the
+     * row that ends a dead section rather than belonging to it.
+     */
+    @Test
+    fun switchingSomethingOffSwitchesOffWhatIsInsideIt() {
+        val flat = listOf(
+            WhileStartStep("1 == 1", enabled = false),
+            click("in the loop"),
+            WhileEndStep(),
+            CommentStep("heading", enabled = false),
+            click("under the heading"),
+            CommentStep("next heading"),
+            click("live again")
+        )
+
+        assertEquals(
+            listOf(true, true, true, true, true, false, false),
+            disabledRows(flat)
+        )
+    }
+
+    /** A live comment inside a switched-off block is still not going to run. */
+    @Test
+    fun aSectionInsideADeadBlockStaysDead() {
+        val flat = listOf(
+            WhileStartStep("1 == 1", enabled = false),
+            CommentStep("inside"),
+            click("a"),
+            WhileEndStep()
+        )
+
+        assertEquals(listOf(true, true, true, true), disabledRows(flat))
+    }
 }

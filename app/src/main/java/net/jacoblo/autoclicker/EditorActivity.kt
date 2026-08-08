@@ -5,8 +5,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
@@ -16,8 +17,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -27,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -210,7 +216,11 @@ private fun helpFor(step: Step): StepHelp = when (step) {
 		"A heading for whoever reads the script. It does nothing, waits for " +
 			"nothing and costs nothing at playback. Every step has a Name, " +
 			"which reads as a remark on that one step; put a Comment above a " +
-			"group of them to say what the group as a whole is for.",
+			"group of them to say what the group as a whole is for. It heads " +
+			"the steps below it as far as the next Comment beside it, and that " +
+			"section is what the arrow folds away and what switching the " +
+			"Comment off skips. Folding is also a long press on the row, which " +
+			"is why a Comment can only be dragged by its handle.",
 		listOf(
 			"Enter the email address",
 			"Find and type the 6 digit code",
@@ -415,13 +425,44 @@ private fun LoadedEditorScreen(file: File, recordingData: RecordingData, onBack:
 	// Only one row is expanded at a time; collapsed rows are a single summary line.
 	var expandedId by remember { mutableStateOf<Long?>(null) }
 	var confirmDiscard by remember { mutableStateOf(false) }
+	// Comments whose sections are folded out of sight. Not saved with the
+	// recording: what you have folded away is how you are reading the script,
+	// not part of it.
+	val folded = remember { mutableStateListOf<Long>() }
 
 	val steps = rows.map { it.step }
 	val dirty = steps != initialSteps || globalRandom != recordingData.globalRandom
 	val depths = blockDepths(steps)
+	val disabled = disabledRows(steps)
+
+	// Indices into rows, because every edit below addresses a row by position.
+	val hidden = buildSet {
+		rows.forEachIndexed { index, row ->
+			if (row.step is CommentStep && row.id in folded) addAll(commentSection(steps, index))
+		}
+	}
+	val visible = rows.indices.filter { it !in hidden }
 
 	fun add(step: Step) {
 		rows.add(EditorRow(nextRowId++, step))
+	}
+
+	/**
+	 * A folded comment travels with the steps it is hiding.
+	 *
+	 * They are not on screen to be dragged themselves, so leaving them behind
+	 * would regroup the script under whatever comment they landed beneath --
+	 * and it would do it invisibly, which is the part that matters.
+	 */
+	fun move(from: Int, to: Int) {
+		val row = rows[from]
+		val carried =
+			if (row.step is CommentStep && row.id in folded) 1 + commentSection(steps, from).count()
+			else 1
+		val moving = List(carried) { rows.removeAt(from) }
+		// Everything after the gap has shifted up by what was lifted out of it.
+		val target = if (to > from) to - carried + 1 else to
+		rows.addAll(target.coerceIn(0, rows.size), moving)
 	}
 
 	fun save() {
@@ -523,8 +564,10 @@ private fun LoadedEditorScreen(file: File, recordingData: RecordingData, onBack:
 			}
 
 			val listState = rememberLazyListState()
+			// from/to count the rows on screen, which is not the same list once
+			// something is folded away.
 			val reorderState = rememberReorderableLazyListState(listState) { from, to ->
-				rows.add(to.index, rows.removeAt(from.index))
+				move(visible[from.index], visible[to.index])
 				expandedId = null
 			}
 
@@ -534,11 +577,16 @@ private fun LoadedEditorScreen(file: File, recordingData: RecordingData, onBack:
 					.weight(1f)
 					.fillMaxWidth()
 			) {
-				itemsIndexed(rows, key = { _, row -> row.id }) { index, row ->
+				itemsIndexed(visible, key = { _, index -> rows[index].id }) { _, index ->
+					val row = rows[index]
+					val section = if (row.step is CommentStep) commentSection(steps, index) else IntRange.EMPTY
 					ReorderableItem(reorderState, key = row.id) { dragging ->
 						StepRow(
 							step = row.step,
 							depth = depths.getOrElse(index) { 0 },
+							disabled = disabled.getOrElse(index) { false },
+							sectionSize = section.count(),
+							folded = row.id in folded,
 							expanded = expandedId == row.id,
 							dragging = dragging,
 							dragHandle = {
@@ -557,6 +605,13 @@ private fun LoadedEditorScreen(file: File, recordingData: RecordingData, onBack:
 							onToggleExpand = {
 								expandedId = if (expandedId == row.id) null else row.id
 							},
+							onToggleFold = {
+								if (!folded.remove(row.id)) folded.add(row.id)
+								expandedId = null
+							},
+							onToggleEnabled = {
+								rows[index] = row.copy(step = row.step.withEnabled(!row.step.enabled))
+							},
 							onUpdate = { updated -> rows[index] = row.copy(step = updated) },
 							onDelete = {
 								rows.removeAt(index)
@@ -565,7 +620,10 @@ private fun LoadedEditorScreen(file: File, recordingData: RecordingData, onBack:
 							// Long-pressing the row drags it too. The handle
 							// alone was a 28dp target at the screen edge, so a
 							// finger that missed it just scrolled or expanded.
-							modifier = Modifier.longPressDraggableHandle(
+							// On a comment that gesture folds instead, and the
+							// handle is the only way to drag one.
+							modifier = if (row.step is CommentStep) Modifier
+							else Modifier.longPressDraggableHandle(
 								onDragStarted = { expandedId = null }
 							)
 						)
@@ -638,14 +696,27 @@ private fun DropdownPicker(
 	}
 }
 
+/**
+ * [disabled] is whether the step will actually run, which is not the same as
+ * its own switch: a live step inside a switched-off block shows its own switch
+ * on and is still struck through, because that is the truth of it.
+ *
+ * [sectionSize] is how many rows a comment heads, and 0 for anything else.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun StepRow(
 	step: Step,
 	depth: Int,
+	disabled: Boolean,
+	sectionSize: Int,
+	folded: Boolean,
 	expanded: Boolean,
 	dragging: Boolean,
 	dragHandle: @Composable () -> Unit,
 	onToggleExpand: () -> Unit,
+	onToggleFold: () -> Unit,
+	onToggleEnabled: () -> Unit,
 	onUpdate: (Step) -> Unit,
 	onDelete: () -> Unit,
 	modifier: Modifier = Modifier
@@ -680,24 +751,51 @@ fun StepRow(
 			)
 		}
 
+		val foldable = comment && sectionSize > 0
 		Column(
 			modifier = Modifier
 				.weight(1f)
-				.clickable { onToggleExpand() }
+				.combinedClickable(
+					onClick = onToggleExpand,
+					onLongClick = if (foldable) onToggleFold else null
+				)
 				.padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 8.dp)
 		) {
 			Row(verticalAlignment = Alignment.CenterVertically) {
+				if (foldable) {
+					IconButton(onClick = onToggleFold, modifier = Modifier.size(24.dp)) {
+						Icon(
+							imageVector = if (folded) Icons.Default.ChevronRight
+							else Icons.Default.ExpandMore,
+							contentDescription = if (folded) "Show these steps" else "Hide these steps"
+						)
+					}
+				}
 				Text(
-					text = describeStep(step, screen),
+					text = describeStep(step, screen) +
+						if (folded && sectionSize > 0) "   ($sectionSize hidden)" else "",
 					style = MaterialTheme.typography.bodyMedium,
 					fontStyle = if (comment) FontStyle.Italic else null,
+					// Struck through rather than merely faded, because faded is
+					// also what a long list looks like on a dim screen.
+					textDecoration = if (disabled) TextDecoration.LineThrough else null,
 					color = when {
+						disabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
 						comment -> MaterialTheme.colorScheme.onSecondaryContainer
 						step.isBlockMarker() -> accent
 						else -> MaterialTheme.colorScheme.onSurface
 					},
 					modifier = Modifier.weight(1f)
 				)
+				// Shows the step's own switch, not whether it will run: a step
+				// can only be switched back on by its own switch.
+				IconButton(onClick = onToggleEnabled, modifier = Modifier.size(28.dp)) {
+					Icon(
+						imageVector = if (step.enabled) Icons.Default.CheckCircle
+						else Icons.Default.Block,
+						contentDescription = if (step.enabled) "Switch off" else "Switch on"
+					)
+				}
 				IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
 					Icon(Icons.Default.Delete, contentDescription = "Delete")
 				}
@@ -1375,6 +1473,37 @@ fun Step.withName(newName: String): Step = when (this) {
 	is IfEndStep -> copy(name = newName)
 	is WhileStartStep -> copy(name = newName)
 	is WhileEndStep -> copy(name = newName)
+}
+
+/** Switching one off leaves it in place, unrun -- see [Step.enabled]. */
+fun Step.withEnabled(on: Boolean): Step = when (this) {
+	is ClickStep -> copy(enabled = on)
+	is DragStep -> copy(enabled = on)
+	is TextStep -> copy(enabled = on)
+	is KeyEventStep -> copy(enabled = on)
+	is LaunchAppStep -> copy(enabled = on)
+	is ShellStep -> copy(enabled = on)
+	is WaitStep -> copy(enabled = on)
+	is CommentStep -> copy(enabled = on)
+	is ToastStep -> copy(enabled = on)
+	is SetVariableStep -> copy(enabled = on)
+	is HttpGetStep -> copy(enabled = on)
+	is FocusFieldStep -> copy(enabled = on)
+	is BreakStep -> copy(enabled = on)
+	is ForLoopStep -> copy(enabled = on)
+	is RandomSelectStep -> copy(enabled = on)
+	is IfStep -> copy(enabled = on)
+	is WhileStep -> copy(enabled = on)
+	is LoopStartStep -> copy(enabled = on)
+	is LoopEndStep -> copy(enabled = on)
+	is RandomSelectStartStep -> copy(enabled = on)
+	is RandomSelectEndStep -> copy(enabled = on)
+	is IfStartStep -> copy(enabled = on)
+	is ElseIfStep -> copy(enabled = on)
+	is ElseStep -> copy(enabled = on)
+	is IfEndStep -> copy(enabled = on)
+	is WhileStartStep -> copy(enabled = on)
+	is WhileEndStep -> copy(enabled = on)
 }
 
 /** Moves the whole path so its first point lands on the given coordinates. */

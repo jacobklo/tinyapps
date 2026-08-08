@@ -43,6 +43,16 @@ const val DEFAULT_HTTP_INTERVAL_MS = 2000L
 sealed interface Step {
 	val delayBefore: Long
 	val name: String
+
+	/**
+	 * False switches the step off without deleting it, which is how you try a
+	 * script without one part of it and put the part back afterwards.
+	 *
+	 * A block that is off takes its body with it, because the body is inside it.
+	 * A [CommentStep] that is off takes the steps it heads with it too, and
+	 * those are only its neighbours -- see [CommentStep] for where that ends.
+	 */
+	val enabled: Boolean
 }
 
 /** A step that runs, and the only kind that reaches a file. */
@@ -85,7 +95,8 @@ data class ClickStep(
 	val touchMajor: Int = 0,
 	val touchMinor: Int = 0,
 	override val delayBefore: Long,
-	override val name: String = ""
+	override val name: String = "",
+	override val enabled: Boolean = true
 ) : RuntimeStep()
 
 // 2) Drag data class with multiple coordinates and delta time
@@ -107,33 +118,38 @@ data class DragStep(
 	val anchor: AnchorImage = "",
 	val anchorText: String = "",
 	override val delayBefore: Long,
-	override val name: String = ""
+	override val name: String = "",
+	override val enabled: Boolean = true
 ) : RuntimeStep()
 
 // Text entry into whatever field currently holds input focus
 data class TextStep(
 	val text: String,
 	override val delayBefore: Long,
-	override val name: String = ""
+	override val name: String = "",
+	override val enabled: Boolean = true
 ) : RuntimeStep()
 
 // A hardware/system key, by KeyEvent name: BACK, HOME, APP_SWITCH, VOLUME_UP...
 data class KeyEventStep(
 	val key: String,
 	override val delayBefore: Long,
-	override val name: String = ""
+	override val name: String = "",
+	override val enabled: Boolean = true
 ) : RuntimeStep()
 
 data class LaunchAppStep(
 	val packageName: String,
 	override val delayBefore: Long,
-	override val name: String = ""
+	override val name: String = "",
+	override val enabled: Boolean = true
 ) : RuntimeStep()
 
 data class ShellStep(
 	val command: String,
 	override val delayBefore: Long,
-	override val name: String = ""
+	override val name: String = "",
+	override val enabled: Boolean = true
 ) : RuntimeStep()
 
 /**
@@ -144,13 +160,15 @@ data class ShellStep(
 data class ToastStep(
 	val message: String,
 	override val delayBefore: Long,
-	override val name: String = ""
+	override val name: String = "",
+	override val enabled: Boolean = true
 ) : RuntimeStep()
 
 /** Does nothing but honour its delayBefore, for a pause between actions. */
 data class WaitStep(
 	override val delayBefore: Long,
-	override val name: String = ""
+	override val name: String = "",
+	override val enabled: Boolean = true
 ) : RuntimeStep()
 
 /**
@@ -160,10 +178,17 @@ data class WaitStep(
  * This is the other kind of note: a heading over the several steps below it, so
  * a long script can be skimmed by what its parts are for rather than by what
  * each touch does. The heading is the [name] -- a comment is nothing else.
+ *
+ * It heads the steps that follow it, as far as the next comment beside it or
+ * the end of whatever holds them both. That section is what the editor folds
+ * away and what switching the comment off skips: the steps in it are left
+ * exactly as they are, so switching it back on restores what was there rather
+ * than what a bulk edit guessed.
  */
 data class CommentStep(
 	override val name: String = "",
-	override val delayBefore: Long = 0
+	override val delayBefore: Long = 0,
+	override val enabled: Boolean = true
 ) : RuntimeStep()
 
 /**
@@ -179,7 +204,8 @@ data class HttpGetStep(
 	val timeoutMs: Long,
 	val intervalMs: Long,
 	override val delayBefore: Long,
-	override val name: String = ""
+	override val name: String = "",
+	override val enabled: Boolean = true
 ) : RuntimeStep()
 
 /**
@@ -194,7 +220,8 @@ data class HttpGetStep(
 data class FocusFieldStep(
 	val variable: String,
 	override val delayBefore: Long,
-	override val name: String = ""
+	override val name: String = "",
+	override val enabled: Boolean = true
 ) : RuntimeStep()
 
 /** Assigns the result of an expression to a variable for the rest of the run. */
@@ -202,7 +229,8 @@ data class SetVariableStep(
 	val variable: String,
 	val expression: String,
 	override val delayBefore: Long,
-	override val name: String = ""
+	override val name: String = "",
+	override val enabled: Boolean = true
 ) : RuntimeStep()
 
 // New ForLoop step. repeatCount <= 0 repeats until stopped or Break.
@@ -210,7 +238,8 @@ data class ForLoopStep(
 	val repeatCount: Int,
 	val steps: List<RuntimeStep>,
 	override val delayBefore: Long,
-	override val name: String = ""
+	override val name: String = "",
+	override val enabled: Boolean = true
 ) : RuntimeStep()
 
 /** One condition and the body that runs when it is the first to hold. */
@@ -220,27 +249,31 @@ data class IfStep(
 	val branches: List<ConditionBranch>,
 	val elseBranch: List<RuntimeStep> = emptyList(),
 	override val delayBefore: Long,
-	override val name: String = ""
+	override val name: String = "",
+	override val enabled: Boolean = true
 ) : RuntimeStep()
 
 data class WhileStep(
 	val condition: String,
 	val steps: List<RuntimeStep>,
 	override val delayBefore: Long,
-	override val name: String = ""
+	override val name: String = "",
+	override val enabled: Boolean = true
 ) : RuntimeStep()
 
 /** Exits the innermost enclosing Repeat or While. */
 data class BreakStep(
 	override val delayBefore: Long = 0,
-	override val name: String = ""
+	override val name: String = "",
+	override val enabled: Boolean = true
 ) : RuntimeStep()
 
 // Random Select step
 data class RandomSelectStep(
 	val steps: List<RuntimeStep>,
 	override val delayBefore: Long,
-	override val name: String = ""
+	override val name: String = "",
+	override val enabled: Boolean = true
 ) : RuntimeStep()
 
 // Anything shorter than this is a tap rather than a drag. Both recorders decide
@@ -288,6 +321,20 @@ fun gestureStep(
 	)
 }
 
+/**
+ * Where the section a [CommentStep] at [from] - 1 heads ends: the next comment
+ * beside it, or the end of the steps it shares a level with.
+ *
+ * Only siblings, because that is all a comment can head -- the steps inside a
+ * block below it belong to the block. The editor draws the same rule over its
+ * flat list, where "beside it" reads as "at the same indent".
+ */
+fun sectionEnd(steps: List<RuntimeStep>, from: Int): Int {
+	var index = from
+	while (index < steps.size && steps[index] !is CommentStep) index++
+	return index
+}
+
 /** At-a-glance description of a recording for the list screen. */
 data class RecordingSummary(val actions: Int, val durationMs: Long, val loops: Int) {
 
@@ -309,7 +356,16 @@ fun summarize(events: List<RuntimeStep>): RecordingSummary {
 	var loops = 0
 
 	fun walk(list: List<RuntimeStep>, repeats: Int) {
-		list.forEach { event ->
+		var index = 0
+		while (index < list.size) {
+			val event = list[index]
+			index++
+			// A step that is switched off costs nothing, and a switched-off
+			// comment costs nothing for the whole section it heads.
+			if (!event.enabled) {
+				if (event is CommentStep) index = sectionEnd(list, index)
+				continue
+			}
 			duration += event.delayBefore * repeats
 			when (event) {
 				is ClickStep -> {
@@ -426,6 +482,9 @@ object RecordingManager {
 		val jsonObj = JSONObject()
 		jsonObj.put("delayBefore", event.delayBefore)
 		jsonObj.put("name", event.name)
+		// Written only when off, so a recording nobody has switched anything in
+		// comes back out of the editor byte for byte as it went in.
+		if (!event.enabled) jsonObj.put("enabled", false)
 
 		when (event) {
 			is ClickStep -> {
@@ -576,6 +635,9 @@ object RecordingManager {
 		val type = obj.optString("type")
 		val delayBefore = obj.optLong("delayBefore", 0L)
 		val name = obj.optString("name", "")
+		// Absent means on, so every recording written before the flag existed
+		// loads with every step switched on.
+		val enabled = obj.optBoolean("enabled", true)
 
 		return when (type) {
 			"click" -> {
@@ -591,7 +653,8 @@ object RecordingManager {
 					touchMajor = obj.optInt("maj", 0),
 					touchMinor = obj.optInt("min", 0),
 					delayBefore = delayBefore,
-					name = name
+					name = name,
+					enabled = enabled
 				)
 			}
 			"drag" -> {
@@ -627,33 +690,37 @@ object RecordingManager {
 					anchor = obj.optString("anchor", ""),
 					anchorText = obj.optString("anchorText", ""),
 					delayBefore = delayBefore,
-					name = name
+					name = name,
+					enabled = enabled
 				)
 			}
 			"text" -> {
 				TextStep(
 					text = obj.optString("text", ""),
 					delayBefore = delayBefore,
-					name = name
+					name = name,
+					enabled = enabled
 				)
 			}
-			"key" -> KeyEventStep(obj.optString("key", "BACK"), delayBefore, name)
-			"launch" -> LaunchAppStep(obj.optString("package", ""), delayBefore, name)
-			"shell" -> ShellStep(obj.optString("command", ""), delayBefore, name)
-			"wait" -> WaitStep(delayBefore, name)
-			"comment" -> CommentStep(name, delayBefore)
-			"toast" -> ToastStep(obj.optString("message", ""), delayBefore, name)
-			"break" -> BreakStep(delayBefore, name)
+			"key" -> KeyEventStep(obj.optString("key", "BACK"), delayBefore, name, enabled)
+			"launch" -> LaunchAppStep(obj.optString("package", ""), delayBefore, name, enabled)
+			"shell" -> ShellStep(obj.optString("command", ""), delayBefore, name, enabled)
+			"wait" -> WaitStep(delayBefore, name, enabled)
+			"comment" -> CommentStep(name, delayBefore, enabled)
+			"toast" -> ToastStep(obj.optString("message", ""), delayBefore, name, enabled)
+			"break" -> BreakStep(delayBefore, name, enabled)
 			"focus_field" -> FocusFieldStep(
 				variable = obj.optString("variable", "field"),
 				delayBefore = delayBefore,
-				name = name
+				name = name,
+				enabled = enabled
 			)
 			"set" -> SetVariableStep(
 				variable = obj.optString("variable", ""),
 				expression = obj.optString("expression", "0"),
 				delayBefore = delayBefore,
-				name = name
+				name = name,
+				enabled = enabled
 			)
 			"http_get" -> HttpGetStep(
 				url = obj.optString("url", ""),
@@ -661,7 +728,8 @@ object RecordingManager {
 				timeoutMs = obj.optLong("timeoutMs", DEFAULT_HTTP_TIMEOUT_MS),
 				intervalMs = obj.optLong("intervalMs", DEFAULT_HTTP_INTERVAL_MS),
 				delayBefore = delayBefore,
-				name = name
+				name = name,
+				enabled = enabled
 			)
 			"if" -> {
 				val branches = mutableListOf<ConditionBranch>()
@@ -677,24 +745,27 @@ object RecordingManager {
 						)
 					}
 				}
-				IfStep(branches, jsonToEvents(obj.optJSONArray("else")), delayBefore, name)
+				IfStep(branches, jsonToEvents(obj.optJSONArray("else")), delayBefore, name, enabled)
 			}
 			"while" -> WhileStep(
 				condition = obj.optString("condition", "false"),
 				steps = jsonToEvents(obj.optJSONArray("events")),
 				delayBefore = delayBefore,
-				name = name
+				name = name,
+				enabled = enabled
 			)
 			"loop" -> ForLoopStep(
 				repeatCount = obj.getInt("count"),
 				steps = jsonToEvents(obj.optJSONArray("events")),
 				delayBefore = delayBefore,
-				name = name
+				name = name,
+				enabled = enabled
 			)
 			"random_select" -> RandomSelectStep(
 				steps = jsonToEvents(obj.optJSONArray("events")),
 				delayBefore = delayBefore,
-				name = name
+				name = name,
+				enabled = enabled
 			)
 			else -> null
 		}
