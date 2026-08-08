@@ -2,6 +2,11 @@
     "globalRandom": 0,
     "events": [
         {
+            "delayBefore": 0,
+            "name": "Start with the email address",
+            "type": "comment"
+        },
+        {
             "delayBefore": 500,
             "name": "1. click the email icon",
             "type": "click",
@@ -72,6 +77,11 @@
             "p": 45,
             "maj": 130,
             "min": 120
+        },
+        {
+            "delayBefore": 0,
+            "name": "Fetch the six digit code and try each one",
+            "type": "comment"
         },
         {
             "delayBefore": 0,
@@ -179,6 +189,11 @@
                     "expression": "i + 1"
                 }
             ]
+        },
+        {
+            "delayBefore": 0,
+            "name": "Fill in the birthday",
+            "type": "comment"
         },
         {
             "delayBefore": 0,
@@ -352,6 +367,11 @@
         },
         {
             "delayBefore": 0,
+            "name": "Type the display name",
+            "type": "comment"
+        },
+        {
+            "delayBefore": 0,
             "name": "12. wait for the name screen",
             "type": "set",
             "variable": "ready",
@@ -411,6 +431,11 @@
         },
         {
             "delayBefore": 0,
+            "name": "Replace the suggested username",
+            "type": "comment"
+        },
+        {
+            "delayBefore": 0,
             "name": "16. wait for the username screen",
             "type": "set",
             "variable": "ready",
@@ -467,6 +492,11 @@
             "p": 45,
             "maj": 130,
             "min": 120
+        },
+        {
+            "delayBefore": 0,
+            "name": "Choose a password",
+            "type": "comment"
         },
         {
             "delayBefore": 0,
@@ -542,6 +572,11 @@
         },
         {
             "delayBefore": 0,
+            "name": "Decline the contacts upload",
+            "type": "comment"
+        },
+        {
+            "delayBefore": 0,
             "name": "25. wait for the find-friends screen",
             "type": "set",
             "variable": "ready",
@@ -562,6 +597,11 @@
         },
         {
             "delayBefore": 0,
+            "name": "Skip the profile picture",
+            "type": "comment"
+        },
+        {
+            "delayBefore": 0,
             "name": "27. wait for the profile-picture screen",
             "type": "set",
             "variable": "ready",
@@ -579,6 +619,11 @@
             "p": 45,
             "maj": 130,
             "min": 120
+        },
+        {
+            "delayBefore": 0,
+            "name": "Pick three interests, then finish",
+            "type": "comment"
         },
         {
             "delayBefore": 0,
