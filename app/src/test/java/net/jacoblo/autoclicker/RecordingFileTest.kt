@@ -79,6 +79,7 @@ class RecordingFileTest {
 		ShellStep("am force-stop com.example.app", delayBefore = 40),
 		ToastStep("attempt {count}", delayBefore = 50),
 		WaitStep(delayBefore = 1000),
+		CommentStep("what the next few steps are for"),
 		WaitCodeStep("codes", maxAgeSeconds = 120, timeoutMs = 90000, delayBefore = 60),
 		FocusFieldStep("field", delayBefore = 70),
 		SetVariableStep("count", "count + 1", delayBefore = 80),

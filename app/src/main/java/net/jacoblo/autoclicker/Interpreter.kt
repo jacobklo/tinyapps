@@ -90,6 +90,9 @@ class Interpreter(
 				is WaitStep -> {
 					// The delay above is the whole action.
 				}
+				is CommentStep -> {
+					// Written for whoever reads the script, not for the phone.
+				}
 				is ToastStep -> backend.toast(context.interpolate(step.message))
 				is SetVariableStep ->
 					context.set(step.variable, context.evaluateOrZero(step.expression))

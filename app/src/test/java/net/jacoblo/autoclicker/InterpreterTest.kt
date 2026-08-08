@@ -444,6 +444,14 @@ class InterpreterTest {
 		)
 	}
 
+	/** Doing nothing is the whole of what a comment is for. */
+	@Test
+	fun aCommentReachesTheDeviceAsNothingAtAll() {
+		play(CommentStep("enter the email address"), tap(0.5f, 0.5f))
+
+		assertEquals(listOf("click 500,1000 50ms"), backend.calls)
+	}
+
 	/** A blank package or command would run something meaningless as root. */
 	@Test
 	fun blankLaunchesAndCommandsAreNotSent() {

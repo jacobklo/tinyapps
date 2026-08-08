@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -106,6 +107,7 @@ private val STEP_GROUPS = listOf(
 	StepGroup(
 		"Logic",
 		listOf(
+			StepOption("Comment") { listOf(CommentStep()) },
 			StepOption("Set variable") { listOf(SetVariableStep("count", "0", 0)) },
 			StepOption("If block") { listOf(IfStartStep("1 == 1"), IfEndStep()) },
 			StepOption("Else if") { listOf(ElseIfStep("1 == 1")) },
@@ -200,6 +202,18 @@ private fun helpFor(step: Step): StepHelp = when (step) {
 		listOf(
 			"field       then While field > 0:  Key DEL,  Set field = field - 1",
 			"chars       any name you like"
+		)
+	)
+
+	is CommentStep -> StepHelp(
+		"A heading for whoever reads the script. It does nothing, waits for " +
+			"nothing and costs nothing at playback. Every step has a Name, " +
+			"which reads as a remark on that one step; put a Comment above a " +
+			"group of them to say what the group as a whole is for.",
+		listOf(
+			"Enter the email address",
+			"Find and type the 6 digit code",
+			"Fill in the birthday wheels"
 		)
 	)
 
@@ -638,8 +652,15 @@ fun StepRow(
 ) {
 	val accent = blockAccent(depth)
 	val screen = remember { ScreenGeometry.current(AppSettings.appContext) }
-	val background =
-		if (dragging) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
+	// A comment is the one row that is not an instruction, so it is drawn as a
+	// band rather than as another line of text: what makes a heading worth
+	// having is being findable without being read.
+	val comment = step is CommentStep
+	val background = when {
+		dragging -> MaterialTheme.colorScheme.surfaceVariant
+		comment -> MaterialTheme.colorScheme.secondaryContainer
+		else -> Color.Transparent
+	}
 
 	Row(
 		modifier = modifier
@@ -669,7 +690,12 @@ fun StepRow(
 				Text(
 					text = describeStep(step, screen),
 					style = MaterialTheme.typography.bodyMedium,
-					color = if (step.isBlockMarker()) accent else MaterialTheme.colorScheme.onSurface,
+					fontStyle = if (comment) FontStyle.Italic else null,
+					color = when {
+						comment -> MaterialTheme.colorScheme.onSecondaryContainer
+						step.isBlockMarker() -> accent
+						else -> MaterialTheme.colorScheme.onSurface
+					},
 					modifier = Modifier.weight(1f)
 				)
 				IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
@@ -732,9 +758,10 @@ private fun StepFields(step: Step, onUpdate: (Step) -> Unit) {
 		horizontalArrangement = Arrangement.spacedBy(8.dp),
 		verticalArrangement = Arrangement.spacedBy(4.dp)
 	) {
-		// End markers are discarded when the hierarchy is rebuilt, so a delay
-		// on them would go nowhere.
-		if (!step.isBlockEnd()) {
+		// End markers are discarded when the hierarchy is rebuilt, so a delay on
+		// them would go nowhere; a comment does nothing at all, so a wait on one
+		// would be a pause with nothing to show for it.
+		if (!step.isBlockEnd() && step !is CommentStep) {
 			NumberField(
 				value = step.delayBefore,
 				onValueChange = { onUpdate(step.withDelay(it)) },
@@ -984,11 +1011,15 @@ private fun StepFields(step: Step, onUpdate: (Step) -> Unit) {
 			else -> {}
 		}
 
+		// On every other step this is a remark alongside the fields that do the
+		// work. On a Comment it is the entire step, so it says so and is given
+		// the room a heading needs.
+		val comment = step is CommentStep
 		OutlinedTextField(
 			value = step.name,
 			onValueChange = { onUpdate(step.withName(it)) },
-			label = { Text("Name") },
-			modifier = Modifier.width(180.dp),
+			label = { Text(if (comment) "Comment" else "Name") },
+			modifier = Modifier.width(if (comment) 280.dp else 180.dp),
 			singleLine = true
 		)
 	}
@@ -1248,6 +1279,7 @@ private fun describeStep(step: Step, screen: ScreenGeometry): String {
 		is LaunchAppStep -> "Launch ${step.packageName.ifBlank { "(no package)" }}"
 		is ShellStep -> "Shell: ${step.command.ifBlank { "(empty)" }}"
 		is WaitStep -> "Wait"
+		is CommentStep -> "// ${step.name.ifBlank { "comment" }}"
 		is ToastStep -> "Toast: ${step.message.ifBlank { "(empty)" }}"
 		is SetVariableStep -> "Set ${step.variable} = ${step.expression}"
 		is FocusFieldStep -> "Focus field  length -> ${step.variable}"
@@ -1269,7 +1301,9 @@ private fun describeStep(step: Step, screen: ScreenGeometry): String {
 		is IfStep -> "If ${step.branches.firstOrNull()?.condition ?: ""}"
 		is WhileStep -> "While ${step.condition}"
 	}
-	val name = if (step.name.isBlank()) "" else "  -  ${step.name}"
+	// A comment is nothing but its name, which the label above already is.
+	val name =
+		if (step.name.isBlank() || step is CommentStep) "" else "  -  ${step.name}"
 	return "$wait$label$name"
 }
 
@@ -1285,6 +1319,7 @@ fun Step.withDelay(delay: Long): Step = when (this) {
 	is LaunchAppStep -> copy(delayBefore = delay)
 	is ShellStep -> copy(delayBefore = delay)
 	is WaitStep -> copy(delayBefore = delay)
+	is CommentStep -> copy(delayBefore = delay)
 	is ToastStep -> copy(delayBefore = delay)
 	is SetVariableStep -> copy(delayBefore = delay)
 	is WaitCodeStep -> copy(delayBefore = delay)
@@ -1314,6 +1349,7 @@ fun Step.withName(newName: String): Step = when (this) {
 	is LaunchAppStep -> copy(name = newName)
 	is ShellStep -> copy(name = newName)
 	is WaitStep -> copy(name = newName)
+	is CommentStep -> copy(name = newName)
 	is ToastStep -> copy(name = newName)
 	is SetVariableStep -> copy(name = newName)
 	is WaitCodeStep -> copy(name = newName)

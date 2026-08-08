@@ -155,6 +155,19 @@ data class WaitStep(
 ) : RuntimeStep()
 
 /**
+ * A note to whoever reads the script. Runs nothing and waits for nothing.
+ *
+ * Every step already carries a [name], which reads as a remark on that one step.
+ * This is the other kind of note: a heading over the several steps below it, so
+ * a long script can be skimmed by what its parts are for rather than by what
+ * each touch does. The heading is the [name] -- a comment is nothing else.
+ */
+data class CommentStep(
+	override val name: String = "",
+	override val delayBefore: Long = 0
+) : RuntimeStep()
+
+/**
  * Waits for six-digit codes from the gmail-six-digit service and stores them,
  * ranked best-first, as a list in [variable].
  *
@@ -340,9 +353,10 @@ fun summarize(events: List<RuntimeStep>): RecordingSummary {
 					// both the action count and the estimate.
 					event.branches.firstOrNull()?.let { walk(it.steps, repeats) }
 				}
-				// Neither is an action, and the delay above is already counted.
+				// None is an action, and the delay above is already counted.
 				is WaitStep -> {}
 				is BreakStep -> {}
+				is CommentStep -> {}
 			}
 		}
 	}
@@ -459,6 +473,10 @@ object RecordingManager {
 			}
 			is WaitStep -> {
 				jsonObj.put("type", "wait")
+			}
+			// The text rides in "name", which every step already writes.
+			is CommentStep -> {
+				jsonObj.put("type", "comment")
 			}
 			is ToastStep -> {
 				jsonObj.put("type", "toast")
@@ -623,6 +641,7 @@ object RecordingManager {
 			"launch" -> LaunchAppStep(obj.optString("package", ""), delayBefore, name)
 			"shell" -> ShellStep(obj.optString("command", ""), delayBefore, name)
 			"wait" -> WaitStep(delayBefore, name)
+			"comment" -> CommentStep(name, delayBefore)
 			"toast" -> ToastStep(obj.optString("message", ""), delayBefore, name)
 			"break" -> BreakStep(delayBefore, name)
 			"focus_field" -> FocusFieldStep(
