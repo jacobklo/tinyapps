@@ -99,7 +99,7 @@ class Interpreter(
 
 				is FocusFieldStep -> runFocusField(step)
 
-				is WaitCodeStep -> runWaitCode(step)
+				is HttpGetStep -> runHttpGet(step)
 
 				is BreakStep -> throw BreakSignal()
 
@@ -320,21 +320,20 @@ class Interpreter(
 	}
 
 	/**
-	 * Leaves the variable holding an empty list when no code arrives, so a
-	 * script can branch on count() instead of typing whatever was there before.
+	 * Stores the raw response body as a string in the variable, or an empty
+	 * string when nothing arrives, so a script can branch on it (or jq() it)
+	 * instead of acting on a previous run's value.
 	 */
-	private suspend fun runWaitCode(step: WaitCodeStep) {
-		val variable = step.variable.ifBlank { "codes" }
-		when (val result = finder.awaitCodes(step.maxAgeSeconds, step.timeoutMs)) {
-			is CodeServer.Result.Found -> {
-				context.set(variable, Value.Arr(result.codes.map { Value.Str(it) }))
-				Log.d(TAG, "stored ${result.codes.size} code(s) in '$variable'")
-			}
-			is CodeServer.Result.Failed -> {
-				context.set(variable, Value.Arr(emptyList()))
-				Log.w(TAG, "no codes: ${result.reason}")
-				reportError(result.reason)
-			}
+	private suspend fun runHttpGet(step: HttpGetStep) {
+		val variable = step.variable.ifBlank { "response" }
+		val body = finder.httpGet(step.url, step.timeoutMs, step.intervalMs)
+		if (body != null) {
+			context.set(variable, Value.Str(body))
+			Log.d(TAG, "stored ${body.length} char(s) in '$variable'")
+		} else {
+			context.set(variable, Value.Str(""))
+			Log.w(TAG, "no response from ${step.url}")
+			reportError("no response from the server")
 		}
 	}
 

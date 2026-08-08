@@ -49,7 +49,6 @@ fun SettingsScreen(onBack: () -> Unit) {
 	var requesting by remember { mutableStateOf(false) }
 	var evdevReady by remember { mutableStateOf(GestureExecutor.evdevReady) }
 	var jitter by remember { mutableStateOf(AppSettings.jitter) }
-	var codeServer by remember { mutableStateOf(AppSettings.codeServer) }
 
 	fun updateJitter(next: JitterConfig) {
 		jitter = next
@@ -133,31 +132,6 @@ fun SettingsScreen(onBack: () -> Unit) {
 					modifier = Modifier.padding(horizontal = 16.dp)
 				)
 			}
-
-			HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-			Text(
-				"Code server",
-				style = MaterialTheme.typography.titleMedium,
-				modifier = Modifier.padding(horizontal = 16.dp)
-			)
-			Text(
-				"Address of the gmail-six-digit service on your network, used by the Wait for code step. Host and port is enough; the rest of the URL is added.",
-				style = MaterialTheme.typography.bodySmall,
-				modifier = Modifier.padding(horizontal = 16.dp)
-			)
-			OutlinedTextField(
-				value = codeServer,
-				onValueChange = {
-					codeServer = it
-					AppSettings.codeServer = it
-				},
-				label = { Text("Host:port") },
-				placeholder = { Text("192.168.1.20:5553") },
-				singleLine = true,
-				modifier = Modifier
-					.fillMaxWidth()
-					.padding(horizontal = 16.dp, vertical = 8.dp)
-			)
 
 			if (useRoot && evdevReady) {
 				HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))

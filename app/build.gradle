@@ -69,6 +69,7 @@ dependencies {
     implementation libs.androidx.compose.material.icons.extended
     implementation libs.reorderable
     implementation libs.mlkit.text.recognition
+    implementation libs.jackson.jq
     testImplementation libs.junit
     testImplementation libs.json
     androidTestImplementation libs.androidx.junit

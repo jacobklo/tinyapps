@@ -49,7 +49,7 @@ private class FakeFinder : Finder {
 	var area: AreaSearch = AreaSearch.Missing("no saved area")
 	var text: TextSearch = TextSearch.Missing("not on screen")
 	var field: FieldSearch = FieldSearch.Missing("no text field on screen")
-	var codes: CodeServer.Result = CodeServer.Result.Failed("no code arrived in time")
+	var httpResponse: String? = null
 
 	/** An answer per look, for hiding a phrase and then letting it appear. */
 	var textPerLook: List<TextSearch> = emptyList()
@@ -59,7 +59,7 @@ private class FakeFinder : Finder {
 
 	override suspend fun findArea(name: String) = area
 	override suspend fun findField() = field
-	override suspend fun awaitCodes(maxAgeSeconds: Long, timeoutMs: Long) = codes
+	override suspend fun httpGet(url: String, timeoutMs: Long, intervalMs: Long) = httpResponse
 
 	/** The looks taken, in the order asked for, so a test can see how it escalated. */
 	val textThoroughness = mutableListOf<Boolean>()
@@ -409,20 +409,24 @@ class InterpreterTest {
 	}
 
 	@Test
-	fun waitForCodeStoresWhatArrived() {
-		finder.codes = CodeServer.Result.Found(listOf("111111", "222222"))
+	fun httpGetStoresTheBody() {
+		finder.httpResponse = """[{"code":"111111"},{"code":"222222"}]"""
 
-		play(WaitCodeStep("codes", maxAgeSeconds = 120, timeoutMs = 1, delayBefore = 0))
+		play(HttpGetStep(url = "http://x/codes", variable = "response", timeoutMs = 1, intervalMs = 1, delayBefore = 0))
 
-		assertEquals(2L, runBlocking { context.evaluateOrZero("count(codes)") }.asNum())
+		assertEquals(finder.httpResponse, runBlocking { context.evaluateOrZero("response") }.asText())
+		// The jq() builtin turns the stored body into a usable list.
+		assertEquals(2L, runBlocking { context.evaluateOrZero("count(jq(response, \"[.[].code]\"))") }.asNum())
 	}
 
-	/** An empty list, so a script can branch on count() rather than retype. */
+	/** Empty string, so a script can branch on it rather than act on a previous value. */
 	@Test
-	fun waitForCodeStoresAnEmptyListWhenNoneArrive() {
-		val run = play(WaitCodeStep("codes", maxAgeSeconds = 120, timeoutMs = 1, delayBefore = 0))
+	fun httpGetStoresEmptyWhenNothingArrives() {
+		finder.httpResponse = null
 
-		assertEquals(0L, runBlocking { context.evaluateOrZero("count(codes)") }.asNum())
+		val run = play(HttpGetStep(url = "http://x/codes", variable = "response", timeoutMs = 1, intervalMs = 1, delayBefore = 0))
+
+		assertEquals("", runBlocking { context.evaluateOrZero("response") }.asText())
 		assertEquals(1, run.degraded)
 	}
 

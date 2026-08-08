@@ -45,3 +45,13 @@
 
 # Repackage all classes into a single package (flattens hierarchy strings)
 -repackageclasses 'a'
+
+# --- jackson-jq + jackson-databind ---
+# jq builtins are discovered via ServiceLoader and databind binds via reflection,
+# so both must survive shrinking/renaming. Verify a jq() call on a release build.
+-keep class net.thisptr.jackson.jq.** { *; }
+-keep class com.fasterxml.jackson.databind.** { *; }
+-keep class com.fasterxml.jackson.core.** { *; }
+-keepattributes Signature,*Annotation*,EnclosingMethod,InnerClasses
+-dontwarn com.fasterxml.jackson.**
+-dontwarn net.thisptr.jackson.jq.**

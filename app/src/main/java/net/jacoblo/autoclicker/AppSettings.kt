@@ -59,19 +59,6 @@ object AppSettings {
 		}
 
 	/**
-	 * Where the gmail-six-digit service is reachable, as host:port or a full
-	 * URL. Kept here rather than on each step because there is one service on
-	 * the network and repeating its address in every script only creates places
-	 * for it to go stale.
-	 */
-	var codeServer: String
-		get() = values.optString("codeServer", "")
-		set(value) {
-			values.put("codeServer", value.trim())
-			save()
-		}
-
-	/**
 	 * Loopback port the control server binds, for driving playback from another
 	 * app on the device. Read once at service start, so a change needs the
 	 * bubble restarted.

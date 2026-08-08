@@ -18,13 +18,12 @@ private const val TAG = "autoclicker.recording"
 // Data holder for recording and its metadata
 data class RecordingData(val events: List<RuntimeStep>, val globalRandom: Int = 0)
 
-// Two minutes covers a code that was requested moments ago while still ruling
-// out the one from the previous login.
-const val DEFAULT_CODE_MAX_AGE_S = 120L
+// Long enough for an async endpoint (e.g. a code service polling Gmail every
+// ~50s) to have something to hand back before the poll gives up.
+const val DEFAULT_HTTP_TIMEOUT_MS = 90000L
 
-// The service polls Gmail every 50 seconds, so anything shorter than that can
-// time out before a code that has already arrived is even visible.
-const val DEFAULT_CODE_TIMEOUT_MS = 90000L
+// One poll every couple of seconds: tighter only wastes LAN round-trips.
+const val DEFAULT_HTTP_INTERVAL_MS = 2000L
 
 /**
  * Anything the editor can hold in its list of rows.
@@ -168,17 +167,17 @@ data class CommentStep(
 ) : RuntimeStep()
 
 /**
- * Waits for six-digit codes from the gmail-six-digit service and stores them,
- * ranked best-first, as a list in [variable].
- *
- * [maxAgeSeconds] is what makes this a wait rather than a read: the service
- * keeps ten minutes of history, so without it the step would hand back the code
- * from the previous login the instant it was asked.
+ * Polls [url] with GET every [intervalMs] until it answers 2xx or [timeoutMs]
+ * elapses, then stores the raw response body as a string in [variable]. Pair it
+ * with jq() in a Set step to pull values out. An endpoint with nothing yet
+ * should answer non-2xx (e.g. 404) so the poll keeps waiting rather than storing
+ * an empty result.
  */
-data class WaitCodeStep(
+data class HttpGetStep(
+	val url: String,
 	val variable: String,
-	val maxAgeSeconds: Long,
 	val timeoutMs: Long,
+	val intervalMs: Long,
 	override val delayBefore: Long,
 	override val name: String = ""
 ) : RuntimeStep()
@@ -328,9 +327,9 @@ fun summarize(events: List<RuntimeStep>): RecordingSummary {
 				is ShellStep -> actions++
 				is SetVariableStep -> actions++
 				is FocusFieldStep -> actions++
-				is WaitCodeStep -> {
+				is HttpGetStep -> {
 					actions++
-					// Its real cost is however long the code takes to arrive;
+					// Its real cost is however long the endpoint takes to answer;
 					// the timeout is the only bound the editor can show.
 					duration += event.timeoutMs * repeats
 				}
@@ -491,11 +490,12 @@ object RecordingManager {
 				jsonObj.put("variable", event.variable)
 				jsonObj.put("expression", event.expression)
 			}
-			is WaitCodeStep -> {
-				jsonObj.put("type", "wait_code")
+			is HttpGetStep -> {
+				jsonObj.put("type", "http_get")
+				jsonObj.put("url", event.url)
 				jsonObj.put("variable", event.variable)
-				jsonObj.put("maxAgeSeconds", event.maxAgeSeconds)
 				jsonObj.put("timeoutMs", event.timeoutMs)
+				jsonObj.put("intervalMs", event.intervalMs)
 			}
 			is BreakStep -> {
 				jsonObj.put("type", "break")
@@ -655,10 +655,11 @@ object RecordingManager {
 				delayBefore = delayBefore,
 				name = name
 			)
-			"wait_code" -> WaitCodeStep(
-				variable = obj.optString("variable", "codes"),
-				maxAgeSeconds = obj.optLong("maxAgeSeconds", DEFAULT_CODE_MAX_AGE_S),
-				timeoutMs = obj.optLong("timeoutMs", DEFAULT_CODE_TIMEOUT_MS),
+			"http_get" -> HttpGetStep(
+				url = obj.optString("url", ""),
+				variable = obj.optString("variable", "response"),
+				timeoutMs = obj.optLong("timeoutMs", DEFAULT_HTTP_TIMEOUT_MS),
+				intervalMs = obj.optLong("intervalMs", DEFAULT_HTTP_INTERVAL_MS),
 				delayBefore = delayBefore,
 				name = name
 			)

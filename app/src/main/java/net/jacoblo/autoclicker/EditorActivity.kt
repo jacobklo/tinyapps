@@ -92,12 +92,13 @@ private val STEP_GROUPS = listOf(
 		"Waiting",
 		listOf(
 			StepOption("Wait") { listOf(WaitStep(delayBefore = 1000)) },
-			StepOption("Wait for code") {
+			StepOption("HTTP GET") {
 				listOf(
-					WaitCodeStep(
-						variable = "codes",
-						maxAgeSeconds = DEFAULT_CODE_MAX_AGE_S,
-						timeoutMs = DEFAULT_CODE_TIMEOUT_MS,
+					HttpGetStep(
+						url = "",
+						variable = "response",
+						timeoutMs = DEFAULT_HTTP_TIMEOUT_MS,
+						intervalMs = DEFAULT_HTTP_INTERVAL_MS,
 						delayBefore = 0
 					)
 				)
@@ -251,18 +252,17 @@ private fun helpFor(step: Step): StepHelp = when (step) {
 		)
 	)
 
-	is WaitCodeStep -> StepHelp(
-		"Waits for six-digit verification codes from the gmail-six-digit " +
-			"service and stores them in the variable as a list, best guess " +
-			"first. Max age s is what makes it a wait rather than a read: the " +
-			"service keeps ten minutes of history, so without it you would get " +
-			"the code from your last login straight away. Set the service " +
-			"address in Settings. If nothing arrives before the timeout the " +
-			"variable is left empty and an error is shown.",
+	is HttpGetStep -> StepHelp(
+		"Polls a URL with GET every interval until it answers 2xx (or the " +
+			"timeout), then stores the raw response body as text in the variable. " +
+			"An endpoint with nothing yet should answer non-2xx (e.g. 404) so the " +
+			"poll keeps waiting. Pull values out with jq() in a Set step. If " +
+			"nothing arrives before the timeout the variable is left empty and an " +
+			"error is shown.",
 		listOf(
-			"{codes[0]}                          in a Type text step, the best code",
-			"count(codes)                        how many arrived",
-			"While i < count(codes)              try each in turn"
+			"set codes = jq(response, \"[.[].code]\")   extract a field into a list",
+			"set token = jq(response, \".token\")         a single value",
+			"While i < count(codes)                     then use it"
 		)
 	)
 
@@ -967,23 +967,29 @@ private fun StepFields(step: Step, onUpdate: (Step) -> Unit) {
 					width = 140.dp
 				)
 			}
-			is WaitCodeStep -> {
+			is HttpGetStep -> {
+				TextFieldEntry(
+					value = step.url,
+					onValueChange = { onUpdate(step.copy(url = it)) },
+					label = "URL",
+					width = 260.dp
+				)
 				TextFieldEntry(
 					value = step.variable,
 					onValueChange = { onUpdate(step.copy(variable = it)) },
-					label = "Variable",
+					label = "Into",
 					width = 140.dp
-				)
-				NumberField(
-					value = step.maxAgeSeconds,
-					onValueChange = { onUpdate(step.copy(maxAgeSeconds = it)) },
-					label = "Max age s",
-					modifier = Modifier.width(120.dp)
 				)
 				NumberField(
 					value = step.timeoutMs,
 					onValueChange = { onUpdate(step.copy(timeoutMs = it)) },
 					label = "Timeout ms",
+					modifier = Modifier.width(120.dp)
+				)
+				NumberField(
+					value = step.intervalMs,
+					onValueChange = { onUpdate(step.copy(intervalMs = it)) },
+					label = "Every ms",
 					modifier = Modifier.width(120.dp)
 				)
 			}
@@ -1283,8 +1289,8 @@ private fun describeStep(step: Step, screen: ScreenGeometry): String {
 		is ToastStep -> "Toast: ${step.message.ifBlank { "(empty)" }}"
 		is SetVariableStep -> "Set ${step.variable} = ${step.expression}"
 		is FocusFieldStep -> "Focus field  length -> ${step.variable}"
-		is WaitCodeStep ->
-			"Wait for code -> ${step.variable}  max age ${step.maxAgeSeconds}s"
+		is HttpGetStep ->
+			"GET ${step.url.ifBlank { "(no url)" }} -> ${step.variable}"
 		is BreakStep -> "Break"
 		is LoopStartStep -> repeatLabel(step.repeatCount)
 		is LoopEndStep -> "End repeat"
@@ -1322,7 +1328,7 @@ fun Step.withDelay(delay: Long): Step = when (this) {
 	is CommentStep -> copy(delayBefore = delay)
 	is ToastStep -> copy(delayBefore = delay)
 	is SetVariableStep -> copy(delayBefore = delay)
-	is WaitCodeStep -> copy(delayBefore = delay)
+	is HttpGetStep -> copy(delayBefore = delay)
 	is FocusFieldStep -> copy(delayBefore = delay)
 	is BreakStep -> copy(delayBefore = delay)
 	is ForLoopStep -> copy(delayBefore = delay)
@@ -1352,7 +1358,7 @@ fun Step.withName(newName: String): Step = when (this) {
 	is CommentStep -> copy(name = newName)
 	is ToastStep -> copy(name = newName)
 	is SetVariableStep -> copy(name = newName)
-	is WaitCodeStep -> copy(name = newName)
+	is HttpGetStep -> copy(name = newName)
 	is FocusFieldStep -> copy(name = newName)
 	is BreakStep -> copy(name = newName)
 	is ForLoopStep -> copy(name = newName)

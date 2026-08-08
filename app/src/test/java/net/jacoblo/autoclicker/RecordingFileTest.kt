@@ -80,7 +80,7 @@ class RecordingFileTest {
 		ToastStep("attempt {count}", delayBefore = 50),
 		WaitStep(delayBefore = 1000),
 		CommentStep("what the next few steps are for"),
-		WaitCodeStep("codes", maxAgeSeconds = 120, timeoutMs = 90000, delayBefore = 60),
+		HttpGetStep(url = "http://192.168.2.2:5553/codes", variable = "response", timeoutMs = 90000, intervalMs = 2000, delayBefore = 60),
 		FocusFieldStep("field", delayBefore = 70),
 		SetVariableStep("count", "count + 1", delayBefore = 80),
 		ForLoopStep(

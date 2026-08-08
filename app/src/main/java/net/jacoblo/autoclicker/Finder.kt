@@ -25,7 +25,8 @@ interface Finder {
 
 	suspend fun findField(): FieldSearch
 
-	suspend fun awaitCodes(maxAgeSeconds: Long, timeoutMs: Long): CodeServer.Result
+	/** Polls [url] until it answers 2xx or [timeoutMs] elapses; returns the body, or null. */
+	suspend fun httpGet(url: String, timeoutMs: Long, intervalMs: Long): String?
 }
 
 /** Each call is blocking, so each is moved off the caller's thread here. */
@@ -40,6 +41,6 @@ object DeviceFinder : Finder {
 	override suspend fun findField(): FieldSearch =
 		withContext(Dispatchers.IO) { ViewHierarchy.findField() }
 
-	override suspend fun awaitCodes(maxAgeSeconds: Long, timeoutMs: Long): CodeServer.Result =
-		withContext(Dispatchers.IO) { CodeServer.waitForCodes(maxAgeSeconds, timeoutMs) }
+	override suspend fun httpGet(url: String, timeoutMs: Long, intervalMs: Long): String? =
+		withContext(Dispatchers.IO) { Http.pollGet(url, timeoutMs, intervalMs) }
 }

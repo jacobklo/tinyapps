@@ -71,6 +71,13 @@ class ScriptContext : EvalContext {
 			Value.Bool(ScreenText.waitFor(phrase, timeout, matchCase))
 		}
 
+		// jq(rawJson, filter) -- query JSON into Num/Str/Bool/Arr. Pure: the data is
+		// only transformed, never executed. Keep the filter a literal, never built
+		// from the data.
+		"jq" -> withContext(Dispatchers.Default) {
+			Jq.run(args.getOrNull(0)?.asText().orEmpty(), args.getOrNull(1)?.asText().orEmpty())
+		}
+
 		else -> throw ExpressionException("unknown function '$name'")
 	}
 
