@@ -93,10 +93,18 @@
         {
             "delayBefore": 0,
             "name": "7. wait up to a minute for the codes",
-            "type": "wait_code",
+            "type": "http_get",
+            "url": "http://192.168.2.2:5553/codes",
+            "variable": "raw",
+            "timeoutMs": 60000,
+            "intervalMs": 2000
+        },
+        {
+            "delayBefore": 0,
+            "name": "  keep the ones under two minutes old, best-first",
+            "type": "set",
             "variable": "codes",
-            "maxAgeSeconds": 120,
-            "timeoutMs": 60000
+            "expression": "jq(raw, '[.[] | select(.age_seconds <= 120) | .code]')"
         },
         {
             "delayBefore": 0,

@@ -21,12 +21,12 @@ Anything that reads the screen -- image anchors, text anchors, `Focus field`, an
 
 ## How it fits together
 
-- **`Recording.kt`** -- the sixteen step types, the JSON codec, and the tap-versus-drag rule both recorders share.
+- **`Recording.kt`** -- the seventeen step types, the JSON codec, and the tap-versus-drag rule both recorders share.
 - **`Blocks.kt`** -- the ten editor-only block markers, and `flatten`/`buildHierarchy`, which convert between a block as a tree node and a block as a start/end pair in the editor's flat list.
 - **`Interpreter.kt`** -- runs a list of steps. Takes a `Backend` and a `Finder`, which is what makes it testable off a phone.
 - **`Backend.kt`** / **`Finder.kt`** -- what a step does to the device, and what it can ask about it. `RootBackend`, `AccessibilityBackend`, `DeviceFinder`.
 - **`GestureExecutor.kt`** -- owns a playback: the job, the stop, the wake lock, the observable playing flag, and evdev setup.
-- **`Expression.kt`** / **`ScriptContext.kt`** -- the small language behind conditions, `Set variable`, and the `{braces}` in typed text and toasts. Built-ins: `contains`, `count`, `random`, `image`, `waitImage`, `textAppear`, `waitTextAppear`.
+- **`Expression.kt`** / **`ScriptContext.kt`** -- the small language behind conditions, `Set variable`, and the `{braces}` in typed text and toasts. Built-ins: `contains`, `count`, `random`, `image`, `waitImage`, `textAppear`, `waitTextAppear`, `jq`.
 - **Seeing the screen** -- `ScreenCapture` (raw `screencap`), `TemplateMatcher` (finds a saved area), `ScreenText` (ML Kit OCR, bundled, never leaves the device), `ViewHierarchy` (`uiautomator dump`).
 - **Drivers** -- `Bubble` (the floating overlay), `TriggerRunner` (app opened/closed, screen on/off, unlocked, notification), `ControlServer` (another app).
 - **UI** -- `MainActivity` (recordings), `EditorActivity`, `ScreenshotsActivity`, `TriggersActivity`, `SettingsActivity`, all Compose.
@@ -39,7 +39,7 @@ Everything the app owns is under `/sdcard/autoclicker/`, so a script, the images
 
 ```text
 /sdcard/autoclicker/
--settings.json                 # useRoot, code server address, control port, jitter
+-settings.json                 # useRoot, control port, jitter
 -globals.json                  # variables a run starts from
 -triggers.json                 # what fires which recording
 -recordings/
@@ -50,7 +50,7 @@ Everything the app owns is under `/sdcard/autoclicker/`, so a script, the images
 --<name>.png                   # the saved area itself
 ```
 
-A recording is `{"globalRandom": N, "events": [...]}`, and each event carries `delayBefore`, `name`, and a `type` from: `click`, `drag`, `text`, `key`, `launch`, `shell`, `wait`, `toast`, `focus_field`, `set`, `wait_code`, `break`, `if`, `while`, `loop`, `random_select`. An unknown type is skipped rather than failing the load, so a file from a newer version still mostly runs.
+A recording is `{"globalRandom": N, "events": [...]}`, and each event carries `delayBefore`, `name`, and a `type` from: `click`, `drag`, `text`, `key`, `launch`, `shell`, `wait`, `comment`, `toast`, `focus_field`, `set`, `http_get`, `break`, `if`, `while`, `loop`, `random_select`. An unknown type is skipped rather than failing the load, so a file from a newer version still mostly runs -- but a file from an *older* one loses those steps silently, which is worth checking after a step type is renamed.
 
 Coordinates are fractions of the screen when absolute, so a script survives a different display. When a step is anchored to a saved area or a phrase, they are **pixels** from wherever that was found -- a saved area only matches at the resolution it was captured at, so a fraction of some other screen would be wrong exactly when the anchor was right.
 
@@ -69,7 +69,16 @@ Commands: `status`, `play`, `stop`, `vars_list`, `vars_set`, `vars_delete`, `var
 
 ## Depends on
 
-`gmail-six-digit` on the LAN, for the `Wait for code` step only. Set its address in Settings; the app polls `GET /codes` and filters on the age the service reports, so it cannot type the code from a previous login. Plain HTTP to a LAN address, which is why `usesCleartextTraffic` is set.
+Nothing, in the app. `http_get` takes a URL, so what a recording talks to is the recording's business rather than a build-time dependency. Plain HTTP to a LAN address is expected, which is why `usesCleartextTraffic` is set.
+
+The two shipped recordings do point at one thing: `gmail-six-digit` on the LAN, for the six-digit verification code. It serves `GET /codes` (real, from Gmail) and `GET /demo/codes` (generated, same shape), both a JSON array ranked best-first with a `code` and an `age_seconds` per entry, and both **404 with an empty body when there is nothing** -- which is what makes `http_get` usable against it, since a non-2xx reply keeps the poll waiting instead of storing a miss. Filtering out a code left over from a previous login is now the script's job rather than the step's:
+
+```json
+{"type": "http_get", "url": "http://host:5553/codes", "variable": "raw", "timeoutMs": 60000, "intervalMs": 2000}
+{"type": "set", "variable": "codes", "expression": "jq(raw, '[.[] | select(.age_seconds <= 120) | .code]')"}
+```
+
+Single-quote the jq filter: the expression lexer takes either quote, and `'` avoids escaping every `"` inside the JSON. Note this polls until the service answers at all, not until a *fresh* code exists -- if it replies 200 with nothing but stale entries, the filter yields an empty list and the loop over `codes` does nothing.
 
 ## Building
 
