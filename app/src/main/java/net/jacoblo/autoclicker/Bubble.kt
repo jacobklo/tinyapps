@@ -202,8 +202,11 @@ class Bubble(private val context: Context) {
 			PixelFormat.TRANSLUCENT
 		).apply {
 			gravity = Gravity.TOP or Gravity.START
-			x = 0
-			y = 100
+			// Where the bubble is dragged to in practice: clear of the left edge
+			// so the record button is not under the thumb, and high enough to sit
+			// beside the status bar rather than over the screen's first content.
+			x = 322
+			y = 36
 		}
 
 		bubbleView?.setOnTouchListener(object : View.OnTouchListener {
