@@ -18,7 +18,10 @@ class AnkiPaths(val root: File) {
 	val views: File get() = File(root, "views.json")
 	val dump: File get() = File(root, "dump.json")
 
-	/** Creates the root directory if absent. Safe to call repeatedly. */
+	/**
+	 * Creates the root directory if absent. Safe to call repeatedly.
+	 * A creation failure is not reported here; the subsequent write throws.
+	 */
 	fun ensureRoot() {
 		if (!root.exists()) root.mkdirs()
 	}

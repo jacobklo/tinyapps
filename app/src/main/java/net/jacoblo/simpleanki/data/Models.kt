@@ -1,4 +1,4 @@
-/**
+/*
  * Shared data types for decks, history, settings, and table views.
  *
  * Free of Android imports on purpose so JVM tests can build and assert on these
@@ -44,6 +44,7 @@ data class ColumnSpec(
 	val frozen: Boolean = false,
 	val format: CellFormat? = null,
 	val computed: ComputedSpec? = null,
+	val formula: String? = null,
 	val formulaError: String? = null
 )
 
