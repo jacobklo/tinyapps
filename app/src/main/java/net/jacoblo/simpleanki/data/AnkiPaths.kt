@@ -19,6 +19,16 @@ class AnkiPaths(val root: File) {
 	val dump: File get() = File(root, "dump.json")
 
 	/**
+	 * The retired stats.json - READ ONLY, and read at most once per install.
+	 *
+	 * The file is dead except for one key, "statsUpdateCount", which holds the only
+	 * surviving copy of the user's lifetime review count. SettingsRepository seeds
+	 * settings.json from it when settings.json is first created and never looks again.
+	 * Nothing writes here; do not add a writer.
+	 */
+	val legacyStats: File get() = File(root, "stats.json")
+
+	/**
 	 * Creates the root directory if absent. Safe to call repeatedly.
 	 * A creation failure is not reported here; the subsequent write throws.
 	 */

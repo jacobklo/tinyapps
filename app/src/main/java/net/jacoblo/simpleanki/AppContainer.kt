@@ -5,6 +5,8 @@ import android.os.Environment
 import net.jacoblo.simpleanki.data.AnkiPaths
 import net.jacoblo.simpleanki.data.DeckRepository
 import net.jacoblo.simpleanki.data.HistoryRepository
+import net.jacoblo.simpleanki.data.Settings
+import net.jacoblo.simpleanki.data.SettingsRepository
 
 /**
  * Hand-rolled dependency graph, constructed once in MainActivity.onCreate.
@@ -19,8 +21,18 @@ class AppContainer(
 ) {
 	val deckRepository = DeckRepository(paths)
 	val historyRepository = HistoryRepository(paths)
-	// Task 8 adds: settingsRepository, viewsRepository, and a loaded `settings`.
+	val settingsRepository = SettingsRepository(paths)
+	// Task 8 adds: viewsRepository.
 	// Task 14 adds: clickPlayer, selected on `testMode`.
+
+	/**
+	 * The settings in force: reloaded from disk on every resume, and rewritten whenever
+	 * the lifetime review counter advances.
+	 *
+	 * Defaults until that first load, because the container is built before storage
+	 * permission has been checked and settings.json may not be readable yet.
+	 */
+	var settings: Settings = Settings()
 
 	/**
 	 * True when the app holds MANAGE_EXTERNAL_STORAGE, without which every path under

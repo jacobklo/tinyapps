@@ -11,11 +11,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Style
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -25,6 +20,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import net.jacoblo.simpleanki.data.AnkiCard
 import net.jacoblo.simpleanki.data.AnkiPaths
+import net.jacoblo.simpleanki.data.CounterSettings
 import net.jacoblo.simpleanki.data.HistoryEntry
 import net.jacoblo.simpleanki.ui.theme.SimpleAnkiTheme
 import java.io.IOException
@@ -77,7 +73,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AnkiScreen(container: AppContainer) {
     val context = LocalContext.current
@@ -88,6 +83,8 @@ fun AnkiScreen(container: AppContainer) {
     var startTime by remember { mutableStateOf(0L) }
     // History log, now the only source of every per-card figure
     var history by remember { mutableStateOf<List<HistoryEntry>>(emptyList()) }
+    // 2) Lifetime cards reviewed. History is capped, so this cannot be counted from it.
+    var lifetimeReviews by remember { mutableIntStateOf(0) }
 
     // Navigation state
     var currentScreen by remember { mutableStateOf(Screen.HOME) }
@@ -97,6 +94,10 @@ fun AnkiScreen(container: AppContainer) {
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
+                // Never throws. Seeds settings.json from the retired stats.json on first
+                // run, and retries here on the resume after permission is granted.
+                container.settings = container.settingsRepository.load()
+                lifetimeReviews = container.settings.counters.lifetimeReviews
                 // Taking a deck starts the clock on a random card.
                 fun take(deck: List<AnkiCard>) {
                     cards = deck
@@ -131,26 +132,7 @@ fun AnkiScreen(container: AppContainer) {
     }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Simple Anki") },
-                actions = {
-                    // 6.4) Navigation Icons
-                    IconButton(onClick = { currentScreen = Screen.HOME }) {
-                        Icon(Icons.Default.Home, contentDescription = "Home")
-                    }
-                    IconButton(onClick = { currentScreen = Screen.STATS }) {
-                        Icon(Icons.Default.List, contentDescription = "Stats")
-                    }
-                    IconButton(onClick = { currentScreen = Screen.HISTORY }) {
-                        Icon(Icons.Default.DateRange, contentDescription = "History")
-                    }
-                    IconButton(onClick = { currentScreen = Screen.QUESTIONS }) {
-                        Icon(Icons.Default.Style, contentDescription = "Questions")
-                    }
-                }
-            )
-        }
+        topBar = { AnkiTopBar(lifetimeReviews) { currentScreen = it } }
     ) { innerPadding ->
         Box(
             modifier = Modifier
@@ -182,12 +164,18 @@ fun AnkiScreen(container: AppContainer) {
                         val card = cards[currentCardIndex]
                         // Task 14 sets timedOut when the metronome interval elapses.
                         val entry = HistoryEntry(card.question, card.answer, timeTaken, now, false)
-                        // append writes on every answer, so it can throw here too.
+                        // Both writes happen on every answer, so either can throw here.
                         try {
                             // Task 8 replaces the literal with Settings.history.maxEntries.
                             history = container.historyRepository.append(entry, 5000)
+                            // Counted per record appended, not per flip, so the badge and
+                            // history.json cannot drift apart.
+                            lifetimeReviews = container.settings.counters.lifetimeReviews + 1
+                            container.settings =
+                                container.settings.copy(counters = CounterSettings(lifetimeReviews))
+                            container.settingsRepository.save(container.settings)
                         } catch (e: IOException) {
-                            Toast.makeText(context, "Could not save history.json - check file permission or free space", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Could not save history.json or settings.json - check file permission or free space", Toast.LENGTH_SHORT).show()
                         }
                         isShowingAnswer = true
                     }

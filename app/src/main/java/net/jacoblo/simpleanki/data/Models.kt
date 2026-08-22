@@ -76,8 +76,18 @@ data class TableSettings(
 
 data class HistorySettings(val maxEntries: Int = 5000)
 
+/**
+ * Totals that outlive the rolling history window.
+ *
+ * [lifetimeReviews] counts every card ever shown, timeouts included. It cannot be
+ * derived from history.json, which keeps only the newest [HistorySettings.maxEntries]
+ * attempts, so it is stored rather than computed.
+ */
+data class CounterSettings(val lifetimeReviews: Int = 0)
+
 data class Settings(
 	val metronome: MetronomeSettings = MetronomeSettings(),
 	val table: TableSettings = TableSettings(),
-	val history: HistorySettings = HistorySettings()
+	val history: HistorySettings = HistorySettings(),
+	val counters: CounterSettings = CounterSettings()
 )
