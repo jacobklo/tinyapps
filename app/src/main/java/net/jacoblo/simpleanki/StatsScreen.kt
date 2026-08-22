@@ -10,25 +10,45 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import net.jacoblo.simpleanki.data.HistoryEntry
+
+// One row of the table, derived from history now that stats.json is gone.
+// A null figure means the card has no successful attempt in the window.
+private data class StatsRow(
+    val question: String,
+    val best: Float?,
+    val average: Float?,
+    val median: Float?,
+    val last: Float?
+)
 
 // 6) New All Card Stats Page
 @Composable
-fun StatsScreen(stats: Map<String, CardStats>, validQuestions: List<String>) {
+fun StatsScreen(history: List<HistoryEntry>, validQuestions: List<String>) {
     // 6.2) Sortable columns state
     var sortColumn by remember { mutableStateOf(SortColumn.QUESTION) }
     var sortAscending by remember { mutableStateOf(true) }
 
+    val rows = remember(history, validQuestions) {
+        // 3) Only questions present in the current card list get a row
+        val valid = validQuestions.toSet()
+        history.map { it.question }.distinct().filter { it in valid }.map { question ->
+            // Best and Avg come from summarize. Med and Last are derived here instead of
+            // joining CardSummary, because GameView never shows them.
+            val summary = summarize(history, question)
+            val times = recentTimes(history, question, SUMMARY_LIMIT)
+            StatsRow(question, summary.best, summary.average, medianOf(times), times.firstOrNull())
+        }
+    }
+
     // Sort data based on selection
-    val sortedData = remember(stats, sortColumn, sortAscending, validQuestions) {
-        // 3) Filter stats to only include questions present in the current card list
-        val validStats = stats.filterKeys { it in validQuestions }
-        val list = validStats.entries.toList()
+    val sortedData = remember(rows, sortColumn, sortAscending) {
         when (sortColumn) {
-            SortColumn.QUESTION -> if (sortAscending) list.sortedBy { it.key } else list.sortedByDescending { it.key }
-            SortColumn.BEST -> if (sortAscending) list.sortedBy { it.value.bestTime } else list.sortedByDescending { it.value.bestTime }
-            SortColumn.AVERAGE -> if (sortAscending) list.sortedBy { it.value.averageTime } else list.sortedByDescending { it.value.averageTime }
-            SortColumn.MEDIAN -> if (sortAscending) list.sortedBy { it.value.medianTime } else list.sortedByDescending { it.value.medianTime }
-            SortColumn.LAST -> if (sortAscending) list.sortedBy { it.value.lastTime } else list.sortedByDescending { it.value.lastTime }
+            SortColumn.QUESTION -> if (sortAscending) rows.sortedBy { it.question } else rows.sortedByDescending { it.question }
+            SortColumn.BEST -> if (sortAscending) rows.sortedBy { it.best } else rows.sortedByDescending { it.best }
+            SortColumn.AVERAGE -> if (sortAscending) rows.sortedBy { it.average } else rows.sortedByDescending { it.average }
+            SortColumn.MEDIAN -> if (sortAscending) rows.sortedBy { it.median } else rows.sortedByDescending { it.median }
+            SortColumn.LAST -> if (sortAscending) rows.sortedBy { it.last } else rows.sortedByDescending { it.last }
         }
     }
 
@@ -60,13 +80,13 @@ fun StatsScreen(stats: Map<String, CardStats>, validQuestions: List<String>) {
                 if (sortColumn == SortColumn.LAST) sortAscending = !sortAscending else { sortColumn = SortColumn.LAST; sortAscending = true }
             }
         }
-        
+
         // 6.3) Scrollable list
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 16.dp)
         ) {
-            itemsIndexed(sortedData) { index, (question, stat) ->
+            itemsIndexed(sortedData) { index, row ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -75,18 +95,13 @@ fun StatsScreen(stats: Map<String, CardStats>, validQuestions: List<String>) {
                     // 3) Row Count
                     Text("${index + 1}", modifier = Modifier.weight(0.5f).padding(end = 4.dp), style = MaterialTheme.typography.bodyMedium)
 
-                    Text(question, modifier = Modifier.weight(2.5f), style = MaterialTheme.typography.bodyMedium)
-                    // Show '-' if default 9999
-                    Text(
-                        text = if (stat.bestTime >= 9999f) "-" else "%.2f".format(stat.bestTime),
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Text("%.2f".format(stat.averageTime), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Text(row.question, modifier = Modifier.weight(2.5f), style = MaterialTheme.typography.bodyMedium)
+                    Text(formatCell(row.best), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Text(formatCell(row.average), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                     // 4) Median Value
-                    Text("%.2f".format(stat.medianTime), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                    
-                    Text("%.2f".format(stat.lastTime), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Text(formatCell(row.median), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+
+                    Text(formatCell(row.last), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                 }
                 HorizontalDivider(thickness = 0.5.dp)
             }
@@ -103,5 +118,15 @@ fun HeaderCell(text: String, modifier: Modifier, onClick: () -> Unit) {
         style = MaterialTheme.typography.titleSmall
     )
 }
+
+// Median of the successful attempts, or null when there are none.
+private fun medianOf(times: List<Float>): Float? {
+    if (times.isEmpty()) return null
+    val sorted = times.sorted()
+    val size = sorted.size
+    return if (size % 2 == 0) (sorted[size / 2 - 1] + sorted[size / 2]) / 2 else sorted[size / 2]
+}
+
+private fun formatCell(value: Float?): String = if (value == null) "-" else "%.2f".format(value)
 
 enum class SortColumn { QUESTION, BEST, AVERAGE, MEDIAN, LAST }

@@ -4,90 +4,43 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Environment
 import android.provider.Settings
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.*
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import net.jacoblo.simpleanki.data.*
 import net.jacoblo.simpleanki.ui.theme.SimpleAnkiTheme
-import org.json.JSONArray
-import org.json.JSONObject
-import java.io.File
-import kotlin.random.Random
-
-// Data model for a flashcard
-data class AnkiCard(val question: String, val answer: String)
-
-// 1) New data structure for stats (Modified: Removed bestTime field)
-data class CardStats(
-    val history: List<Float> = emptyList() // Max 10 items
-) {
-    // 1) Calculate Best from history
-    val bestTime: Float
-        get() = if (history.isEmpty()) 9999f else history.minOrNull() ?: 9999f
-
-    // 1) Calculate Average from history
-    val averageTime: Float
-        get() = if (history.isEmpty()) 0f else history.average().toFloat()
-        
-    val lastTime: Float
-        get() = history.lastOrNull() ?: 0f
-
-    // 4) Calculate Median from history
-    val medianTime: Float
-        get() {
-            if (history.isEmpty()) return 0f
-            val sorted = history.sorted()
-            val size = sorted.size
-            return if (size % 2 == 0) {
-                (sorted[size / 2 - 1] + sorted[size / 2]) / 2
-            } else {
-                sorted[size / 2]
-            }
-        }
-}
-
-data class HistoryEntry(
-    val question: String,
-    val answer: String,
-    val timeTaken: Float,
-    val timestamp: Long
-)
-
-const val HISTORY_MAX = 300
+import java.io.IOException
 
 enum class Screen { HOME, STATS, HISTORY, QUESTIONS }
 
 class MainActivity : ComponentActivity() {
+    private lateinit var container: AppContainer
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         // 8) Keep screen always on
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-
+        // Task 7 wires test mode activation; production paths until then.
+        container = AppContainer(this, AnkiPaths.production(), testMode = false)
         setContent {
             SimpleAnkiTheme {
-                AnkiScreen()
+                AnkiScreen(container)
             }
         }
     }
@@ -98,9 +51,14 @@ class MainActivity : ComponentActivity() {
         checkPermission()
     }
 
+    override fun onDestroy() {
+        container.release()
+        super.onDestroy()
+    }
+
     private fun checkPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            if (!Environment.isExternalStorageManager()) {
+            if (!container.hasStorageAccess) {
                 Toast.makeText(this, "Please allow file access to load questions", Toast.LENGTH_LONG).show()
                 try {
                     val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
@@ -118,57 +76,51 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AnkiScreen() {
+fun AnkiScreen(container: AppContainer) {
     val context = LocalContext.current
     var cards by remember { mutableStateOf<List<AnkiCard>>(emptyList()) }
     var currentCardIndex by remember { mutableStateOf(-1) }
     var isShowingAnswer by remember { mutableStateOf(false) }
-    
-    // 5) Stats: question -> CardStats
-    var stats by remember { mutableStateOf(mapOf<String, CardStats>()) }
     var currentRoundTime by remember { mutableStateOf(0f) }
     var startTime by remember { mutableStateOf(0L) }
-    
-    // 2) Counter for stats updates
-    var statsUpdateCount by remember { mutableIntStateOf(0) }
-
-    // History log (cyclic, max HISTORY_MAX)
+    // History log, now the only source of every per-card figure
     var history by remember { mutableStateOf<List<HistoryEntry>>(emptyList()) }
-    
+
     // Navigation state
     var currentScreen by remember { mutableStateOf(Screen.HOME) }
-    
+
     // Watch lifecycle to reload cards when permission granted
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                // 2) Read cards
-                val loaded = loadCards()
-                if (loaded.isNotEmpty()) {
-                    if (cards.isEmpty()) {
-                        cards = loaded
-                        currentCardIndex = cards.indices.random()
-                        startTime = System.currentTimeMillis()
-                    }
-                } else {
-                    // Create sample if permitted
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()) {
-                        Toast.makeText(context, "Creating sample simple-anki.json", Toast.LENGTH_LONG).show()
-                        createSampleFile()
-                        val reloaded = loadCards()
-                        if (reloaded.isNotEmpty()) {
-                            cards = reloaded
-                            currentCardIndex = cards.indices.random()
-                            startTime = System.currentTimeMillis()
-                        }
-                    }
+                // Taking a deck starts the clock on a random card.
+                fun take(deck: List<AnkiCard>) {
+                    cards = deck
+                    currentCardIndex = deck.indices.random()
+                    startTime = System.currentTimeMillis()
                 }
-                // 7) Load stats and update count
-                val (loadedStats, loadedCount) = loadStats()
-                stats = loadedStats
-                statsUpdateCount = loadedCount
-                history = loadHistory()
+                // 2) Read cards
+                val loaded = container.deckRepository.load()
+                if (loaded.isNotEmpty()) {
+                    if (cards.isEmpty()) take(loaded)
+                } else if (container.hasStorageAccess) {
+                    Toast.makeText(context, "Creating sample simple-anki.json", Toast.LENGTH_LONG).show()
+                    // createSample propagates IOException; unhandled that is a crash on resume.
+                    try {
+                        container.deckRepository.createSample()
+                    } catch (e: IOException) {
+                        Toast.makeText(context, "Could not write simple-anki.json", Toast.LENGTH_LONG).show()
+                    }
+                    val reloaded = container.deckRepository.load()
+                    if (reloaded.isNotEmpty()) take(reloaded)
+                }
+                // load() rewrites the file when it migrates, so it can throw as well.
+                try {
+                    history = container.historyRepository.load()
+                } catch (e: IOException) {
+                    Toast.makeText(context, "Could not migrate history.json", Toast.LENGTH_LONG).show()
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -180,15 +132,6 @@ fun AnkiScreen() {
             TopAppBar(
                 title = { Text("Simple Anki") },
                 actions = {
-                    // 2) Update Counter
-                    Text(
-                        text = "$statsUpdateCount",
-                        modifier = Modifier
-                            .align(Alignment.CenterVertically)
-                            .padding(end = 8.dp),
-                        style = MaterialTheme.typography.titleMedium
-                    )
-
                     // 6.4) Navigation Icons
                     IconButton(onClick = { currentScreen = Screen.HOME }) {
                         Icon(Icons.Default.Home, contentDescription = "Home")
@@ -202,16 +145,6 @@ fun AnkiScreen() {
                     IconButton(onClick = { currentScreen = Screen.QUESTIONS }) {
                         Icon(Icons.Default.Style, contentDescription = "Questions")
                     }
-
-                    // 10) Reset button (All cards)
-//                    IconButton(onClick = {
-//                        stats = emptyMap()
-//                        saveStats(stats, statsUpdateCount)
-//                        statsUpdateCount++
-//                        Toast.makeText(context, "Stats reset", Toast.LENGTH_SHORT).show()
-//                    }) {
-//                        Icon(Icons.Default.Refresh, contentDescription = "Reset Stats")
-//                    }
                 }
             )
         }
@@ -221,322 +154,46 @@ fun AnkiScreen() {
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            if (currentScreen == Screen.STATS) {
+            when (currentScreen) {
                 // 6) Stats Page
-                StatsScreen(stats, cards.map { it.question })
-            } else if (currentScreen == Screen.HISTORY) {
-                HistoryScreen(history)
-            } else if (currentScreen == Screen.QUESTIONS) {
-                QuestionsScreen(history)
-            } else {
+                Screen.STATS -> StatsScreen(history, cards.map { it.question })
+                Screen.HISTORY -> HistoryScreen(history)
+                Screen.QUESTIONS -> QuestionsScreen(history)
                 // Game Screen
-                GameView(
-                    cards = cards,
-                    currentCardIndex = currentCardIndex,
-                    isShowingAnswer = isShowingAnswer,
-                    stats = stats,
-                    currentRoundTime = currentRoundTime,
-                    startTime = startTime,
-                    onNextCard = {
-                        isShowingAnswer = false
-                        currentCardIndex = cards.indices.random()
-                        startTime = System.currentTimeMillis()
-                    },
-                    onFlip = {
-                        val now = System.currentTimeMillis()
-                        val timeTaken = (now - startTime) / 1000f
-                        currentRoundTime = timeTaken
-                        
-                        // 1) Update stats with history
-                        val questionText = cards[currentCardIndex].question
-                        val oldStat = stats[questionText] ?: CardStats()
-                        
-                        // Limit history to 10
-                        val newHistory = (oldStat.history + timeTaken).takeLast(10)
-                        
-                        val newStat = oldStat.copy(history = newHistory)
-                        
-                        val newStats = stats.toMutableMap()
-                        newStats[questionText] = newStat
-                        stats = newStats
-                        
-                        // 7) Save stats and increment count
-                        statsUpdateCount = saveStats(newStats, statsUpdateCount)
-
-                        // Append to history (cyclic, newest last in storage)
-                        val entry = HistoryEntry(
-                            question = questionText,
-                            answer = cards[currentCardIndex].answer,
-                            timeTaken = timeTaken,
-                            timestamp = now
-                        )
-                        val updatedHistory = (history + entry).takeLast(HISTORY_MAX)
-                        history = updatedHistory
-                        saveHistory(updatedHistory)
-
-                        isShowingAnswer = true
-                    },
-                    onResetCard = { question ->
-                        // 3) Reset specific card
-                        val newStats = stats.toMutableMap()
-                        newStats.remove(question)
-                        stats = newStats
-                        
-                        // 7) Save stats and increment count
-                        statsUpdateCount = saveStats(newStats, statsUpdateCount)
-                        
-                        Toast.makeText(context, "Card stats reset", Toast.LENGTH_SHORT).show()
-                    }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun GameView(
-    cards: List<AnkiCard>,
-    currentCardIndex: Int,
-    isShowingAnswer: Boolean,
-    stats: Map<String, CardStats>,
-    currentRoundTime: Float,
-    startTime: Long,
-    onNextCard: () -> Unit,
-    onFlip: () -> Unit,
-    onResetCard: (String) -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        if (cards.isNotEmpty() && currentCardIndex != -1) {
-            val card = cards[currentCardIndex]
-            val questionText = card.question
-            val cardStats = stats[questionText] ?: CardStats()
-            val bestTime = cardStats.bestTime
-            val averageTime = cardStats.averageTime
-
-            // 4) Card styling
-            Card(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clickable {
-                        if (!isShowingAnswer) {
-                            onFlip()
-                        } else {
-                            onNextCard()
+                Screen.HOME -> {
+                    val question = cards.getOrNull(currentCardIndex)?.question
+                    GameView(
+                        cards = cards,
+                        currentCardIndex = currentCardIndex,
+                        isShowingAnswer = isShowingAnswer,
+                        summary = remember(history, question) {
+                            question?.let { summarize(history, it) } ?: CardSummary(null, null)
+                        },
+                        currentRoundTime = currentRoundTime,
+                        onNextCard = {
+                            isShowingAnswer = false
+                            currentCardIndex = cards.indices.random()
+                            startTime = System.currentTimeMillis()
+                        },
+                        onFlip = {
+                            val now = System.currentTimeMillis()
+                            val timeTaken = (now - startTime) / 1000f
+                            currentRoundTime = timeTaken
+                            val card = cards[currentCardIndex]
+                            // Task 14 sets timedOut when the metronome interval elapses.
+                            val entry = HistoryEntry(card.question, card.answer, timeTaken, now, false)
+                            // append writes on every answer, so it can throw here too.
+                            try {
+                                // Task 8 replaces the literal with Settings.history.maxEntries.
+                                history = container.historyRepository.append(entry, 5000)
+                            } catch (e: IOException) {
+                                Toast.makeText(context, "Could not save history.json", Toast.LENGTH_SHORT).show()
+                            }
+                            isShowingAnswer = true
                         }
-                    },
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(24.dp),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Box(
-                        modifier = Modifier.weight(1f),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = if (isShowingAnswer) card.answer else card.question,
-                            style = MaterialTheme.typography.displayMedium,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                    
-                    // 6) Statistics
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        if (isShowingAnswer) {
-                            Text(
-                                text = "Time: %.2fs".format(currentRoundTime),
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                        Text(
-                            text = "Best: %.2fs".format(if (bestTime == 9999f) 0f else bestTime),
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        // 4) Show Average
-                        Text(
-                            text = "Avg: %.2fs".format(averageTime),
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        
-                        // 12) Reset current card stats button
-                        IconButton(onClick = { onResetCard(questionText) }) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Reset Card Stats")
-                        }
-                    }
+                    )
                 }
             }
-        } else {
-            Text(
-                text = "No cards found.\nPlease grant permission or check simple-anki.json",
-                textAlign = TextAlign.Center
-            )
         }
-    }
-}
-
-// 2) Load cards from external storage
-fun loadCards(): List<AnkiCard> {
-    val appDir = File(Environment.getExternalStorageDirectory(), "SimpleAnki")
-    if (!appDir.exists()) appDir.mkdirs()
-    val file = File(appDir, "simple-anki.json")
-    if (!file.exists()) return emptyList()
-    
-    return try {
-        val jsonString = file.readText()
-        val jsonArray = JSONArray(jsonString)
-        val list = mutableListOf<AnkiCard>()
-        for (i in 0 until jsonArray.length()) {
-            val obj = jsonArray.getJSONObject(i)
-            list.add(AnkiCard(obj.getString("question"), obj.getString("answer")))
-        }
-        list
-    } catch (e: Exception) {
-        emptyList()
-    }
-}
-
-// 2) Create sample file if not exists
-fun createSampleFile() {
-    val appDir = File(Environment.getExternalStorageDirectory(), "SimpleAnki")
-    if (!appDir.exists()) appDir.mkdirs()
-    val file = File(appDir, "simple-anki.json")
-    val list = listOf(
-        AnkiCard("Capital of France?", "Paris"),
-        AnkiCard("2 + 2?", "4"),
-        AnkiCard("Color of the sky?", "Blue"),
-        AnkiCard("Android mascot?", "Bugdroid"),
-        AnkiCard("Language for Android?", "Kotlin")
-    )
-    val jsonArray = JSONArray()
-    list.forEach { 
-        val obj = JSONObject()
-        obj.put("question", it.question)
-        obj.put("answer", it.answer)
-        jsonArray.put(obj)
-    }
-    try {
-        file.writeText(jsonArray.toString(4))
-    } catch (e: Exception) {
-        e.printStackTrace()
-    }
-}
-
-// 7) Load stats (UPDATED for CardStats and statsUpdateCount)
-fun loadStats(): Pair<Map<String, CardStats>, Int> {
-    val appDir = File(Environment.getExternalStorageDirectory(), "SimpleAnki")
-    if (!appDir.exists()) appDir.mkdirs()
-    val file = File(appDir, "stats.json")
-    if (!file.exists()) return Pair(emptyMap(), 0)
-    return try {
-        val jsonString = file.readText()
-        val jsonObject = JSONObject(jsonString)
-        val map = mutableMapOf<String, CardStats>()
-        var updateCount = 0
-        
-        val keys = jsonObject.keys()
-        while(keys.hasNext()) {
-            val key = keys.next()
-            // 7) Check for statsUpdateCount key
-            if (key == "statsUpdateCount") {
-                updateCount = jsonObject.optInt(key, 0)
-                continue
-            }
-            
-            val obj = jsonObject.optJSONObject(key)
-            if (obj != null) {
-                // New format: read history only
-                val histArray = obj.getJSONArray("history")
-                val history = mutableListOf<Float>()
-                for (i in 0 until histArray.length()) {
-                    history.add(histArray.getDouble(i).toFloat())
-                }
-                map[key] = CardStats(history)
-            }
-        }
-        Pair(map, updateCount)
-    } catch (e: Exception) {
-        Pair(emptyMap(), 0)
-    }
-}
-
-// 7) Save stats (UPDATED for CardStats and statsUpdateCount)
-fun saveStats(stats: Map<String, CardStats>, currentCount: Int): Int {
-    // 7) Increment count before saving
-    val newCount = currentCount + 1
-    
-    val appDir = File(Environment.getExternalStorageDirectory(), "SimpleAnki")
-    if (!appDir.exists()) appDir.mkdirs()
-    val file = File(appDir, "stats.json")
-    val jsonObject = JSONObject()
-    
-    // 7) Save the count
-    jsonObject.put("statsUpdateCount", newCount)
-    
-    stats.forEach { (k, v) ->
-        val statObj = JSONObject()
-        // No longer saving explicit "best", calculated from history
-        val histArray = JSONArray()
-        v.history.forEach { histArray.put(it.toDouble()) }
-        statObj.put("history", histArray)
-        jsonObject.put(k, statObj)
-    }
-    file.writeText(jsonObject.toString())
-    return newCount
-}
-
-// Load history from history.json (cyclic array, max HISTORY_MAX entries)
-fun loadHistory(): List<HistoryEntry> {
-    val appDir = File(Environment.getExternalStorageDirectory(), "SimpleAnki")
-    if (!appDir.exists()) appDir.mkdirs()
-    val file = File(appDir, "history.json")
-    if (!file.exists()) return emptyList()
-    return try {
-        val jsonArray = JSONArray(file.readText())
-        val list = mutableListOf<HistoryEntry>()
-        for (i in 0 until jsonArray.length()) {
-            val obj = jsonArray.getJSONObject(i)
-            list.add(
-                HistoryEntry(
-                    question = obj.getString("question"),
-                    answer = obj.getString("answer"),
-                    timeTaken = obj.getDouble("timeTaken").toFloat(),
-                    timestamp = obj.getLong("timestamp")
-                )
-            )
-        }
-        list.takeLast(HISTORY_MAX)
-    } catch (e: Exception) {
-        emptyList()
-    }
-}
-
-// Save history to history.json (trim to HISTORY_MAX, oldest first in file)
-fun saveHistory(history: List<HistoryEntry>) {
-    val appDir = File(Environment.getExternalStorageDirectory(), "SimpleAnki")
-    if (!appDir.exists()) appDir.mkdirs()
-    val file = File(appDir, "history.json")
-    val trimmed = history.takeLast(HISTORY_MAX)
-    val jsonArray = JSONArray()
-    trimmed.forEach { e ->
-        val obj = JSONObject()
-        obj.put("question", e.question)
-        obj.put("answer", e.answer)
-        obj.put("timeTaken", e.timeTaken.toDouble())
-        obj.put("timestamp", e.timestamp)
-        jsonArray.put(obj)
-    }
-    try {
-        file.writeText(jsonArray.toString())
-    } catch (e: Exception) {
-        e.printStackTrace()
     }
 }
