@@ -824,6 +824,10 @@ sealed interface Screen {
 - [ ] The `stats` view carries only its base columns in this task
 - [ ] `TableScreen` accepts an `onRendered` callback and this task passes an empty lambda
 
+**Two things inherited from Task 3.** `MainActivity.kt` lands at exactly 199 lines against its 200-line limit, with no headroom, and this task adds a `ModalNavigationDrawer` on top. Plan to extract the `ON_RESUME` observer into a `rememberAppState`-style helper rather than discovering the ceiling mid-task. Separately, `recentTimes` in `GameView.kt` is `internal` only so the deleted `StatsScreen` could reach it; narrow it to `private` once this task removes its last outside caller.
+
+**Note on null sort order.** The interim `StatsScreen` sorted null figures FIRST ascending, where the retired `9999f` sentinel sorted them last. That file dies here, and Section 8.3's rule is the correct one: nulls and timed-out rows sort LAST in both directions. Do not carry the interim behaviour forward.
+
 **Dependencies:** Tasks 4, 5.
 
 **Testability:** `DefaultViews` is pure data and gets a JVM test asserting each built-in's column ids, sort, and collapse key. Combined with Task 4's engine tests this means the built-in views' rendered output is fully asserted on the JVM before ever reaching a device.
@@ -1017,6 +1021,7 @@ Recovery, applied to each file independently:
 - [ ] `resetBuiltIns` replaces `stats`, `history`, and `list_rows` and leaves all other views untouched
 - [ ] Built-in views are directly mutable; there is no read-only prompt
 - [ ] `HISTORY_MAX` is gone; the cap comes from `settings.history.maxEntries`
+- [ ] The answer handler no longer calls `HistoryRepository.append`. `append` internally calls `load()`, which parses the whole file twice before rewriting it - once in `migrate` and once in `parse` - so every card flip did full-file I/O on the UI thread, over up to 5000 records. `MainActivity` already holds the authoritative list, so use `save(history + entry, maxEntries)` and assign the result afterwards, which preserves the "screen matches disk" semantics on write failure. This lands here because Task 8 must edit that exact line anyway to swap the literal for the setting
 - [ ] `RepositoryTest` covers: absent file; corrupt file quarantined then recreated; empty views array; round-trip equality; `resetBuiltIns` preserving custom views
 
 **Dependencies:** Tasks 1, 6.
