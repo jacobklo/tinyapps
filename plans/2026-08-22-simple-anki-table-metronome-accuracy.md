@@ -511,10 +511,12 @@ class SettingsRepository(private val paths: AnkiPaths) {
 **Seeding sequence, which must be idempotent:**
 
 1. If `settings.json` exists and parses, use it. **Never look at `stats.json` again.**
-2. If absent, read `stats.json` and take its `statsUpdateCount`, defaulting to 0 when the file is missing, unparseable, or lacks the key.
+2. If absent **or corrupt**, read `stats.json` and take its `statsUpdateCount`, defaulting to 0 when the file is missing, unparseable, or lacks the key. A corrupt file is quarantined to `settings.json.corrupt` first.
 3. Write the new `settings.json` with that seed.
 
-Step 1 is what makes this safe to run repeatedly. Once `settings.json` exists the seed can never re-fire, so a user who later resets their count does not have it silently restored from a stale `stats.json`.
+Step 1 is what makes this safe to run repeatedly. Once `settings.json` exists and parses, the seed can never re-fire, so a user who deliberately resets their count does not have it silently restored from a stale `stats.json`.
+
+**Corrupt takes the same branch as absent, deliberately.** The first draft of this task quarantined a corrupt file and then seeded 0, which would destroy a real lifetime count while `stats.json` sat there holding it. Neither outcome is strictly correct - after long use the true count exceeds the seed, so recovering from `stats.json` under-counts - but seeding preserves a recovery path where zeroing destroys one, and that asymmetry decides it. The rule is simply: **if we cannot read a valid `settings.json`, treat it as a first run.**
 
 **Requirements:**
 - [ ] `lifetimeReviews` increments exactly once per history record appended, in the same code path that appends
@@ -522,7 +524,8 @@ Step 1 is what makes this safe to run repeatedly. Once `settings.json` exists th
 - [ ] `settings.json` is created on first run with the seed from `stats.json`
 - [ ] The seed fires only when `settings.json` is absent; an existing file is never overwritten from `stats.json`
 - [ ] A missing, unparseable, or key-less `stats.json` seeds 0 rather than throwing
-- [ ] A corrupt `settings.json` is quarantined to `settings.json.corrupt` before defaults are written
+- [ ] A corrupt `settings.json` is quarantined to `settings.json.corrupt`, then seeded from `stats.json` exactly as an absent file would be - it must NOT zero the count
+- [ ] A corrupt and an absent `settings.json`, given the same `stats.json`, produce the same `lifetimeReviews`
 - [ ] `stats.json` is still never written to
 - [ ] The counter survives an app restart
 - [ ] `SettingsTest` covers: seeding from a real `stats.json` fixture; seeding 0 from a missing file; seeding 0 from a corrupt file; an existing `settings.json` suppressing the seed; round-trip save/load equality; corrupt-file quarantine
