@@ -4,7 +4,7 @@ import android.os.Environment
 import java.io.File
 
 /**
- * Resolves every file the app reads or writes. The only class aware of Environment.
+ * Resolves every file the app reads or writes from Environment.
  *
  * Only [production] and [testMode] reach for an Android API. The constructor, [at] and
  * every instance member stay Android-free, so a JVM test can point an instance at a

@@ -29,6 +29,17 @@ fun summarize(history: List<HistoryEntry>, question: String, limit: Int = SUMMAR
 }
 
 /**
+ * Summary for the card at [index] of [cards], over the newest [SUMMARY_LIMIT] attempts.
+ *
+ * Returns an empty summary when there is no such card, which is how the game screen
+ * renders before a deck loads.
+ */
+fun summarizeCard(history: List<HistoryEntry>, cards: List<AnkiCard>, index: Int): CardSummary {
+	val question = cards.getOrNull(index)?.question ?: return CardSummary(null, null)
+	return summarize(history, question)
+}
+
+/**
  * Times of the successful attempts among the newest [limit] attempts at [question],
  * newest first.
  *

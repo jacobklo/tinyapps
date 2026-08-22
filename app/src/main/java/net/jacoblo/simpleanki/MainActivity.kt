@@ -19,10 +19,13 @@ import androidx.compose.material.icons.filled.Style
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.*
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import net.jacoblo.simpleanki.data.*
+import net.jacoblo.simpleanki.data.AnkiCard
+import net.jacoblo.simpleanki.data.AnkiPaths
+import net.jacoblo.simpleanki.data.HistoryEntry
 import net.jacoblo.simpleanki.ui.theme.SimpleAnkiTheme
 import java.io.IOException
 
@@ -110,7 +113,7 @@ fun AnkiScreen(container: AppContainer) {
                     try {
                         container.deckRepository.createSample()
                     } catch (e: IOException) {
-                        Toast.makeText(context, "Could not write simple-anki.json", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "Could not create simple-anki.json - check file permission or free space", Toast.LENGTH_LONG).show()
                     }
                     val reloaded = container.deckRepository.load()
                     if (reloaded.isNotEmpty()) take(reloaded)
@@ -119,7 +122,7 @@ fun AnkiScreen(container: AppContainer) {
                 try {
                     history = container.historyRepository.load()
                 } catch (e: IOException) {
-                    Toast.makeText(context, "Could not migrate history.json", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "Could not update history.json - check file permission or free space", Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -159,40 +162,36 @@ fun AnkiScreen(container: AppContainer) {
                 Screen.STATS -> StatsScreen(history, cards.map { it.question })
                 Screen.HISTORY -> HistoryScreen(history)
                 Screen.QUESTIONS -> QuestionsScreen(history)
-                // Game Screen
-                Screen.HOME -> {
-                    val question = cards.getOrNull(currentCardIndex)?.question
-                    GameView(
-                        cards = cards,
-                        currentCardIndex = currentCardIndex,
-                        isShowingAnswer = isShowingAnswer,
-                        summary = remember(history, question) {
-                            question?.let { summarize(history, it) } ?: CardSummary(null, null)
-                        },
-                        currentRoundTime = currentRoundTime,
-                        onNextCard = {
-                            isShowingAnswer = false
-                            currentCardIndex = cards.indices.random()
-                            startTime = System.currentTimeMillis()
-                        },
-                        onFlip = {
-                            val now = System.currentTimeMillis()
-                            val timeTaken = (now - startTime) / 1000f
-                            currentRoundTime = timeTaken
-                            val card = cards[currentCardIndex]
-                            // Task 14 sets timedOut when the metronome interval elapses.
-                            val entry = HistoryEntry(card.question, card.answer, timeTaken, now, false)
-                            // append writes on every answer, so it can throw here too.
-                            try {
-                                // Task 8 replaces the literal with Settings.history.maxEntries.
-                                history = container.historyRepository.append(entry, 5000)
-                            } catch (e: IOException) {
-                                Toast.makeText(context, "Could not save history.json", Toast.LENGTH_SHORT).show()
-                            }
-                            isShowingAnswer = true
+                Screen.HOME -> GameView(
+                    cards = cards,
+                    currentCardIndex = currentCardIndex,
+                    isShowingAnswer = isShowingAnswer,
+                    summary = remember(history, cards, currentCardIndex) {
+                        summarizeCard(history, cards, currentCardIndex)
+                    },
+                    currentRoundTime = currentRoundTime,
+                    onNextCard = {
+                        isShowingAnswer = false
+                        currentCardIndex = cards.indices.random()
+                        startTime = System.currentTimeMillis()
+                    },
+                    onFlip = {
+                        val now = System.currentTimeMillis()
+                        val timeTaken = (now - startTime) / 1000f
+                        currentRoundTime = timeTaken
+                        val card = cards[currentCardIndex]
+                        // Task 14 sets timedOut when the metronome interval elapses.
+                        val entry = HistoryEntry(card.question, card.answer, timeTaken, now, false)
+                        // append writes on every answer, so it can throw here too.
+                        try {
+                            // Task 8 replaces the literal with Settings.history.maxEntries.
+                            history = container.historyRepository.append(entry, 5000)
+                        } catch (e: IOException) {
+                            Toast.makeText(context, "Could not save history.json - check file permission or free space", Toast.LENGTH_SHORT).show()
                         }
-                    )
-                }
+                        isShowingAnswer = true
+                    }
+                )
             }
         }
     }
