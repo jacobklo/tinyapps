@@ -158,6 +158,11 @@ object TableEngine {
 		// 3) Compute computed columns. Deliberately a no-op; Task 13 plugs the pivot
 		// engine in HERE, and it has to stay above the collapse below. Collapsing first
 		// would strip every partition of its members and make every aggregate wrong.
+		//
+		// A sort on a computed column also runs here, after the values exist and still
+		// above the collapse. It cannot run at step 2 because the values do not exist
+		// yet, and it cannot run below the collapse because bucket and rolling
+		// partition by sort position.
 
 		// 4) Collapse duplicates, keeping the first row of each key in the current order.
 		val survivors = collapse(sorted, view.collapseDuplicatesOn, warnings, zone)
@@ -306,7 +311,14 @@ object TableEngine {
 		}
 	}
 
-	/** Keeps the first row of each key in the given order; an unusable key collapses nothing. */
+	/**
+	 * Keeps the first row of each key in the given order, the key being the column's raw
+	 * value, so rows that would display the same value fold together.
+	 *
+	 * Two consequences of that single rule need no guard of their own: on Seconds every
+	 * timed-out row keys to null and the lot folds into one, and on "#" every row keys to
+	 * its own number and nothing folds. An unusable key collapses nothing.
+	 */
 	private fun collapse(
 		rows: List<HistoryEntry>,
 		columnId: String?,

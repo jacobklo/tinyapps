@@ -369,6 +369,30 @@ class TableEngineTest {
 	}
 
 	@Test
+	fun aHiddenColumnStillReportsItsFailure() {
+		// The error check deliberately sits above the visibility check: the column sheet
+		// lists hidden columns too, so one that broke still has to say so.
+		val history = listOf(entry("a", timestamp = 10L))
+		val view = view(
+			column("Question"),
+			column(
+				"Ratio",
+				visible = false,
+				formula = "Best / ",
+				formulaError = "unexpected end of formula"
+			)
+		)
+
+		val table = render(history, view)
+
+		assertEquals(listOf("Question"), table.columns.map { it.id })
+		assertEquals(
+			listOf("column \"Ratio\" failed: unexpected end of formula"),
+			table.warnings
+		)
+	}
+
+	@Test
 	fun aFormulaColumnThatParsedIsKeptWithoutAWarning() {
 		val history = listOf(entry("a", timestamp = 10L))
 		val view = view(column("Question"), column("Ratio", formula = "Best / Avg"))
@@ -460,6 +484,9 @@ class TableEngineTest {
 		assertEquals("1.50", TableEngine.format(1.5, CellFormat.TWO_DP))
 		assertEquals("87.5%", TableEngine.format(87.5, CellFormat.PERCENT))
 		assertEquals("03-05 14:07:09", TableEngine.format(fixedMillis, CellFormat.TIME, utc))
+		assertEquals("abc", TableEngine.format("abc", CellFormat.TWO_DP))
+		assertEquals("abc", TableEngine.format("abc", CellFormat.PERCENT))
+		assertEquals("abc", TableEngine.format("abc", CellFormat.TIME, utc))
 	}
 
 	@Test
