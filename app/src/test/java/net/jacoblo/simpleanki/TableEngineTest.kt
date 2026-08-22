@@ -158,14 +158,22 @@ class TableEngineTest {
 
 	@Test
 	fun timedOutRowsSortLastAscending() {
-		val table = render(timedOutFixture(), view(column("Question")), sort = SortSpec("Seconds", SortDir.ASC))
+		val table = render(
+			timedOutFixture(),
+			view(column("Question")),
+			sort = SortSpec("Seconds", SortDir.ASC)
+		)
 
 		assertEquals(listOf("fast", "slow", "missed"), table.rows.map { it[0] })
 	}
 
 	@Test
 	fun timedOutRowsSortLastDescending() {
-		val table = render(timedOutFixture(), view(column("Question")), sort = SortSpec("Seconds", SortDir.DESC))
+		val table = render(
+			timedOutFixture(),
+			view(column("Question")),
+			sort = SortSpec("Seconds", SortDir.DESC)
+		)
 
 		assertEquals(listOf("slow", "fast", "missed"), table.rows.map { it[0] })
 	}
@@ -200,13 +208,36 @@ class TableEngineTest {
 
 	@Test
 	fun boolSortsFalseBeforeTrue() {
-		val history = listOf(
-			entry("out", timestamp = 10L, timedOut = true),
-			entry("in", timestamp = 20L)
+		val table = render(
+			boolFixture(),
+			view(column("Question")),
+			sort = SortSpec("TimedOut", SortDir.ASC)
 		)
-		val table = render(history, view(column("Question")), sort = SortSpec("TimedOut", SortDir.ASC))
 
-		assertEquals(listOf("in", "out"), table.rows.map { it[0] })
+		// Within each group the base order survives, newest first.
+		assertEquals(listOf("in1", "in2", "out1", "out2"), table.rows.map { it[0] })
+	}
+
+	@Test
+	fun boolSortsTrueFirstWhenDescending() {
+		val table = render(
+			boolFixture(),
+			view(column("Question")),
+			sort = SortSpec("TimedOut", SortDir.DESC)
+		)
+
+		assertEquals(listOf("out1", "out2", "in1", "in2"), table.rows.map { it[0] })
+	}
+
+	@Test
+	fun columnsComeBackInViewOrderRatherThanBaseOrder() {
+		// Listed against the order of BASE_COLUMNS on purpose: an engine that emitted
+		// columns by base index would answer Question, Seconds here.
+		val history = listOf(entry("a", seconds = 2.0f, timestamp = 10L))
+		val table = render(history, view(column("Seconds"), column("Question")))
+
+		assertEquals(listOf("Seconds", "Question"), table.columns.map { it.id })
+		assertEquals(listOf(listOf("2.00", "a")), table.rows)
 	}
 
 	@Test
@@ -273,7 +304,7 @@ class TableEngineTest {
 
 	@Test
 	fun aComputedColumnRendersDashesWithoutWarning() {
-		val computed = ComputedSpec(Aggregate.AVG, "Seconds", Partition.Group("Question"), limit = 10)
+		val computed = avgSeconds()
 		val history = listOf(entry("a", timestamp = 10L))
 		val view = view(column("Question"), column("Avg", computed = computed))
 
@@ -289,7 +320,7 @@ class TableEngineTest {
 
 	@Test
 	fun sortingByANotYetComputedColumnLeavesTheBaseOrderAlone() {
-		val computed = ComputedSpec(Aggregate.AVG, "Seconds", Partition.Group("Question"), limit = 10)
+		val computed = avgSeconds()
 		val history = listOf(entry("old", timestamp = 10L), entry("new", timestamp = 20L))
 		val view = view(column("Question"), column("Avg", computed = computed))
 
@@ -303,13 +334,68 @@ class TableEngineTest {
 	@Test
 	fun aColumnWithAFormulaErrorRendersErrInEveryCell() {
 		val history = listOf(entry("a", timestamp = 10L), entry("b", timestamp = 20L))
-		val computed = ComputedSpec(Aggregate.AVG, "Seconds", Partition.Group("Question"), limit = 10)
-		val view = view(column("Question"), column("Ratio", computed = computed, formulaError = "divide by zero"))
+		val view = view(
+			column("Question"),
+			column("Ratio", computed = avgSeconds(), formulaError = "divide by zero")
+		)
 
 		val table = render(history, view)
 
 		assertEquals(listOf("#ERR", "#ERR"), table.rows.map { it[1] })
 		assertEquals("divide by zero", table.columns[1].error)
+	}
+
+	@Test
+	fun aFormulaOnlyColumnIsKeptAndItsFailureIsReported() {
+		// A formula that failed to parse leaves computed null, which is exactly the shape
+		// that must not be mistaken for a typo and dropped.
+		val history = listOf(entry("a", timestamp = 10L), entry("b", timestamp = 20L))
+		val view = view(
+			column("Question"),
+			column("Ratio", formula = "Best / ", formulaError = "unexpected end of formula")
+		)
+
+		val table = render(history, view)
+
+		assertEquals(listOf("Question", "Ratio"), table.columns.map { it.id })
+		assertEquals(listOf("#ERR", "#ERR"), table.rows.map { it[1] })
+		val ratio = table.columns[1]
+		assertEquals("unexpected end of formula", ratio.error)
+		assertFalse(ratio.sortable)
+		assertEquals(
+			listOf("column \"Ratio\" failed: unexpected end of formula"),
+			table.warnings
+		)
+	}
+
+	@Test
+	fun aFormulaColumnThatParsedIsKeptWithoutAWarning() {
+		val history = listOf(entry("a", timestamp = 10L))
+		val view = view(column("Question"), column("Ratio", formula = "Best / Avg"))
+
+		val table = render(history, view)
+
+		assertEquals(listOf("Question", "Ratio"), table.columns.map { it.id })
+		assertEquals(listOf(listOf("a", "-")), table.rows)
+		assertTrue(table.columns[1].sortable)
+		assertTrue(table.warnings.isEmpty())
+	}
+
+	@Test
+	fun sortingByAnErroredColumnFallsBackToWhenDescending() {
+		val history = listOf(entry("old", timestamp = 10L), entry("new", timestamp = 20L))
+		val view = view(
+			column("Question"),
+			column("Ratio", formula = "Best / ", formulaError = "unexpected end of formula")
+		)
+
+		val table = render(history, view, sort = SortSpec("Ratio", SortDir.ASC))
+
+		assertEquals(TableEngine.FALLBACK_SORT, table.sort)
+		assertEquals(listOf("new", "old"), table.rows.map { it[0] })
+		assertTrue(
+			table.warnings.contains("column \"Ratio\" cannot be sorted, sorted by When descending")
+		)
 	}
 
 	@Test
@@ -423,6 +509,20 @@ class TableEngineTest {
 		entry("slow", seconds = 5.0f, timestamp = 30L)
 	)
 
+	/**
+	 * Interleaved so that neither sort direction can be reproduced by the base order:
+	 * When descending is in1, out1, in2, out2, which is neither answer below.
+	 */
+	private fun boolFixture(): List<HistoryEntry> = listOf(
+		entry("out2", timestamp = 10L, timedOut = true),
+		entry("in2", timestamp = 20L),
+		entry("out1", timestamp = 30L, timedOut = true),
+		entry("in1", timestamp = 40L)
+	)
+
+	private fun avgSeconds() =
+		ComputedSpec(Aggregate.AVG, "Seconds", Partition.Group("Question"), limit = 10)
+
 	private fun render(
 		history: List<HistoryEntry>,
 		view: TableView,
@@ -445,6 +545,7 @@ class TableEngineTest {
 		visible: Boolean = true,
 		format: CellFormat? = null,
 		computed: ComputedSpec? = null,
+		formula: String? = null,
 		formulaError: String? = null
 	) = ColumnSpec(
 		id = id,
@@ -453,6 +554,7 @@ class TableEngineTest {
 		visible = visible,
 		format = format,
 		computed = computed,
+		formula = formula,
 		formulaError = formulaError
 	)
 

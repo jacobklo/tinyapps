@@ -181,26 +181,35 @@ object TableEngine {
 	/** A column that survived validation, paired with the pieces needed to fill its cells. */
 	private data class ResolvedColumn(
 		val spec: ColumnSpec,
-		/** Null for a computed column, whose values Task 13 will supply. */
+		/** Null for an aggregate or formula column, whose values Task 13 will supply. */
 		val base: BaseColumn?,
 		val rendered: RenderedColumn
 	)
 
+	/** A spec is computed when it carries an aggregate or a formula. */
+	private fun isComputed(spec: ColumnSpec): Boolean = spec.computed != null || spec.formula != null
+
 	/**
 	 * Validates every spec and keeps the visible ones, in view order.
 	 *
-	 * A spec is valid when it names a base column or carries a [ColumnSpec.computed];
-	 * anything else is a config typo, so it is dropped with a warning rather than throwing.
-	 * Hidden specs are validated too, because the column sheet lists them as well.
+	 * A spec is valid when it names a base column or is computed; anything else is a config
+	 * typo, so it is dropped with a warning rather than throwing. Hidden specs are validated
+	 * too, because the column sheet lists them as well.
+	 *
+	 * A spec whose formula failed to parse keeps its place in the table so the user can see
+	 * which column broke: it renders [ERROR_CELL] throughout, cannot be sorted, and repeats
+	 * its message in [warnings], which is the only part of this the column sheet reads.
 	 */
 	private fun resolveColumns(view: TableView, warnings: MutableList<String>): List<ResolvedColumn> {
 		val resolved = ArrayList<ResolvedColumn>(view.columns.size)
 		for (spec in view.columns) {
 			val base = baseColumn(spec.id)
-			if (base == null && spec.computed == null) {
+			if (base == null && !isComputed(spec)) {
 				warnings.add("unknown column \"${spec.id}\"")
 				continue
 			}
+			val error = spec.formulaError
+			if (error != null) warnings.add("column \"${spec.id}\" failed: $error")
 			if (!spec.visible) continue
 			resolved.add(
 				ResolvedColumn(
@@ -212,8 +221,8 @@ object TableEngine {
 						width = spec.width,
 						frozen = spec.frozen,
 						type = base?.type ?: ColumnType.NUMBER,
-						sortable = base?.sortable ?: true,
-						error = spec.formulaError
+						sortable = error == null && (base?.sortable ?: true),
+						error = error
 					)
 				)
 			)
@@ -227,17 +236,21 @@ object TableEngine {
 	 *
 	 * A hidden column still sorts, since visibility is presentation only. A computed column
 	 * sorts too, and until Task 13 fills it every key is null, which leaves the base order
-	 * untouched.
+	 * untouched. An errored column does not sort, since every one of its cells is a marker.
 	 */
 	private fun resolveSort(view: TableView, sort: SortSpec, warnings: MutableList<String>): SortSpec {
 		val base = baseColumn(sort.column)
-		if (base != null) {
-			if (base.sortable) return sort
-			warnings.add("column \"${sort.column}\" cannot be sorted, sorted by When descending")
-			return FALLBACK_SORT
+		val computed = view.columns.firstOrNull { it.id == sort.column && isComputed(it) }
+		val sortable = when {
+			base != null -> base.sortable
+			computed != null -> computed.formulaError == null
+			else -> {
+				warnings.add("unknown sort column \"${sort.column}\", sorted by When descending")
+				return FALLBACK_SORT
+			}
 		}
-		if (view.columns.any { it.id == sort.column && it.computed != null }) return sort
-		warnings.add("unknown sort column \"${sort.column}\", sorted by When descending")
+		if (sortable) return sort
+		warnings.add("column \"${sort.column}\" cannot be sorted, sorted by When descending")
 		return FALLBACK_SORT
 	}
 
@@ -252,7 +265,11 @@ object TableEngine {
 	 * `Comparable<*>` values directly - that cannot be done without an unchecked cast, and
 	 * TEXT needs a key of its own anyway because it compares case-insensitively.
 	 */
-	private fun comparatorFor(column: BaseColumn, dir: SortDir, zone: ZoneId): Comparator<HistoryEntry> =
+	private fun comparatorFor(
+		column: BaseColumn,
+		dir: SortDir,
+		zone: ZoneId
+	): Comparator<HistoryEntry> =
 		when (column.type) {
 			ColumnType.TEXT -> nullsLast(dir) { entry ->
 				(rawValue(entry, column.id, 0, zone) as? String)?.lowercase(Locale.ROOT)
