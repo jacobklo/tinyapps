@@ -447,6 +447,97 @@ Recommend Engineer to finish this task:
 
 ---
 
+## Task 3b: Lifetime Review Counter
+
+**Files:**
+- Create: `app/src/main/java/net/jacoblo/simpleanki/data/SettingsRepository.kt`
+- Create: `app/src/test/java/net/jacoblo/simpleanki/SettingsTest.kt`
+- Modify: `app/src/main/java/net/jacoblo/simpleanki/data/Models.kt`
+- Modify: `app/src/main/java/net/jacoblo/simpleanki/AppContainer.kt`
+- Modify: `app/src/main/java/net/jacoblo/simpleanki/MainActivity.kt`
+
+**Context:**
+Task 3 deleted the `statsUpdateCount` badge along with `stats.json`, treating it as an artifact of the retired file. That was wrong: it is a lifetime count of cards ever reviewed, and the user's device holds **15700**. It cannot be recomputed from `history.json`, which is a rolling window capped at `maxEntries`. The only surviving copy is the `statsUpdateCount` key in `stats.json`, which Task 3 ignores rather than deletes, so the value is recoverable but frozen.
+
+This task gives the counter a new home in `settings.json`, seeds it once from `stats.json`, resumes incrementing, and restores the badge.
+
+This task creates `settings.json` earlier than planned. **Task 8 now extends `SettingsRepository` rather than creating it.**
+
+**Counting rule:** `lifetimeReviews` increments **exactly once per history record appended**. A metronome timeout appends a record, so timeouts count - which is the user's stated intent, "every card shown, timeouts included". Tying the counter to record-append rather than to a UI event is what keeps the two from drifting.
+
+**Architecture:**
+
+```kotlin
+// Added to Models.kt
+data class CounterSettings(val lifetimeReviews: Int = 0)
+
+data class Settings(
+	val metronome: MetronomeSettings = MetronomeSettings(),
+	val table: TableSettings = TableSettings(),
+	val history: HistorySettings = HistorySettings(),
+	val counters: CounterSettings = CounterSettings()
+)
+```
+
+```kotlin
+// SettingsRepository.kt
+class SettingsRepository(private val paths: AnkiPaths) {
+	/** Loads settings, creating defaults and quarantining a corrupt file. */
+	fun load(): Settings
+
+	fun save(settings: Settings)
+
+	companion object {
+		/**
+		 * One-time seed of lifetimeReviews from the retired stats.json.
+		 * Returns 0 when the file is absent or unreadable. Only ever called
+		 * when settings.json does not yet exist.
+		 */
+		fun seedLifetimeReviews(statsJson: String?): Int
+	}
+}
+```
+
+`settings.json` on disk gains one section:
+
+```json
+{ "schemaVersion": 1,
+  "metronome": { "enabled": false, "intervalSeconds": 10.0, "soundPath": null },
+  "table": { "defaultLimit": 10, "highlightEvery": 5, "defaultWindowSize": 100 },
+  "history": { "maxEntries": 5000 },
+  "counters": { "lifetimeReviews": 15700 } }
+```
+
+**Seeding sequence, which must be idempotent:**
+
+1. If `settings.json` exists and parses, use it. **Never look at `stats.json` again.**
+2. If absent, read `stats.json` and take its `statsUpdateCount`, defaulting to 0 when the file is missing, unparseable, or lacks the key.
+3. Write the new `settings.json` with that seed.
+
+Step 1 is what makes this safe to run repeatedly. Once `settings.json` exists the seed can never re-fire, so a user who later resets their count does not have it silently restored from a stale `stats.json`.
+
+**Requirements:**
+- [ ] `lifetimeReviews` increments exactly once per history record appended, in the same code path that appends
+- [ ] The badge is restored to the top bar, showing `lifetimeReviews`, in the same position and style as the retired `statsUpdateCount`
+- [ ] `settings.json` is created on first run with the seed from `stats.json`
+- [ ] The seed fires only when `settings.json` is absent; an existing file is never overwritten from `stats.json`
+- [ ] A missing, unparseable, or key-less `stats.json` seeds 0 rather than throwing
+- [ ] A corrupt `settings.json` is quarantined to `settings.json.corrupt` before defaults are written
+- [ ] `stats.json` is still never written to
+- [ ] The counter survives an app restart
+- [ ] `SettingsTest` covers: seeding from a real `stats.json` fixture; seeding 0 from a missing file; seeding 0 from a corrupt file; an existing `settings.json` suppressing the seed; round-trip save/load equality; corrupt-file quarantine
+
+**Dependencies:** Tasks 1, 2, 3.
+
+**Testability:** `seedLifetimeReviews` is a pure `String? -> Int`, so every seed case is a JVM test with no filesystem. The stateful half runs through `AnkiPaths.at(tempFolder.root)`. Assert round-trip equality structurally rather than by exact JSON text - the test classpath's `org.json` is `HashMap`-backed and key order is arbitrary there.
+
+**Difficulty:**
+Medium
+Recommend Engineer to finish this task:
+`Claude Opu`
+
+---
+
 ## Task 4: Table Render Pipeline, Without Computed Columns
 
 **Files:**
@@ -815,6 +906,7 @@ sealed interface Screen {
 
 **Requirements:**
 - [ ] All four `IconButton`s are gone from the top bar, replaced by one hamburger
+- [ ] The lifetime review counter badge from Task 3b survives the top-bar rebuild
 - [ ] Drawer entries are written-out text labels, not icons
 - [ ] Every view in the view list appears in the drawer automatically, built-in or custom
 - [ ] `StatsScreen.kt`, `HistoryScreen.kt`, and `QuestionsScreen.kt` are deleted, along with the `SortColumn` enum and `HeaderCell` composable that lived in `StatsScreen.kt`
@@ -924,7 +1016,7 @@ Recommend Engineer to finish this task:
 ## Task 8: Settings and Views Persistence
 
 **Files:**
-- Create: `app/src/main/java/net/jacoblo/simpleanki/data/SettingsRepository.kt`
+- Modify: `app/src/main/java/net/jacoblo/simpleanki/data/SettingsRepository.kt` (created in Task 3b; extend it, do not recreate)
 - Create: `app/src/main/java/net/jacoblo/simpleanki/data/ViewsRepository.kt`
 - Create: `app/src/test/java/net/jacoblo/simpleanki/RepositoryTest.kt`
 - Modify: `app/src/main/java/net/jacoblo/simpleanki/AppContainer.kt`
@@ -1586,7 +1678,7 @@ Implemented as a single `LaunchedEffect(enabled, intervalSeconds, cardKey, isFli
 
 `onFire` in `MainActivity` does:
 
-1. If the answer is NOT showing, append a `HistoryEntry` with `timedOut = true` and `timeTaken = intervalSeconds`. If the answer IS showing, the successful record was already written at flip time, so write nothing
+1. If the answer is NOT showing, append a `HistoryEntry` with `timedOut = true` and `timeTaken = intervalSeconds`, and increment `counters.lifetimeReviews` - the counter tracks records appended, so a timeout counts as a review. If the answer IS showing, the successful record was already written at flip time, so write nothing and do not increment
 2. Advance to a new random card, which changes `cardKey` and restarts the timer
 
 Behavioural rules, all of which follow from the above:
