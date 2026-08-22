@@ -14,9 +14,11 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Style
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -65,7 +67,16 @@ data class CardStats(
         }
 }
 
-enum class Screen { HOME, STATS }
+data class HistoryEntry(
+    val question: String,
+    val answer: String,
+    val timeTaken: Float,
+    val timestamp: Long
+)
+
+const val HISTORY_MAX = 300
+
+enum class Screen { HOME, STATS, HISTORY, QUESTIONS }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -120,6 +131,9 @@ fun AnkiScreen() {
     
     // 2) Counter for stats updates
     var statsUpdateCount by remember { mutableIntStateOf(0) }
+
+    // History log (cyclic, max HISTORY_MAX)
+    var history by remember { mutableStateOf<List<HistoryEntry>>(emptyList()) }
     
     // Navigation state
     var currentScreen by remember { mutableStateOf(Screen.HOME) }
@@ -154,6 +168,7 @@ fun AnkiScreen() {
                 val (loadedStats, loadedCount) = loadStats()
                 stats = loadedStats
                 statsUpdateCount = loadedCount
+                history = loadHistory()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -181,6 +196,12 @@ fun AnkiScreen() {
                     IconButton(onClick = { currentScreen = Screen.STATS }) {
                         Icon(Icons.Default.List, contentDescription = "Stats")
                     }
+                    IconButton(onClick = { currentScreen = Screen.HISTORY }) {
+                        Icon(Icons.Default.DateRange, contentDescription = "History")
+                    }
+                    IconButton(onClick = { currentScreen = Screen.QUESTIONS }) {
+                        Icon(Icons.Default.Style, contentDescription = "Questions")
+                    }
 
                     // 10) Reset button (All cards)
 //                    IconButton(onClick = {
@@ -203,6 +224,10 @@ fun AnkiScreen() {
             if (currentScreen == Screen.STATS) {
                 // 6) Stats Page
                 StatsScreen(stats, cards.map { it.question })
+            } else if (currentScreen == Screen.HISTORY) {
+                HistoryScreen(history)
+            } else if (currentScreen == Screen.QUESTIONS) {
+                QuestionsScreen(history)
             } else {
                 // Game Screen
                 GameView(
@@ -237,7 +262,18 @@ fun AnkiScreen() {
                         
                         // 7) Save stats and increment count
                         statsUpdateCount = saveStats(newStats, statsUpdateCount)
-                        
+
+                        // Append to history (cyclic, newest last in storage)
+                        val entry = HistoryEntry(
+                            question = questionText,
+                            answer = cards[currentCardIndex].answer,
+                            timeTaken = timeTaken,
+                            timestamp = now
+                        )
+                        val updatedHistory = (history + entry).takeLast(HISTORY_MAX)
+                        history = updatedHistory
+                        saveHistory(updatedHistory)
+
                         isShowingAnswer = true
                     },
                     onResetCard = { question ->
@@ -455,4 +491,52 @@ fun saveStats(stats: Map<String, CardStats>, currentCount: Int): Int {
     }
     file.writeText(jsonObject.toString())
     return newCount
+}
+
+// Load history from history.json (cyclic array, max HISTORY_MAX entries)
+fun loadHistory(): List<HistoryEntry> {
+    val appDir = File(Environment.getExternalStorageDirectory(), "SimpleAnki")
+    if (!appDir.exists()) appDir.mkdirs()
+    val file = File(appDir, "history.json")
+    if (!file.exists()) return emptyList()
+    return try {
+        val jsonArray = JSONArray(file.readText())
+        val list = mutableListOf<HistoryEntry>()
+        for (i in 0 until jsonArray.length()) {
+            val obj = jsonArray.getJSONObject(i)
+            list.add(
+                HistoryEntry(
+                    question = obj.getString("question"),
+                    answer = obj.getString("answer"),
+                    timeTaken = obj.getDouble("timeTaken").toFloat(),
+                    timestamp = obj.getLong("timestamp")
+                )
+            )
+        }
+        list.takeLast(HISTORY_MAX)
+    } catch (e: Exception) {
+        emptyList()
+    }
+}
+
+// Save history to history.json (trim to HISTORY_MAX, oldest first in file)
+fun saveHistory(history: List<HistoryEntry>) {
+    val appDir = File(Environment.getExternalStorageDirectory(), "SimpleAnki")
+    if (!appDir.exists()) appDir.mkdirs()
+    val file = File(appDir, "history.json")
+    val trimmed = history.takeLast(HISTORY_MAX)
+    val jsonArray = JSONArray()
+    trimmed.forEach { e ->
+        val obj = JSONObject()
+        obj.put("question", e.question)
+        obj.put("answer", e.answer)
+        obj.put("timeTaken", e.timeTaken.toDouble())
+        obj.put("timestamp", e.timestamp)
+        jsonArray.put(obj)
+    }
+    try {
+        file.writeText(jsonArray.toString())
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
 }
