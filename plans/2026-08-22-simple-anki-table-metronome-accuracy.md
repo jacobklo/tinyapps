@@ -421,6 +421,10 @@ Removals, all of which must be complete:
 
 `StatsScreen.kt` is modified rather than deleted here because it is still the live stats UI until Task 6 replaces it. Change it to take `List<HistoryEntry>` and derive its rows with `summarize`, keeping its existing columns and sorting.
 
+**Error policy - this task owns it.** Task 2's repositories propagate `IOException` from `JsonStore.write` rather than swallowing it, which is correct for a repository but means the policy decision lands here. Two paths regress without handling: `HistoryRepository.load()` writes twice during migration, and `DeckRepository.createSample()` propagates where the legacy `createSampleFile()` swallowed with `printStackTrace()`. Since both run inside the `ON_RESUME` observer, an unhandled throw is a crash on resume where the legacy code degraded to an empty card list. Wrap both call sites, Toast the failure, and carry on with whatever data loaded.
+
+Do NOT instead make `load()` degrade by returning parsed-but-unmigrated records. Unmigrated records read through `optBoolean("timedOut", false)`, so every pre-existing timeout would silently render as a success and feed wrong numbers to the stats view - a visible crash traded for corrupted data.
+
 **Requirements:**
 - [ ] `stats.json` is never read or written; `CardStats` no longer exists anywhere
 - [ ] The `statsUpdateCount` badge is gone from the top bar
@@ -430,6 +434,7 @@ Removals, all of which must be complete:
 - [ ] All four screens still render and navigate exactly as before
 - [ ] `MainActivity.kt` contains no `File` or `Environment` usage
 - [ ] `MainActivity.kt` is under 200 lines after the extraction
+- [ ] Repository calls in the `ON_RESUME` observer and in the answer handler are wrapped so an `IOException` shows a Toast instead of crashing. See the note below - without this, Task 3 ships a crash where the legacy code showed an empty state
 
 **Dependencies:** Tasks 1, 2.
 
@@ -1017,6 +1022,8 @@ Recovery, applied to each file independently:
 **Dependencies:** Tasks 1, 6.
 
 **Testability:** Every case runs on the JVM through `AnkiPaths.at(tempFolder.root)`. Corruption is simulated by writing `{` to the file and asserting that a `.corrupt` file appears alongside a valid regenerated one. Round-trip equality is the strongest single assertion here and catches most serialization mistakes.
+
+**Never assert exact serialized JSON text of a re-serialized object.** Unit tests link `org.json:json:20240303`, whose `JSONObject` is `HashMap`-backed, while the device uses Android's `LinkedHashMap`-backed implementation. Key order is therefore stable on device and effectively arbitrary in tests. Assert structurally - parse the output and compare fields - or compare whole objects for equality. This is exactly why round-trip equality is the right assertion here: it is order-agnostic. Numeric coercion (`optDouble`, `optBoolean`) and whole-double serialization were verified to agree between the two implementations, so only key order diverges.
 
 **Difficulty:**
 Medium
