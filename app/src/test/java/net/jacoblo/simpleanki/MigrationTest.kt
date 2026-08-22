@@ -61,6 +61,18 @@ class MigrationTest {
 	}
 
 	@Test
+	fun migrateTreatsIntegerSerializedTenSecondsAsTimedOut() {
+		// A real legacy history.json holds "timeTaken":10, not 10.0 - org.json trims
+		// the trailing zero of a whole double on both Android and the reference impl,
+		// so this hand written text is the exact on-disk form. Built as a raw string
+		// rather than through JSONObject.put so the numeric form cannot drift.
+		val raw = "[{\"question\":\"q\",\"answer\":\"a\",\"timeTaken\":10,\"timestamp\":1}]"
+		val migrated = HistoryRepository.migrate(raw)
+		assertNotNull(migrated)
+		assertTrue(JSONArray(migrated).getJSONObject(0).getBoolean("timedOut"))
+	}
+
+	@Test
 	fun migrateTreatsJustUnderTenSecondsAsAnswered() {
 		val migrated = HistoryRepository.migrate("[" + record("q", 9.99, 1L) + "]")
 		assertNotNull(migrated)
@@ -105,6 +117,24 @@ class MigrationTest {
 
 		paths.history.writeText("{ not an array")
 		assertTrue(repository.load().isEmpty())
+	}
+
+	@Test
+	fun loadSkipsOneBadRecordAndKeepsTheRest() {
+		val paths = AnkiPaths.at(tempFolder.root)
+		paths.history.writeText(
+			"[" +
+				record("good1", 2.0, 1L, timedOut = false) + "," +
+				"{\"question\":\"broken\",\"timedOut\":false}," +
+				record("good2", 3.0, 3L, timedOut = false) +
+			"]"
+		)
+
+		// One unreadable row must not discard the whole history; history.json is the
+		// only record of every per-card figure.
+		val loaded = HistoryRepository(paths).load()
+
+		assertEquals(listOf("good1", "good2"), loaded.map { it.question })
 	}
 
 	@Test

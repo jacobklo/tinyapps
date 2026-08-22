@@ -53,12 +53,19 @@ class HistoryRepository(private val paths: AnkiPaths) {
 		JsonStore(paths.history).write(array.toString())
 	}
 
+	/**
+	 * Parses the stored array, skipping any record that is not a well formed entry.
+	 *
+	 * Tolerance is per record, matching [migrate]: history.json is the only source of
+	 * every per-card figure, so one bad row must not discard thousands of good ones. A
+	 * document that is not a parseable array still yields an empty list.
+	 */
 	private fun parse(rawJson: String): List<HistoryEntry> = try {
 		val array = JSONArray(rawJson)
 		val list = ArrayList<HistoryEntry>(array.length())
 		for (i in 0 until array.length()) {
-			val obj = array.getJSONObject(i)
-			list.add(
+			val entry = try {
+				val obj = array.getJSONObject(i)
 				HistoryEntry(
 					question = obj.getString("question"),
 					answer = obj.getString("answer"),
@@ -66,7 +73,10 @@ class HistoryRepository(private val paths: AnkiPaths) {
 					timestamp = obj.getLong("timestamp"),
 					timedOut = obj.optBoolean(KEY_TIMED_OUT, false)
 				)
-			)
+			} catch (_: Exception) {
+				continue
+			}
+			list.add(entry)
 		}
 		list
 	} catch (_: Exception) {
@@ -80,7 +90,9 @@ class HistoryRepository(private val paths: AnkiPaths) {
 		private const val KEY_TIMED_OUT = "timedOut"
 
 		/**
-		 * Returns null when no migration is needed, otherwise the migrated list.
+		 * Returns the migrated text, or null to leave the file untouched - which covers
+		 * an already-migrated file, an empty array, and text that does not parse.
+		 *
 		 * Pure: takes and returns parsed JSON text so it is directly unit-testable.
 		 *
 		 * A record already carrying a "timedOut" key keeps its value even when that value
