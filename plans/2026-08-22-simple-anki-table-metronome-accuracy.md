@@ -1263,7 +1263,7 @@ Exact semantics:
 - [ ] `MIN`, `MAX`, `AVG`, `MEDIAN`, `SUM`, `STDDEV` return null when every member timed out
 - [ ] `COUNT` and `ACCURACY` count timed-out members
 - [ ] `ACCURACY` never reads `values`
-- [ ] `ACCURACY` returns a 0-to-100 percentage, not a 0-to-1 fraction
+- [ ] `ACCURACY` returns a 0-to-100 percentage, not a 0-to-1 fraction. Task 4's `CellFormat.PERCENT` formats to one decimal and appends `%` WITHOUT rescaling, so returning a fraction would render `0.9%` where `87.5%` is meant
 - [ ] `STDDEV` is population, returning 0.0 for a single member rather than null
 - [ ] `MEDIAN` averages the two middle values for an even count
 - [ ] `AggregatesTest` covers each function for: all-successful, mixed, all-timed-out, single member, and empty input
