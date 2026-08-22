@@ -131,6 +131,7 @@ data class ColumnSpec(
 	val frozen: Boolean = false,
 	val format: CellFormat? = null,
 	val computed: ComputedSpec? = null,
+	val formula: String? = null,
 	val formulaError: String? = null
 )
 
@@ -211,17 +212,23 @@ class JsonStore(private val file: File) {
 	/** File contents, or null when the file is missing or unreadable. */
 	fun readOrNull(): String?
 
+	/**
+	 * Writes atomically via a temp file plus rename.
+	 * @throws IOException when the file cannot be written.
+	 */
 	fun write(text: String)
 
 	/**
 	 * Renames the file to "<name>.corrupt", overwriting any previous quarantine.
-	 * Returns true when a file was actually moved.
+	 * Returns false when there was no file to move, or when the rename failed.
 	 */
 	fun quarantine(): Boolean
 
 	fun exists(): Boolean
 }
 ```
+
+`ColumnSpec.formula` is a passthrough field carrying the human-readable mirror of `computed`. It lives here, in Task 1, rather than arriving with the parser in Task 12, because Task 8 must round-trip every field of `views.json` and lands first - without this field Task 8 would silently drop a hand-written formula on load and save. Task 1 stores it and nothing more; generating and parsing it is Task 12's job.
 
 **Requirements:**
 - [ ] `Models.kt` contains every type above with no Android imports
@@ -230,6 +237,7 @@ class JsonStore(private val file: File) {
 - [ ] `ensureRoot()` creates the directory and does not throw when it already exists
 - [ ] `JsonStore.readOrNull()` returns null rather than throwing for a missing or unreadable file
 - [ ] `JsonStore.quarantine()` overwrites any existing `.corrupt` file rather than failing
+- [ ] `JsonStore.write()` is atomic: it writes a temp file and renames, so a process kill cannot truncate the target. Task 3 rewrites `history.json` in full on every card flip, so this path runs hundreds of times per session. Process-kill safety only; no `fsync`
 - [ ] Nothing in `MainActivity.kt` is modified by this task
 
 **Dependencies:** None.
