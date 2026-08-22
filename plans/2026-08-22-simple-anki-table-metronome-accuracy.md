@@ -1487,6 +1487,16 @@ Step 3 must run before step 4. Computed columns see every row that survived filt
 
 **Architecture:**
 
+**The pipeline gains a second sort, and there is exactly one place it can go.** A computed column is sortable, but sorting by it cannot happen at step 2, because the values do not exist yet; and it cannot happen after the collapse, because `bucket` and `rolling` partition by *sort position*, so ordering by a value derived from sort position would be circular. The resolution is: base sort at step 2, compute at step 3, then **reorder by the computed value between steps 3 and 4**. Task 4's step-3 seam comment records this constraint.
+
+**Blast radius in `TableEngine.kt`, so it is visible before you start:**
+
+- `collapse` returns `List<HistoryEntry>` and discards the indices it already computes. This task needs those indices to select from the per-column value arrays, so it becomes `List<Int>` or a small `Row` type
+- `cell` gains the computed value for its row
+- `sortRows` returns `rows` unchanged for a non-base column. It needs a sibling comparator keyed by **row position** rather than by `HistoryEntry`, because `nullsLast`'s key type is `(HistoryEntry) -> T?` and cannot express a positional lookup. This is a signature widening, not a redesign
+- `collapse` currently reports a computed column as `unknown column`, which is factually wrong once computed columns exist. Split the message: `cannot collapse duplicates on computed column "Avg"` versus the existing unknown case
+- Implement `numericSource` in terms of `rawValue` where possible, so the column-id switch does not get a second copy
+
 Extend `TableEngine.render` to, for each computed column:
 
 1. Build a `MemberSelector` from the column's `Partition` and `limit` through `MemberSelectors.forPartition`
