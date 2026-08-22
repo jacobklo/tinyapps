@@ -13,3 +13,6 @@ build/
 release/
 
 *.apk
+
+# Transient git worktrees created for subagent tasks
+.claude/worktrees/
