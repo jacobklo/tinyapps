@@ -56,8 +56,11 @@ fun TableRoute(
 		return
 	}
 
-	// Held and written in one step, so a failed write cannot leave the screen showing an
-	// edit the file does not have.
+	// The screen first, then the disk. The user asked for the edit now, so it is applied
+	// now, and a write that fails leaves the screen ahead of the file until the next load
+	// - the toast is the only thing that says so. Reverting the screen instead would trade
+	// an edit that works for one that is merely truthful, and would undo a rename or a
+	// resize under the user's hands.
 	fun store(updated: ViewsFile) {
 		onViewsFile(updated)
 		try {
@@ -75,6 +78,7 @@ fun TableRoute(
 		history = history,
 		deckQuestions = deckQuestions,
 		view = view,
+		tableSettings = container.settings.table,
 		sheetOpen = sheetOpen,
 		onViewChanged = { changed ->
 			// The same view, rebuilt; store it under the same id.

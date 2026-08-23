@@ -1,21 +1,28 @@
 package net.jacoblo.simpleanki
 
 import net.jacoblo.simpleanki.data.Aggregate
+import net.jacoblo.simpleanki.data.BuildResult
+import net.jacoblo.simpleanki.data.CellFormat
 import net.jacoblo.simpleanki.data.ColumnSpec
 import net.jacoblo.simpleanki.data.ComputedSpec
 import net.jacoblo.simpleanki.data.NEW_COLUMN_WIDTH
 import net.jacoblo.simpleanki.data.Partition
 import net.jacoblo.simpleanki.data.SortDir
 import net.jacoblo.simpleanki.data.SortSpec
+import net.jacoblo.simpleanki.data.TableSettings
 import net.jacoblo.simpleanki.data.TableView
 import net.jacoblo.simpleanki.data.ViewsFile
 import net.jacoblo.simpleanki.data.addComputed
+import net.jacoblo.simpleanki.data.buildComputedSpec
 import net.jacoblo.simpleanki.data.delete
+import net.jacoblo.simpleanki.data.generatedTitle
 import net.jacoblo.simpleanki.data.removeColumn
 import net.jacoblo.simpleanki.data.rename
 import net.jacoblo.simpleanki.data.saveAsNew
 import net.jacoblo.simpleanki.data.toggleColumn
 import net.jacoblo.simpleanki.data.uniqueId
+import net.jacoblo.simpleanki.table.FormulaParser
+import net.jacoblo.simpleanki.table.ParseResult
 import net.jacoblo.simpleanki.table.TableEngine
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -276,6 +283,131 @@ class ViewOpsTest {
 	@Test
 	fun addComputedGivesAnUnnameableTitleAFallbackId() {
 		assertEquals("column", view("v", "V").addComputed(computed("<<>>")).columns.single().id)
+	}
+
+	// -- buildComputedSpec ------------------------------------------------------------
+
+	/**
+	 * The user asked for "default 100 and user settable", and this is the 100. Pinned as a
+	 * literal because it is a stated requirement rather than an implementation detail; the
+	 * settable half is the argument the two tests below vary.
+	 */
+	@Test
+	fun theDefaultWindowIsAHundredRows() {
+		assertEquals(100, TableSettings().defaultWindowSize)
+	}
+
+	@Test
+	fun buildComputedSpecOpensAnEmptyWindowAtTheUsersOwnDefault() {
+		// An emptied size field reaches here as a 0, which is the same case ViewsRepository
+		// defaults on the way in from a hand-edited file. Both must land on the same number
+		// or the column in memory disagrees with the column on disk about how many rows it
+		// covers - and a 0 left alone is clamped to a partition of one row, so the column
+		// would render each row's own value while looking like an aggregate.
+		val settings = TableSettings(defaultWindowSize = 40)
+		assertEquals(
+			Partition.Bucket(40),
+			spec(build(Aggregate.AVG, partition = Partition.Bucket(0), settings = settings)).computed?.partition
+		)
+		assertEquals(
+			Partition.Rolling(40),
+			spec(build(Aggregate.AVG, partition = Partition.Rolling(0), settings = settings)).computed?.partition
+		)
+	}
+
+	@Test
+	fun buildComputedSpecLeavesASizeTheUserTypedAlone() {
+		val settings = TableSettings(defaultWindowSize = 40)
+		assertEquals(
+			Partition.Bucket(7),
+			spec(build(Aggregate.AVG, partition = Partition.Bucket(7), settings = settings)).computed?.partition
+		)
+		// A group has no size to default, and its limit is the caller's own: 0 there is the
+		// struct's spelling of "every member" rather than an empty field.
+		val group = spec(
+			build(Aggregate.AVG, partition = Partition.Group("Question"), limit = 0, settings = settings)
+		)
+		assertEquals(Partition.Group("Question"), group.computed?.partition)
+		assertEquals(0, group.computed?.limit)
+	}
+
+	@Test
+	fun buildComputedSpecDerivesTheFormatFromTheAggregate() {
+		// TableEngine falls back to TWO_DP for a computed column, which is right for the six
+		// that answer in their source's units and wrong for the two that do not: COUNT would
+		// render five attempts as "5.00", and ACCURACY five of six as "83.33" with no sign.
+		assertEquals(CellFormat.INT, spec(build(Aggregate.COUNT)).format)
+		assertEquals(CellFormat.PERCENT, spec(build(Aggregate.ACCURACY)).format)
+		for (fn in listOf(
+			Aggregate.MIN, Aggregate.MAX, Aggregate.AVG,
+			Aggregate.MEDIAN, Aggregate.SUM, Aggregate.STDDEV
+		)) {
+			assertEquals(fn.name, CellFormat.TWO_DP, spec(build(fn)).format)
+		}
+	}
+
+	@Test
+	fun buildComputedSpecRefusesAnAggregateItsSourceCannotFeed() {
+		// Two taps apart in the sheet, and it renders "-" in every cell. The pickers are
+		// independent, so nothing but this stops the pairing being stored.
+		val refused = build(Aggregate.AVG, source = TableEngine.ID_QUESTION)
+		assertTrue(refused.toString(), refused is BuildResult.Err)
+
+		// The very message the typed formula gives, because it is the very same rule. Two
+		// copies would be two chances for the pickers to accept what the formula door
+		// rejects, which is how this got past a whole task's worth of tests to begin with.
+		val typed = FormulaParser.parse("=AVG(Question, group:Question)", TableEngine.BASE_COLUMN_IDS)
+		assertEquals((typed as ParseResult.Err).message, (refused as BuildResult.Err).message)
+		assertTrue(refused.message, refused.message.contains(TableEngine.ID_QUESTION))
+	}
+
+	@Test
+	fun buildComputedSpecAllowsTheTwoAggregatesThatNeverReadTheirSource() {
+		// COUNT reads the size of the member set and ACCURACY the timeout flags, so a text
+		// source is not merely tolerated there - it is unread either way, and refusing it
+		// would make "how many times have I seen this question" unbuildable.
+		assertEquals(
+			Aggregate.COUNT,
+			spec(build(Aggregate.COUNT, source = TableEngine.ID_QUESTION)).computed?.aggregate
+		)
+		assertEquals(
+			Aggregate.ACCURACY,
+			spec(build(Aggregate.ACCURACY, source = TableEngine.ID_ANSWER)).computed?.aggregate
+		)
+	}
+
+	@Test
+	fun buildComputedSpecNamesTheColumnAfterThePickersWhenTheUserDoesNot() {
+		assertEquals("AVG Seconds", generatedTitle(Aggregate.AVG, TableEngine.ID_SECONDS))
+		assertEquals("AVG Seconds", spec(build(Aggregate.AVG, title = "   ")).title)
+		// The user's own text otherwise, trimmed, as both id and title; addComputed derives
+		// the id it is actually stored under.
+		val named = spec(build(Aggregate.AVG, title = "  My Column  "))
+		assertEquals("My Column", named.id)
+		assertEquals("My Column", named.title)
+		assertEquals(NEW_COLUMN_WIDTH, named.width)
+	}
+
+	/** A struct with no mirror beside it is not a shape that survives a save. */
+	@Test
+	fun buildComputedSpecWritesTheFormulaMirrorBesideTheStruct() {
+		val built = build(Aggregate.AVG, partition = Partition.Group(TableEngine.ID_QUESTION), limit = 10)
+		assertEquals("=AVG(Seconds, group:Question, last:10)", spec(built).formula)
+	}
+
+	private fun build(
+		aggregate: Aggregate,
+		source: String = TableEngine.ID_SECONDS,
+		partition: Partition = Partition.Group(TableEngine.ID_QUESTION),
+		limit: Int = 10,
+		title: String = "",
+		settings: TableSettings = TableSettings()
+	): BuildResult = buildComputedSpec(aggregate, source, partition, limit, title, settings)
+
+	/** The column a build produced, failing the test when the build was refused instead. */
+	private fun spec(result: BuildResult): ColumnSpec {
+		assertTrue(result.toString(), result is BuildResult.Ok)
+		return (result as BuildResult.Ok).spec
 	}
 
 	// -- removeColumn -----------------------------------------------------------------

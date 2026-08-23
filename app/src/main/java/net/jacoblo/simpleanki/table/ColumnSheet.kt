@@ -51,11 +51,13 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import net.jacoblo.simpleanki.data.Aggregate
+import net.jacoblo.simpleanki.data.BuildResult
 import net.jacoblo.simpleanki.data.ColumnSpec
-import net.jacoblo.simpleanki.data.ComputedSpec
-import net.jacoblo.simpleanki.data.NEW_COLUMN_WIDTH
 import net.jacoblo.simpleanki.data.Partition
+import net.jacoblo.simpleanki.data.TableSettings
 import net.jacoblo.simpleanki.data.TableView
+import net.jacoblo.simpleanki.data.buildComputedSpec
+import net.jacoblo.simpleanki.data.generatedTitle
 
 /**
  * Shows and hides columns, builds computed ones, and creates, renames, and deletes views.
@@ -67,11 +69,14 @@ import net.jacoblo.simpleanki.data.TableView
  *   which case the caller ADDS the spec; see ViewOps.toggleColumn.
  * @param onAddComputed receives a spec whose id is the user's title verbatim. The caller
  *   derives the real id, since only it knows what is already taken.
+ * @param tableSettings supplies the window size and limit the computed-column builder
+ *   opens at, which is the whole of "default 100 and user settable" on the UI side.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ColumnSheet(
 	view: TableView,
+	tableSettings: TableSettings,
 	warnings: List<String>,
 	onToggleVisible: (columnId: String) -> Unit,
 	onAddComputed: (ColumnSpec) -> Unit,
@@ -138,6 +143,7 @@ fun ColumnSheet(
 			HorizontalDivider(Modifier.padding(vertical = 8.dp))
 			if (building) {
 				ComputedBuilder(
+					tableSettings = tableSettings,
 					onCancel = { building = false },
 					onAdd = { spec ->
 						onAddComputed(spec)
@@ -187,9 +193,10 @@ private fun entriesOf(view: TableView): List<ColumnEntry> {
 		ColumnEntry(
 			id = spec.id,
 			title = spec.title,
-			// Task 12 generates the formula mirror; until it exists the struct is what
-			// there is to show, and it says the same thing in more words.
-			detail = spec.formula ?: spec.computed?.let { describe(it) },
+			// The formula mirror, which every computed column carries: the builder writes
+			// one, ViewsRepository regenerates one from the struct on the way in, and a
+			// hand-written column is nothing but one. Null only for a plain column.
+			detail = spec.formula,
 			visible = spec.visible,
 			// Base columns only ever hide; see ViewOps.removeColumn for why.
 			removable = TableEngine.baseColumn(spec.id) == null
@@ -199,17 +206,6 @@ private fun entriesOf(view: TableView): List<ColumnEntry> {
 		.filter { it.id !in carried }
 		.map { ColumnEntry(it.id, it.id, null, visible = false, removable = false) }
 	return listed + missing
-}
-
-/** A [ComputedSpec] in words, standing in for the formula Task 12 will generate. */
-private fun describe(spec: ComputedSpec): String {
-	val over = when (val partition = spec.partition) {
-		is Partition.Group ->
-			"grouped by ${partition.by}" + if (spec.limit > 0) ", last ${spec.limit}" else ""
-		is Partition.Bucket -> "in buckets of ${partition.size}"
-		is Partition.Rolling -> "rolling ${partition.size}"
-	}
-	return "${spec.aggregate.name} of ${spec.source}, $over"
 }
 
 @Composable
@@ -284,13 +280,19 @@ private fun NameEditor(
 }
 
 /**
- * Builds a [ComputedSpec] from pickers rather than from typed text.
+ * Builds a computed column from pickers rather than from typed text.
  *
- * The user never writes a formula here. Task 12 adds the formula mirror and its parser;
- * this collects the struct the engine actually reads, which cannot be malformed.
+ * The user never writes a formula here, so nothing they can pick is malformed - but the
+ * pickers are independent, so the PAIRING still can be. Everything except collecting the
+ * picks belongs to [buildComputedSpec], which validates it; this only shows the refusal
+ * and disables the button, so no invalid spec is ever handed on.
  */
 @Composable
-private fun ComputedBuilder(onCancel: () -> Unit, onAdd: (ColumnSpec) -> Unit) {
+private fun ComputedBuilder(
+	tableSettings: TableSettings,
+	onCancel: () -> Unit,
+	onAdd: (ColumnSpec) -> Unit
+) {
 	// Every base column but "#", which names a row's position in the finished table rather
 	// than anything about the row. It is neither a value to aggregate - TableEngine.
 	// numericSource returns NaN for it - nor a key worth grouping on, since every row
@@ -301,13 +303,30 @@ private fun ComputedBuilder(onCancel: () -> Unit, onAdd: (ColumnSpec) -> Unit) {
 	var source by remember { mutableStateOf(TableEngine.ID_SECONDS) }
 	var mode by remember { mutableStateOf(MODE_GROUP) }
 	var by by remember { mutableStateOf(TableEngine.ID_QUESTION) }
-	// Text rather than Int so the field can be empty while it is being retyped. Task 10
-	// defines what a size or a limit of zero means; nothing reads either yet.
-	var size by remember { mutableStateOf("10") }
-	var limit by remember { mutableStateOf("10") }
+	// Text rather than Int so the field can be empty while it is being retyped, which is
+	// what a zero here means. buildComputedSpec settles what a zero size becomes; a zero
+	// limit is the struct's own spelling of "every member".
+	//
+	// Two different settings, and deliberately so. A bucket or a rolling window is a
+	// number of ROWS to aggregate over and opens at the user's default window size; the
+	// limit beside a group is how many of that group's attempts to keep, which is the far
+	// smaller defaultLimit.
+	var size by remember { mutableStateOf(tableSettings.defaultWindowSize.toString()) }
+	var limit by remember { mutableStateOf(tableSettings.defaultLimit.toString()) }
 	var title by remember { mutableStateOf("") }
 
-	val generated = "${aggregate.name} $source"
+	val built = buildComputedSpec(
+		aggregate = aggregate,
+		source = source,
+		partition = when (mode) {
+			MODE_GROUP -> Partition.Group(by)
+			MODE_BUCKET -> Partition.Bucket(size.toIntOrNull() ?: 0)
+			else -> Partition.Rolling(size.toIntOrNull() ?: 0)
+		},
+		limit = if (mode == MODE_GROUP) limit.toIntOrNull() ?: 0 else 0,
+		title = title,
+		tableSettings = tableSettings
+	)
 	Column(Modifier.fillMaxWidth()) {
 		Picker("Aggregate", aggregate.name, remember { Aggregate.entries.map { it.name } }) { picked ->
 			aggregate = Aggregate.valueOf(picked)
@@ -329,33 +348,27 @@ private fun ComputedBuilder(onCancel: () -> Unit, onAdd: (ColumnSpec) -> Unit) {
 				.fillMaxWidth()
 				.padding(top = 8.dp),
 			label = { Text("Title") },
-			placeholder = { Text(generated) },
+			placeholder = { Text(generatedTitle(aggregate, source)) },
 			singleLine = true
 		)
+		if (built is BuildResult.Err) {
+			// Shown the same way a render warning above is, and carrying the very message
+			// the typed formula would have given. The button is disabled rather than left
+			// live, so the pairing cannot be stored at all - a column that renders "-" in
+			// every cell is not worth offering, and this text says why it is refused.
+			Text(
+				text = built.message,
+				modifier = Modifier.padding(top = 8.dp),
+				style = MaterialTheme.typography.bodySmall,
+				color = MaterialTheme.colorScheme.error
+			)
+		}
 		Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
 			TextButton(onClick = onCancel) { Text("Cancel") }
-			Button(onClick = {
-				val name = title.trim().ifEmpty { generated }
-				onAdd(
-					ColumnSpec(
-						// The user's title verbatim; ViewOps.addComputed derives the id it
-						// is actually stored under.
-						id = name,
-						title = name,
-						width = NEW_COLUMN_WIDTH,
-						computed = ComputedSpec(
-							aggregate = aggregate,
-							source = source,
-							partition = when (mode) {
-								MODE_GROUP -> Partition.Group(by)
-								MODE_BUCKET -> Partition.Bucket(size.toIntOrNull() ?: 0)
-								else -> Partition.Rolling(size.toIntOrNull() ?: 0)
-							},
-							limit = if (mode == MODE_GROUP) limit.toIntOrNull() ?: 0 else 0
-						)
-					)
-				)
-			}) { Text("Add") }
+			Button(
+				onClick = { if (built is BuildResult.Ok) onAdd(built.spec) },
+				enabled = built is BuildResult.Ok
+			) { Text("Add") }
 		}
 	}
 }

@@ -12,6 +12,8 @@
  */
 package net.jacoblo.simpleanki.data
 
+import net.jacoblo.simpleanki.table.FormulaParser
+import net.jacoblo.simpleanki.table.FormulaWriter
 import net.jacoblo.simpleanki.table.TableEngine
 import java.util.Locale
 
@@ -147,6 +149,102 @@ fun TableView.toggleColumn(columnId: String): TableView {
 fun TableView.addComputed(spec: ColumnSpec): TableView {
 	val taken = columns.map { it.id }.toSet() + TableEngine.BASE_COLUMNS.map { it.id }
 	return copy(columns = columns + spec.copy(id = uniqueId(spec.id, taken, fallback = "column")))
+}
+
+/** What the column sheet's builder produced: the column, or why it was refused. */
+sealed interface BuildResult {
+	data class Ok(val spec: ColumnSpec) : BuildResult
+	data class Err(val message: String) : BuildResult
+}
+
+/**
+ * The title a computed column takes when the user names none.
+ *
+ * The builder shows it as the title field's placeholder, so what the user sees greyed out
+ * is literally what they get by leaving the field alone.
+ */
+fun generatedTitle(aggregate: Aggregate, source: String): String = "${aggregate.name} $source"
+
+/**
+ * The column the builder's pickers describe, or why that pairing is refused.
+ *
+ * Pure, and here rather than in the composable, because everything worth getting right
+ * about the builder is: that ACCURACY renders as a percentage rather than as a bare
+ * number, that a window with no size falls back to the user's own default rather than to
+ * zero, and that AVG over Question is refused instead of rendering "-" in every cell with
+ * no explanation anywhere.
+ *
+ * That last rule is [FormulaParser.sourceError] itself, not a second copy of it. The
+ * pickers can express any aggregate against any source, so without it the easy path would
+ * accept what the typed formula rejects - and the user would get the same broken column
+ * with none of the message.
+ *
+ * [title] is taken verbatim as both id and title; [TableView.addComputed] derives the id
+ * actually stored, since only it knows what is already taken. A blank one falls back to
+ * [generatedTitle].
+ */
+fun buildComputedSpec(
+	aggregate: Aggregate,
+	source: String,
+	partition: Partition,
+	limit: Int,
+	title: String,
+	tableSettings: TableSettings
+): BuildResult {
+	FormulaParser.sourceError(aggregate, source, TableEngine.BASE_COLUMN_IDS)?.let {
+		return BuildResult.Err(it)
+	}
+	val spec = ComputedSpec(aggregate, source, sized(partition, tableSettings), limit)
+	val name = title.trim().ifEmpty { generatedTitle(aggregate, source) }
+	return BuildResult.Ok(
+		ColumnSpec(
+			id = name,
+			title = name,
+			width = NEW_COLUMN_WIDTH,
+			format = defaultFormat(aggregate),
+			computed = spec,
+			// Written here for the reason DefaultViews writes it: a struct with no mirror
+			// beside it is not a shape that survives a save, so generating it now makes the
+			// column in memory byte for byte what the autosave is about to store.
+			formula = FormulaWriter.write(spec)
+		)
+	)
+}
+
+/**
+ * How a computed column renders when the user picked no format, derived from what the
+ * aggregate answers in.
+ *
+ * The builder offers no format picker on purpose: every aggregate has exactly one sensible
+ * rendering, and TableEngine's blanket TWO_DP default is right for only six of the eight.
+ * COUNT answers in whole attempts and ACCURACY in percent - "5.00" and "83.33" are both
+ * simply wrong. An exhaustive when rather than an else, so a ninth aggregate is a compile
+ * error here rather than a column that quietly renders in the wrong units.
+ */
+private fun defaultFormat(aggregate: Aggregate): CellFormat = when (aggregate) {
+	Aggregate.COUNT -> CellFormat.INT
+	Aggregate.ACCURACY -> CellFormat.PERCENT
+	Aggregate.MIN, Aggregate.MAX, Aggregate.AVG,
+	Aggregate.MEDIAN, Aggregate.SUM, Aggregate.STDDEV -> CellFormat.TWO_DP
+}
+
+/**
+ * [partition] with a block or window size of at least 1, defaulted to
+ * [TableSettings.defaultWindowSize].
+ *
+ * The size field can be emptied while it is being retyped, which reaches here as a 0. That
+ * is the same case [ViewsRepository] defaults on the way in from a hand-edited file, and
+ * defaulting it identically here is what keeps the column in memory agreeing with the one
+ * on disk: left at 0 it would be clamped to a partition of one row, so the column would
+ * render each row's own value while looking like an aggregate.
+ */
+private fun sized(partition: Partition, tableSettings: TableSettings): Partition {
+	val size = tableSettings.defaultWindowSize
+	return when (partition) {
+		is Partition.Group -> partition
+		is Partition.Bucket -> if (partition.size >= 1) partition else Partition.Bucket(size)
+		is Partition.Rolling -> if (partition.size >= 1) partition else Partition.Rolling(size)
+	}
 }
 
 /**

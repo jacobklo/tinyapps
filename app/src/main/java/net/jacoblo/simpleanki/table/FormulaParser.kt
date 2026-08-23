@@ -84,8 +84,15 @@ object FormulaParser {
 		return arguments(fn, source, parts.drop(1), knownColumns)
 	}
 
-	/** Why [source] cannot feed [fn], or null when it can. */
-	private fun sourceError(fn: Aggregate, source: String, knownColumns: Set<String>): String? {
+	/**
+	 * Why [source] cannot feed [fn], or null when it can.
+	 *
+	 * Internal rather than private because the column sheet's builder asks the same
+	 * question of the pickers it collected. Two rule sets would mean a pairing the typed
+	 * formula rejects and the pickers accept, which is exactly the state this was pulled
+	 * out of - and the message the user reads is then the same either way.
+	 */
+	internal fun sourceError(fn: Aggregate, source: String, knownColumns: Set<String>): String? {
 		if (source == WILDCARD) return if (fn == Aggregate.COUNT) null else MSG_STAR_NEEDS_COUNT
 		if (source !in knownColumns) return unknownColumn(source)
 		if (!Aggregates.requiresNumericSource(fn)) return null

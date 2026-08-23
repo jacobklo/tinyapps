@@ -20,6 +20,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import net.jacoblo.simpleanki.data.HistoryEntry
+import net.jacoblo.simpleanki.data.TableSettings
 import net.jacoblo.simpleanki.data.TableView
 import net.jacoblo.simpleanki.data.addComputed
 import net.jacoblo.simpleanki.data.removeColumn
@@ -37,6 +38,8 @@ private const val LOG_TAG = "SimpleAnkiTable"
  *
  * @param sheetOpen whether the column sheet is showing. Hoisted because the action that
  *   opens it lives in the top bar, which is above this screen.
+ * @param tableSettings passed straight through to the sheet, which seeds the
+ *   computed-column builder's window size and limit from it.
  * @param onViewChanged raised whenever the view changed - a header drag's new width or
  *   order, or one of the sheet's column edits. The caller saves it to views.json.
  * @param onRendered fired after each render, with the table that was produced. Wired to
@@ -47,6 +50,7 @@ fun TableScreen(
 	history: List<HistoryEntry>,
 	deckQuestions: Set<String>,
 	view: TableView,
+	tableSettings: TableSettings,
 	sheetOpen: Boolean,
 	onViewChanged: (TableView) -> Unit,
 	onRendered: (RenderedTable) -> Unit,
@@ -79,7 +83,7 @@ fun TableScreen(
 	val currentOnRendered by rememberUpdatedState(onRendered)
 
 	// Fires on the engine render rather than on the page's paint: a dead render process
-	// must not be able to withhold the dump Task 7 writes from here.
+	// must not be able to withhold the test-mode dump written from here.
 	LaunchedEffect(table) { currentOnRendered(table) }
 
 	val bridge = remember {
@@ -108,6 +112,7 @@ fun TableScreen(
 	if (sheetOpen) {
 		ColumnSheet(
 			view = view,
+			tableSettings = tableSettings,
 			warnings = table.warnings,
 			onToggleVisible = { columnId -> onViewChanged(view.toggleColumn(columnId)) },
 			onAddComputed = { spec -> onViewChanged(view.addComputed(spec)) },
