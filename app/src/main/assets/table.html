@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Simple Anki table</title>
+  <!--
+    Both hrefs are relative, so they resolve against this page's own virtual origin and
+    are answered by the AssetsPathHandler. Nothing here may reference a CDN: the app has
+    no INTERNET permission and has to work offline.
+  -->
+  <link rel="stylesheet" href="tabulator/tabulator.min.css">
+  <style>
+    /*
+      Tabulator ships its own greys. Every colour it paints is re-pointed at one of these
+      custom properties so the whole grid follows the `dark` flag in the payload, roughly
+      matching Material3 surface/onSurface/outline.
+    */
+    :root {
+      --surface: #fffbfe;
+      --surface-header: #f4eff4;
+      --on-surface: #1c1b1f;
+      --on-surface-dim: #49454f;
+      --outline: #cac4d0;
+      --highlight: rgba(103, 80, 164, 0.10);
+      --error: #b3261e;
+      --sorted: rgba(103, 80, 164, 0.16);
+    }
+
+    :root[data-theme="dark"] {
+      --surface: #1c1b1f;
+      --surface-header: #2b2930;
+      --on-surface: #e6e1e5;
+      --on-surface-dim: #cac4d0;
+      --outline: #49454f;
+      --highlight: rgba(208, 188, 255, 0.10);
+      --error: #f2b8b5;
+      --sorted: rgba(208, 188, 255, 0.16);
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      overflow: hidden;
+      background: var(--surface);
+      color: var(--on-surface);
+      font-family: sans-serif;
+      /* The grid owns every gesture; without this a drag can select header text. */
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #grid {
+      height: 100%;
+    }
+
+    .tabulator {
+      background-color: var(--surface);
+      border: none;
+      font-size: 13px;
+    }
+
+    .tabulator .tabulator-header {
+      background-color: var(--surface-header);
+      border-bottom: 1px solid var(--outline);
+      color: var(--on-surface);
+    }
+
+    .tabulator .tabulator-header .tabulator-col {
+      background-color: var(--surface-header);
+      border-right: 1px solid var(--outline);
+    }
+
+    .tabulator .tabulator-header .tabulator-col.is-sorted {
+      background-color: var(--sorted);
+    }
+
+    .tabulator .tabulator-header .tabulator-col .tabulator-col-content {
+      padding: 8px 6px;
+    }
+
+    .tabulator .tabulator-tableholder {
+      background-color: var(--surface);
+    }
+
+    .tabulator .tabulator-tableholder .tabulator-placeholder-contents {
+      color: var(--on-surface-dim);
+    }
+
+    .tabulator-row {
+      background-color: var(--surface);
+      border-bottom: 1px solid var(--outline);
+      color: var(--on-surface);
+      min-height: 34px;
+    }
+
+    /* Tabulator alternates its own stripe; ours is the only one that should show. */
+    .tabulator-row.tabulator-row-even {
+      background-color: var(--surface);
+    }
+
+    .tabulator-row.hl,
+    .tabulator-row.tabulator-row-even.hl {
+      background-color: var(--highlight);
+    }
+
+    .tabulator-row .tabulator-cell {
+      border-right: 1px solid var(--outline);
+      padding: 8px 6px;
+    }
+
+    .tabulator-row .tabulator-cell.err {
+      color: var(--error);
+    }
+
+    /* A frozen column floats over the scrolled ones, so it needs an opaque backdrop. */
+    .tabulator-row .tabulator-cell.tabulator-frozen {
+      background-color: inherit;
+      box-shadow: 1px 0 0 var(--outline);
+    }
+
+    .tabulator .tabulator-header .tabulator-col.tabulator-frozen {
+      box-shadow: 1px 0 0 var(--outline);
+    }
+  </style>
+</head>
+<body>
+  <div id="grid"></div>
+  <script src="tabulator/tabulator.min.js"></script>
+  <script>
+    "use strict";
+
+    // Same virtual origin as this page; PayloadPathHandler answers it.
+    var PAYLOAD_URL = "/payload/table.json";
+
+    var table = null;
+    // Tabulator field name -> the column id Kotlin knows it by. Fields are synthetic
+    // ("c0", "c1", ...) so that a column id may contain any character: Tabulator treats
+    // a dot in a field as a nested-property path, which would break "a.b" as an id.
+    var fieldToId = {};
+
+    function log(message) {
+      // Surfaces in logcat through the WebChromeClient.
+      console.log("[table] " + message);
+    }
+
+    function arrow(dir) {
+      // Escaped rather than literal so this file stays ASCII.
+      return dir === "asc" ? " \u25B2" : " \u25BC";
+    }
+
+    // Every cell of an errored column reads "#ERR"; the payload's own cells already say
+    // so, but the formatter makes it true regardless of what arrives.
+    function errorFormatter(cell) {
+      cell.getElement().classList.add("err");
+      return "#ERR";
+    }
+
+    function buildColumns(data) {
+      var sortColumn = data.sort ? data.sort.column : null;
+      var sortDir = data.sort ? data.sort.dir : "desc";
+      fieldToId = {};
+      return data.columns.map(function (col, index) {
+        var field = "c" + index;
+        fieldToId[field] = col.id;
+        var definition = {
+          title: col.title + (col.id === sortColumn ? arrow(sortDir) : ""),
+          field: field,
+          width: col.width,
+          frozen: col.frozen === true,
+          // Kotlin owns sorting. Tabulator must never reorder a row.
+          headerSort: false,
+          resizable: true,
+          cssClass: col.id === sortColumn ? "is-sorted" : "",
+          headerClick: function () {
+            // A header tap reports the intent and nothing else; Kotlin decides.
+            if (col.sortable && !col.error) {
+              Android.sort(col.id);
+            }
+          }
+        };
+        if (col.error) {
+          definition.formatter = errorFormatter;
+        }
+        return definition;
+      });
+    }
+
+    // Rows arrive as arrays aligned with `columns`, which keeps the payload small.
+    // Tabulator wants one object per row, so widen them here.
+    function buildRows(data) {
+      var count = data.columns.length;
+      return data.rows.map(function (row, rowIndex) {
+        var out = { _i: rowIndex };
+        for (var i = 0; i < count; i++) {
+          out["c" + i] = row[i];
+        }
+        return out;
+      });
+    }
+
+    function render(data) {
+      document.documentElement.setAttribute("data-theme", data.dark ? "dark" : "light");
+
+      var highlightEvery = data.highlightEvery || 0;
+      var rows = buildRows(data);
+
+      // Rebuilding wholesale rather than calling setData, because a reload may also
+      // change the columns, their widths, their order, and the sort indicator.
+      if (table) {
+        table.destroy();
+        table = null;
+      }
+
+      table = new Tabulator("#grid", {
+        data: rows,
+        columns: buildColumns(data),
+        index: "_i",
+        height: "100%",
+        // fitData leaves an explicitly sized column at its own width, which is what
+        // honours the widths the user dragged. A layout that redistributes width, such
+        // as fitColumns, would quietly overwrite them.
+        layout: "fitData",
+        movableColumns: true,
+        columnDefaults: { headerSort: false, resizable: true },
+        placeholder: "No rows",
+        rowFormatter: function (row) {
+          if (highlightEvery <= 0) {
+            return;
+          }
+          // Kotlin already put the rows in display order and nothing re-sorts them here,
+          // so the payload index is the display position.
+          if ((row.getData()._i + 1) % highlightEvery === 0) {
+            row.getElement().classList.add("hl");
+          }
+        }
+      });
+
+      table.on("tableBuilt", function () {
+        Android.renderComplete(rows.length);
+      });
+
+      table.on("columnResized", function (column) {
+        var id = fieldToId[column.getField()];
+        if (id !== undefined) {
+          Android.resize(id, Math.round(column.getWidth()));
+        }
+      });
+
+      table.on("columnMoved", function (column, columns) {
+        var ids = columns.map(function (c) {
+          return fieldToId[c.getField()];
+        }).filter(function (id) {
+          return id !== undefined;
+        });
+        Android.reorder(ids.join(","));
+      });
+    }
+
+    // Kotlin refreshes by assigning PayloadPathHandler.payload and calling this.
+    function reload() {
+      fetch(PAYLOAD_URL, { cache: "no-store" })
+        .then(function (response) {
+          if (!response.ok) {
+            throw new Error("payload HTTP " + response.status);
+          }
+          return response.json();
+        })
+        .then(function (data) {
+          render(data);
+        })
+        .catch(function (error) {
+          log("payload failed: " + error);
+        });
+    }
+
+    window.reload = reload;
+    document.addEventListener("DOMContentLoaded", reload);
+  </script>
+</body>
+</html>

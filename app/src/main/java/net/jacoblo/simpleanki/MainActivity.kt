@@ -22,6 +22,7 @@ import net.jacoblo.simpleanki.data.AnkiCard
 import net.jacoblo.simpleanki.data.AnkiPaths
 import net.jacoblo.simpleanki.data.HistoryEntry
 import net.jacoblo.simpleanki.data.recordAnswer
+import net.jacoblo.simpleanki.table.HardcodedHistoryTable
 import net.jacoblo.simpleanki.ui.theme.SimpleAnkiTheme
 import java.io.IOException
 
@@ -138,7 +139,7 @@ fun AnkiScreen(container: AppContainer) {
         ) {
             when (currentScreen) {
                 // 6) Stats Page
-                Screen.STATS -> StatsScreen(history, cards.map { it.question })
+                Screen.STATS -> HardcodedHistoryTable(history, cards.map { it.question }.toSet())
                 Screen.HISTORY -> HistoryScreen(history)
                 Screen.QUESTIONS -> QuestionsScreen(history)
                 Screen.HOME -> GameView(

@@ -63,6 +63,8 @@ dependencies {
     implementation libs.androidx.compose.ui.tooling.preview
     implementation libs.androidx.compose.material3
     implementation libs.androidx.compose.material.icons.extended
+    // WebViewAssetLoader: serves table.html, Tabulator, and the payload from one virtual origin.
+    implementation libs.androidx.webkit
     testImplementation libs.junit
     // Real org.json on the unit-test classpath only; the android.jar stub throws
     // "not mocked" for every JSONObject/JSONArray call.
