@@ -16,3 +16,6 @@ release/
 
 # Transient git worktrees created for subagent tasks
 .claude/worktrees/
+
+# Kotlin compiler session cache
+.kotlin/
