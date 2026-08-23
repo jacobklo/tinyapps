@@ -1101,6 +1101,13 @@ class ViewsRepository(paths: AnkiPaths) {
 
 `format` maps to `CellFormat` by these exact strings: `text`, `int`, `0.0`, `0.00`, `percent`, `time`. `partition.mode` is one of `group`, `bucket`, or `rolling`; `group` carries `by`, the other two carry `size`. A column is computed if and only if it carries `aggregate` or `formula`.
 
+**Harden `JsonStore` here, for both files.** Task 3b surfaced two related weaknesses that are cheapest to fix once, in `JsonStore`, rather than per repository:
+
+- `readOrNull()` returns null for a missing file AND for one that exists but cannot be read. A transient read failure on a perfectly valid file therefore looks identical to absence, so the file gets quarantined and replaced with defaults. Introduce an absent/unreadable distinction so an unreadable file is retried rather than replaced.
+- `quarantine()` deletes any existing `<name>.corrupt` before renaming. So a SECOND corruption incident overwrites the good quarantine with the already-defaulted file, and the original content is gone for good. Make quarantine non-clobbering, or keep the first one.
+
+The second is a genuine data-loss path: for `settings.json` it would destroy the user's recovered lifetime review count permanently.
+
 Recovery, applied to each file independently:
 
 1. Missing file: write defaults, no quarantine, since there is nothing to preserve
@@ -1118,6 +1125,9 @@ Recovery, applied to each file independently:
 - [ ] `HISTORY_MAX` is gone; the cap comes from `settings.history.maxEntries`
 - [ ] The answer handler no longer calls `HistoryRepository.append`. `append` internally calls `load()`, which parses the whole file twice before rewriting it - once in `migrate` and once in `parse` - so every card flip did full-file I/O on the UI thread, over up to 5000 records. `MainActivity` already holds the authoritative list, so use `save(history + entry, maxEntries)` and assign the result afterwards, which preserves the "screen matches disk" semantics on write failure. This lands here because Task 8 must edit that exact line anyway to swap the literal for the setting
 - [ ] `RepositoryTest` covers: absent file; corrupt file quarantined then recreated; empty views array; round-trip equality; `resetBuiltIns` preserving custom views
+- [ ] `JsonStore` distinguishes absent from unreadable, and an unreadable file is retried rather than quarantined and replaced
+- [ ] `JsonStore.quarantine()` never destroys an existing `.corrupt` file
+- [ ] `SettingsRepository`'s JSON mapping may need to split from its load/seed/recovery half; adding five fields costs about three lines each in both `save` and `fromJson`, which would push the file past 200 lines
 
 **Dependencies:** Tasks 1, 6.
 
