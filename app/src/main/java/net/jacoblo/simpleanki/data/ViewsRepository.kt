@@ -172,15 +172,23 @@ class ViewsRepository(private val paths: AnkiPaths) {
 			// alone, so a working aggregate would render as a dead column with no way back
 			// short of hand-editing the very file this design exists to keep out of.
 			error = null
-		} else if (stored != null && TableEngine.baseColumn(id) == null) {
+		} else if (TableEngine.baseColumn(id) != null) {
+			// A BASE column, whose values come from the record and never from a formula.
+			// A stray formula key on one is inert - parsing it could only blank a real
+			// data column to "#ERR" - and a stray formulaError is stale by the same
+			// argument: nothing here can have failed, so nothing here can be in error.
+			//
+			// Clearing it is the same rule as the struct branch above and matters for the
+			// same reason. TableEngine keys "#ERR" and unsortability off this field alone,
+			// so one hand-typed formulaError on "Seconds" would otherwise blank that
+			// column in every row for good, the autosave writing the message straight back
+			// out on every edit.
+			error = null
+		} else if (stored != null) {
 			// Formula and no aggregate: the shape a hand-written column arrives in, and
 			// the only case where the string is the authority. A failure is reported in
 			// the column rather than thrown, so one typo costs one "#ERR" column; the text
 			// itself is kept verbatim so the next autosave cannot swallow it.
-			//
-			// A BASE column is skipped outright. A stray formula key on one was inert
-			// before this parser existed, and parsing it could only blank a real data
-			// column to "#ERR" - its values come from the record, never from a formula.
 			when (val parsed = FormulaParser.parse(stored, TableEngine.BASE_COLUMN_IDS)) {
 				is ParseResult.Ok -> {
 					computed = parsed.spec
