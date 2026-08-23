@@ -129,6 +129,22 @@
     .tabulator .tabulator-header .tabulator-col.tabulator-frozen {
       box-shadow: 1px 0 0 var(--outline);
     }
+
+    /*
+      The header context menu. Tabulator hard-codes this one white, so it needs the same
+      re-pointing every other surface here got - left alone it is the one part of the grid
+      that ignores the dark flag.
+    */
+    .tabulator-popup-container {
+      background: var(--surface-header);
+      border: 1px solid var(--outline);
+      color: var(--on-surface);
+    }
+
+    /* A finger, not a mouse: the shipped 5px rows are too small a target to hit. */
+    .tabulator-menu .tabulator-menu-item {
+      padding: 12px 16px;
+    }
   </style>
 </head>
 <body>
@@ -184,6 +200,176 @@
       return wrapper;
     }
 
+    /*
+     * A context-menu label, built as a DOM node for the reason titleNode is.
+     *
+     * Same sink, same untrusted text, one module along: Tabulator's menu writes a STRING
+     * label with `i.innerHTML = s`, and every label here carries a column title the user
+     * chose. A title of `<img src=x onerror="Android.hide('When')">` would be script
+     * injection in a page that holds the Android bridge, and "Hide " in front of it
+     * changes nothing about that. Returning a Node takes the branch above,
+     * `s instanceof Node ? i.appendChild(s)`, where the text can never become markup.
+     *
+     * Never build one of these by concatenating into innerHTML, and never route a title
+     * through `tooltip` or `headerTooltip` either - see titleNode for why.
+     */
+    function menuLabel(text) {
+      var node = document.createElement("span");
+      node.appendChild(document.createTextNode(text));
+      return node;
+    }
+
+    /*
+     * One context-menu entry: [text] as a safe label, [run] as what tapping it does.
+     *
+     * The label is a function rather than a finished node so that each opening builds its
+     * own, which is what keeps one menu from moving another's label element into itself.
+     * Tabulator calls it and accepts the Node it returns.
+     */
+    function menuItem(text, run) {
+      return {
+        label: function () {
+          return menuLabel(text);
+        },
+        action: run
+      };
+    }
+
+    /*
+     * The long-press menu for one column header.
+     *
+     * Every item here persists. Nothing edits a cell and nothing deletes a row, and that
+     * is a rule about this page rather than a shortage of ideas: Kotlin re-pushes the
+     * entire payload on every sort, every column edit and every resume, so a JS-side data
+     * edit would change a rendered string and then revert on the next render with no
+     * warning at all. Only Kotlin can change a history record, and the bridge deliberately
+     * offers no call that would - so the menu offers no item that needs one.
+     *
+     * Copy is the exception that proves it: it has no bridge call because it stores
+     * nothing, so there is nothing for a re-render to undo.
+     *
+     * The two move items are OMITTED at the ends rather than shown disabled - a live
+     * looking item that quietly does nothing is worse than an absent one. [index] and
+     * [count] are over the VISIBLE columns, the only ones this page was told about, which
+     * is also the list Kotlin measures the move in.
+     */
+    function headerMenu(col, field, index, count) {
+      var items = [
+        menuItem("Hide " + col.title, function () {
+          Android.hide(col.id);
+        }),
+        menuItem((col.frozen ? "Unfreeze " : "Freeze ") + col.title, function () {
+          Android.freeze(col.id);
+        })
+      ];
+      if (index > 0) {
+        items.push(menuItem("Move " + col.title + " left", function () {
+          Android.move(col.id, -1);
+        }));
+      }
+      if (index < count - 1) {
+        items.push(menuItem("Move " + col.title + " right", function () {
+          Android.move(col.id, 1);
+        }));
+      }
+      items.push(menuItem("Copy " + col.title + " values", function () {
+        copyColumn(field, col.title);
+      }));
+      return items;
+    }
+
+    /*
+     * Puts one column's rendered values on the clipboard, newline separated.
+     *
+     * Read from the table's DATA rather than from its cells. The grid renders virtually,
+     * so getCells() would hand back only the sixty or so rows currently laid out and the
+     * copy would silently be a slice of the column. Every value in the data is already the
+     * finished string Kotlin formatted, so this copies exactly what is drawn.
+     */
+    function copyColumn(field, title) {
+      if (!table) {
+        return;
+      }
+      var values = table.getData().map(function (row) {
+        var value = row[field];
+        return value === undefined || value === null ? "" : String(value);
+      });
+      writeClipboard(values.join("\n"), title, values.length);
+    }
+
+    /*
+     * Copies [text], preferring the async Clipboard API and falling back to execCommand.
+     *
+     * Both paths earn their place. navigator.clipboard needs a secure context, which this
+     * page happens to be - the asset loader serves it over https from a virtual origin -
+     * but a WebView can still have no clipboard permission, and there is no way to ask in
+     * advance. execCommand("copy") is deprecated everywhere and is still the only thing
+     * left when the modern one is missing or refuses.
+     *
+     * The fallback runs inside the rejection handler, a separate task from the tap that
+     * started it, and that is fine on purpose: transient user activation lasts seconds and
+     * the promise settles at once, so the retry is still inside the gesture execCommand
+     * insists on.
+     *
+     * Which one won is logged rather than shown. The page has nowhere to put a message,
+     * and the answer is only interesting once - when finding out what this WebView allows.
+     */
+    function writeClipboard(text, title, count) {
+      function copied(how) {
+        log("copied " + count + " values from \"" + title + "\" via " + how);
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () {
+          copied("navigator.clipboard");
+        }, function (error) {
+          log("navigator.clipboard refused: " + error);
+          if (execCopy(text)) {
+            copied("execCommand");
+          } else {
+            log("clipboard copy failed");
+          }
+        });
+        return;
+      }
+      if (execCopy(text)) {
+        copied("execCommand");
+      } else {
+        log("clipboard copy failed: no clipboard available");
+      }
+    }
+
+    /*
+     * The pre-Clipboard-API copy: select a throwaway textarea and copy the selection.
+     *
+     * Readonly so the soft keyboard stays down, off-screen so focusing it cannot scroll
+     * the page, and given an explicit user-select. That last one is not decoration: body
+     * sets `user-select: none` and it inherits, while execCommand("copy") copies the
+     * SELECTION - without it the selection comes out empty and the copy succeeds having
+     * put nothing on the clipboard, which is the one failure that looks like success.
+     */
+    function execCopy(text) {
+      var area = document.createElement("textarea");
+      area.value = text;
+      area.setAttribute("readonly", "");
+      area.style.position = "fixed";
+      area.style.top = "0";
+      area.style.left = "-1000px";
+      area.style.webkitUserSelect = "text";
+      area.style.userSelect = "text";
+      document.body.appendChild(area);
+      area.focus();
+      area.select();
+      area.setSelectionRange(0, text.length);
+      var ok = false;
+      try {
+        ok = document.execCommand("copy");
+      } catch (error) {
+        log("execCommand threw: " + error);
+      }
+      document.body.removeChild(area);
+      return ok;
+    }
+
     // Every cell of an errored column reads "#ERR"; the payload's own cells already say
     // so, but the formatter makes it true regardless of what arrives.
     function errorFormatter(cell) {
@@ -215,6 +401,9 @@
           // live however columnDefaults was set. Sizing is the column sheet's field.
           resizable: false,
           cssClass: sorted ? "is-sorted" : "",
+          // A long press. Tabulator wires this to its own headerTapHold as well as to the
+          // contextmenu event, so it needs no mouse and no gesture code of ours.
+          headerContextMenu: headerMenu(col, field, index, data.columns.length),
           headerClick: function () {
             // A header tap reports the intent and nothing else; Kotlin decides.
             if (col.sortable && !col.error) {
@@ -317,9 +506,11 @@
         // option was `virtualDom` and no longer exists.
         // Both drags off. Order and width are set from the column sheet instead - a
         // drag inside a grid that scrolls both ways fights the scroll, and neither drag
-        // could reach a column that was hidden or off the right-hand edge. The two
-        // handlers below stay wired: they are how any later header affordance would
-        // report the same two edits, and they cost nothing while nothing fires them.
+        // could reach a column that was hidden or off the right-hand edge. The header
+        // menu moves a column too, but by naming it to Android.move rather than by
+        // dragging, so neither drag has to come back for it. The two handlers below stay
+        // wired: they are how any later header DRAG would report the same two edits, and
+        // they cost nothing while nothing fires them.
         movableColumns: false,
         columnDefaults: { headerSort: false, resizable: false },
         placeholder: "No rows",

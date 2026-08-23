@@ -20,12 +20,14 @@ import net.jacoblo.simpleanki.data.collapseOn
 import net.jacoblo.simpleanki.data.delete
 import net.jacoblo.simpleanki.data.generatedTitle
 import net.jacoblo.simpleanki.data.moveColumn
+import net.jacoblo.simpleanki.data.moveVisibleColumn
 import net.jacoblo.simpleanki.data.parseColumnWidth
 import net.jacoblo.simpleanki.data.removeColumn
 import net.jacoblo.simpleanki.data.rename
 import net.jacoblo.simpleanki.data.replaceComputed
 import net.jacoblo.simpleanki.data.saveAsNew
 import net.jacoblo.simpleanki.data.toggleColumn
+import net.jacoblo.simpleanki.data.toggleFrozen
 import net.jacoblo.simpleanki.data.uniqueId
 import net.jacoblo.simpleanki.table.FormulaParser
 import net.jacoblo.simpleanki.table.ParseResult
@@ -266,6 +268,45 @@ class ViewOpsTest {
 	fun toggleColumnIgnoresAnIdThatIsNeitherCarriedNorABaseColumn() {
 		val original = view("v", "V", base(TableEngine.ID_QUESTION))
 		assertSame(original, original.toggleColumn("ghost"))
+	}
+
+	// -- toggleFrozen -----------------------------------------------------------------
+
+	@Test
+	fun toggleFrozenFreezesALooseColumn() {
+		val updated = view("v", "V", base("a")).toggleFrozen("a")
+		assertTrue(updated.columns.single().frozen)
+	}
+
+	@Test
+	fun toggleFrozenUnfreezesAFrozenColumn() {
+		val original = view("v", "V", base("a").copy(frozen = true))
+		assertFalse(original.toggleFrozen("a").columns.single().frozen)
+	}
+
+	/** Both polarities in one view, so an implementation that froze every column fails. */
+	@Test
+	fun toggleFrozenLeavesTheOtherColumnsAlone() {
+		val original = view("v", "V", base("a"), base("b"), base("c").copy(frozen = true))
+		val updated = original.toggleFrozen("b")
+		assertEquals(listOf(false, true, true), updated.columns.map { it.frozen })
+	}
+
+	/**
+	 * The one place toggleFrozen deliberately parts company with [toggleColumn], which
+	 * ADDS a base column the view does not carry. There is nothing to pin to the left of a
+	 * table a column is not in, so freezing an absent one must not conjure it.
+	 */
+	@Test
+	fun toggleFrozenDoesNotAddABaseColumnTheViewDoesNotCarry() {
+		val original = view("v", "V", base("a"))
+		assertSame(original, original.toggleFrozen(TableEngine.ID_QUESTION))
+	}
+
+	@Test
+	fun toggleFrozenOfAnUnknownIdChangesNothing() {
+		val original = view("v", "V", base("a"))
+		assertSame(original, original.toggleFrozen("ghost"))
 	}
 
 	// -- addComputed ------------------------------------------------------------------
@@ -528,6 +569,77 @@ class ViewOpsTest {
 	fun moveColumnOfAnUnknownIdChangesNothing() {
 		val original = view("v", "V", base("a"), base("b"))
 		assertSame(original, original.moveColumn("ghost", 1))
+	}
+
+	// -- moveVisibleColumn -------------------------------------------------------------
+	//
+	// The header menu's move, counted in the columns the page actually drew.
+	//
+	// Every case here asserts the VISIBLE order, because that is the contract: where a
+	// hidden column ends up is incidental, and pinning it would turn an implementation
+	// detail into a promise. The two hidden-neighbour cases are the whole reason this is
+	// not moveColumn - run through moveColumn they leave the visible order untouched, so
+	// they are what fails if the two are ever collapsed into one.
+
+	/** The ids the page would be handed, which is what every assertion below is about. */
+	private fun visibleIds(view: TableView) = view.columns.filter { it.visible }.map { it.id }
+
+	@Test
+	fun moveVisibleColumnLeftSwapsWithThePrecedingColumn() {
+		val updated = view("v", "V", base("a"), base("b"), base("c")).moveVisibleColumn("b", -1)
+		assertEquals(listOf("b", "a", "c"), visibleIds(updated))
+	}
+
+	@Test
+	fun moveVisibleColumnRightSwapsWithTheFollowingColumn() {
+		val updated = view("v", "V", base("a"), base("b"), base("c")).moveVisibleColumn("b", 1)
+		assertEquals(listOf("a", "c", "b"), visibleIds(updated))
+	}
+
+	@Test
+	fun moveVisibleColumnLeftStepsOverAHiddenNeighbour() {
+		val original = view("v", "V", base("a"), base("b", visible = false), base("c"))
+		// moveColumn here would produce a, c, b - the same visible order it started with.
+		assertEquals(listOf("a", "c"), visibleIds(original.moveColumn("c", -1)))
+		assertEquals(listOf("c", "a"), visibleIds(original.moveVisibleColumn("c", -1)))
+	}
+
+	@Test
+	fun moveVisibleColumnRightStepsOverAHiddenNeighbour() {
+		val original = view("v", "V", base("a"), base("b", visible = false), base("c"))
+		assertEquals(listOf("c", "a"), visibleIds(original.moveVisibleColumn("a", 1)))
+	}
+
+	/** A hidden column at the edge is not a neighbour to move past, so this is an end. */
+	@Test
+	fun moveVisibleColumnLeftFromTheFirstVisibleColumnIsRefused() {
+		val original = view("v", "V", base("a", visible = false), base("b"), base("c"))
+		assertSame(original, original.moveVisibleColumn("b", -1))
+	}
+
+	@Test
+	fun moveVisibleColumnRightFromTheLastVisibleColumnIsRefused() {
+		val original = view("v", "V", base("a"), base("b"), base("c", visible = false))
+		assertSame(original, original.moveVisibleColumn("b", 1))
+	}
+
+	/** The delta is a count, not a direction: two places has to mean two. */
+	@Test
+	fun moveVisibleColumnMovesPastAsManyColumnsAsAsked() {
+		val updated = view("v", "V", base("a"), base("b"), base("c"), base("d"))
+			.moveVisibleColumn("a", 2)
+		assertEquals(listOf("b", "c", "a", "d"), visibleIds(updated))
+	}
+
+	/**
+	 * Documentation rather than a net: moveColumn refuses an unknown id underneath, so
+	 * this passes with moveVisibleColumn's own guard deleted and cannot catch its loss.
+	 * It is here because every other operation in this file states the same contract.
+	 */
+	@Test
+	fun moveVisibleColumnOfAnUnknownIdChangesNothing() {
+		val original = view("v", "V", base("a"), base("b"))
+		assertSame(original, original.moveVisibleColumn("ghost", 1))
 	}
 
 	// -- parseColumnWidth --------------------------------------------------------------

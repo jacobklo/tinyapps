@@ -1,11 +1,17 @@
 /*
- * What the column sheet does to the stored views, as pure functions.
+ * What the column sheet and the header context menu do to the stored views, as pure
+ * functions.
  *
  * Split out of the Compose layer for the reason TableGestures.kt is split out of
  * TableScreen.kt: a composable is unavoidably Android, and the rules worth testing -
  * which id a new view gets, when a delete is refused, what a checkbox does to a base
  * column the view does not carry yet - are all pure. ColumnSheet only wires callbacks
- * to these.
+ * to these, and so does the bridge behind the header menu.
+ *
+ * That the menu lands here rather than acting on the page is the whole of its design.
+ * Kotlin re-pushes the entire payload on every sort, every column edit and every resume,
+ * so anything the page changed by itself would revert on the next render; routing each
+ * menu item through a rule here is what makes it stick.
  *
  * Every function returns a NEW value and mutates nothing, so a caller that ignores the
  * result has changed nothing. Free of Android imports on purpose.
@@ -17,6 +23,7 @@ import net.jacoblo.simpleanki.table.FormulaWriter
 import net.jacoblo.simpleanki.table.TableEngine
 import net.jacoblo.simpleanki.table.reordered
 import java.util.Locale
+import kotlin.math.abs
 
 /**
  * Width a column created from the sheet starts at; the width field takes it from there.
@@ -135,6 +142,29 @@ fun TableView.toggleColumn(columnId: String): TableView {
 	}
 	val base = TableEngine.baseColumn(columnId) ?: return this
 	return copy(columns = columns + ColumnSpec(base.id, base.id, NEW_COLUMN_WIDTH))
+}
+
+/**
+ * A copy with [columnId] frozen if it was loose and loose if it was frozen.
+ *
+ * A toggle rather than a setter because the header menu is the only caller and it can
+ * only be opened on a header the page actually drew. What the page believes about that
+ * column is one render old; the view is the only thing that knows the current value, so
+ * the menu reports the tap and this decides - TableScreen's onSort does the same with the
+ * sort direction, for the same reason.
+ *
+ * Frozen has no control in the column sheet, so this is the only way to set it short of
+ * hand-editing views.json.
+ *
+ * An id the view does not carry is left alone, since there is nothing to freeze. Unlike
+ * [toggleColumn] a base column is NOT added: an invisible column cannot be pinned to the
+ * left of a table it is not in, so adding one would be a surprise rather than a shortcut.
+ */
+fun TableView.toggleFrozen(columnId: String): TableView {
+	if (columns.none { it.id == columnId }) return this
+	return copy(
+		columns = columns.map { if (it.id == columnId) it.copy(frozen = !it.frozen) else it }
+	)
 }
 
 /**
@@ -397,6 +427,48 @@ fun TableView.moveColumn(columnId: String, delta: Int): TableView {
 	val ids = columns.mapTo(ArrayList()) { it.id }
 	ids.add(to, ids.removeAt(from))
 	return reordered(ids)
+}
+
+/**
+ * A copy with [columnId] moved past [delta] VISIBLE columns, stepping over hidden ones.
+ *
+ * [moveColumn] measured in what the user can see, and it exists because the two surfaces
+ * that move a column are looking at different lists. The sheet lists every column, hidden
+ * ones included, so one place there means one place in that list - which is exactly what
+ * moveColumn does, and why it must keep doing it.
+ *
+ * A table header shows only the visible columns, so one place THERE means past the next
+ * visible neighbour. Counted moveColumn's way, "move left" over a hidden neighbour would
+ * swap the column with something nobody can see and appear to do nothing at all; the user
+ * taps again, and the second tap moves it two places at once. Hiding a column is an item
+ * in the very same menu, so that hidden neighbour is one tap away from existing.
+ *
+ * The rearrangement is still moveColumn's - only the delta is retranslated - so the stored
+ * order is rewritten in exactly one place.
+ *
+ * A move off either end of the VISIBLE columns is refused rather than clamped, matching
+ * moveColumn: fewer visible neighbours in that direction than [delta] asks for leaves the
+ * view untouched. The menu omits the item there, so this fires only against a caller that
+ * offered it anyway.
+ */
+fun TableView.moveVisibleColumn(columnId: String, delta: Int): TableView {
+	val from = columns.indexOfFirst { it.id == columnId }
+	if (from < 0) return this
+	val step = if (delta > 0) 1 else -1
+	var remaining = abs(delta)
+	var to = from
+	var probe = from + step
+	while (probe in columns.indices && remaining > 0) {
+		if (columns[probe].visible) {
+			to = probe
+			remaining--
+		}
+		probe += step
+	}
+	// Ran out of columns before running out of neighbours to pass, so the move is off the
+	// end. Returning `this` rather than the partial hop, which would be a clamp.
+	if (remaining > 0) return this
+	return moveColumn(columnId, to - from)
 }
 
 /** Narrowest column the width field accepts. Zero is not a column and a negative is not a width. */

@@ -22,6 +22,9 @@ class TableBridge(
 	private val onSort: (columnId: String) -> Unit,
 	private val onResize: (columnId: String, width: Int) -> Unit,
 	private val onReorder: (columnIds: List<String>) -> Unit,
+	private val onHide: (columnId: String) -> Unit,
+	private val onFreeze: (columnId: String) -> Unit,
+	private val onMove: (columnId: String, delta: Int) -> Unit,
 	private val onRenderComplete: (rowCount: Int) -> Unit
 ) {
 	private val main = Handler(Looper.getMainLooper())
@@ -60,6 +63,38 @@ class TableBridge(
 		val array = JSONArray(columnIdsJson)
 		val ids = (0 until array.length()).map { array.getString(it) }
 		main.post { onReorder(ids) }
+	}
+
+	/**
+	 * The header menu's "Hide this column".
+	 *
+	 * No visibility argument, because the menu opens on a header and the page draws a
+	 * header only for a column that is visible: what to set it to is never in question.
+	 * That is also what lets the handler route to ViewOps.toggleColumn rather than invent
+	 * a second rule meaning "hide", and there is no way back from here - the column sheet
+	 * is where a hidden column is shown again.
+	 */
+	@JavascriptInterface
+	fun hide(columnId: String) {
+		main.post { onHide(columnId) }
+	}
+
+	/** The header menu's Freeze/Unfreeze, reporting the tap rather than the new state. */
+	@JavascriptInterface
+	fun freeze(columnId: String) {
+		main.post { onFreeze(columnId) }
+	}
+
+	/**
+	 * The header menu's Move left and Move right.
+	 *
+	 * @param delta how many VISIBLE columns to move past - -1 for left, 1 for right. The
+	 *   page counts in the columns it drew because those are the only ones it was told
+	 *   about, so this is measured the same way; see ViewOps.moveVisibleColumn.
+	 */
+	@JavascriptInterface
+	fun move(columnId: String, delta: Int) {
+		main.post { onMove(columnId, delta) }
 	}
 
 	@JavascriptInterface

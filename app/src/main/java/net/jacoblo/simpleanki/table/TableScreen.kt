@@ -9,7 +9,8 @@
  *
  * The sheet's width field and its move buttons go out through withWidth and reordered,
  * the very functions the page's resize and reorder events land on. One edit, one rule,
- * whichever surface asked for it.
+ * whichever surface asked for it - and the header context menu is the third surface to
+ * ask, hiding a column through the sheet's own toggleColumn.
  */
 package net.jacoblo.simpleanki.table
 
@@ -29,9 +30,11 @@ import net.jacoblo.simpleanki.data.TableView
 import net.jacoblo.simpleanki.data.addComputed
 import net.jacoblo.simpleanki.data.collapseOn
 import net.jacoblo.simpleanki.data.moveColumn
+import net.jacoblo.simpleanki.data.moveVisibleColumn
 import net.jacoblo.simpleanki.data.removeColumn
 import net.jacoblo.simpleanki.data.replaceComputed
 import net.jacoblo.simpleanki.data.toggleColumn
+import net.jacoblo.simpleanki.data.toggleFrozen
 
 private const val LOG_TAG = "SimpleAnkiTable"
 
@@ -109,6 +112,23 @@ fun TableScreen(
 			},
 			onReorder = { columnIds ->
 				currentOnViewChanged(currentView.reordered(columnIds))
+			},
+			// The three header-menu items that change the view. Each one is an ordinary
+			// view edit and leaves through onViewChanged exactly as a resize does, which
+			// is what makes it survive a resume: the menu never edits the page's own copy
+			// of anything, because Kotlin re-pushes the whole payload on the next render
+			// and would overwrite it.
+			//
+			// Hide routes to toggleColumn, the sheet's own checkbox rule, rather than to a
+			// second rule spelling out visible = false. The menu cannot be opened on a
+			// column that is already hidden - a hidden column has no header to press - so
+			// the toggle can only ever hide from here. See TableBridge.hide.
+			onHide = { columnId -> currentOnViewChanged(currentView.toggleColumn(columnId)) },
+			onFreeze = { columnId -> currentOnViewChanged(currentView.toggleFrozen(columnId)) },
+			// moveVisibleColumn rather than the sheet's moveColumn: the page counts in the
+			// columns it drew, and only the visible ones were drawn.
+			onMove = { columnId, delta ->
+				currentOnViewChanged(currentView.moveVisibleColumn(columnId, delta))
 			},
 			onRenderComplete = { rowCount -> Log.d(LOG_TAG, "rendered $rowCount rows") }
 		)
