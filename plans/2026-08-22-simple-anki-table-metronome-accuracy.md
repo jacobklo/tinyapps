@@ -1274,7 +1274,9 @@ Exact semantics:
 | `MIN` `MAX` `AVG` `MEDIAN` `SUM` | not timed out | null | null when every member timed out |
 | `STDDEV` | not timed out | null | population standard deviation, so one member yields 0.0 |
 | `COUNT` | all | never null | member count |
-| `ACCURACY` | all | never null | `notTimedOut / total * 100` |
+| `ACCURACY` | all | null (unreachable) | `notTimedOut / total * 100` |
+
+`ACCURACY` of an empty member set returns null rather than 0.0, because `0.0` renders as `0.0%` and asserts "every attempt timed out" - the same lie the spec rejects for `SUM`. The case is unreachable through the engine, since a row is always a member of its own partition. Note the resulting asymmetry is deliberate: `COUNT` of empty is `0.0` because there genuinely are zero members, while the *share* of nothing is genuinely undefined.
 
 `requiresNumericSource` returns true for everything except `COUNT` and `ACCURACY`. Task 12 uses it to reject `=AVG(Question, group:Date)` at parse time.
 
@@ -1382,6 +1384,7 @@ Note the documented consequence: `bucket:999999` places every row in partition 0
 - [ ] `bucket` assigns `position / size` and tolerates a short final bucket
 - [ ] `rolling` clamps at the start and computes partial windows rather than leaving them blank
 - [ ] `size` of 0 or less is clamped to 1 rather than dividing by zero
+- [ ] **No partition is ever empty.** Task 10's `Aggregates` returns null for an empty member set, and its correctness depends on that case being unreachable. The plan clamps `bucket`/`rolling` size but was silent on a NEGATIVE `group` limit - a negative or otherwise nonsensical limit must never trim a partition to zero members. Clamp it, and test it
 - [ ] No implementation is O(n squared); `group` and `bucket` build their partitions in one pass
 - [ ] `MemberSelectorTest` covers: empty input; single row; `bucket` where the row count is an exact multiple of size and where it is not; `rolling` at positions 0, 1, and size-1; `group` with and without a limit; `group` where the limit exceeds the member count
 
