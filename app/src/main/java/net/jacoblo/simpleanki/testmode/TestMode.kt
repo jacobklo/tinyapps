@@ -12,7 +12,7 @@
  *   1. AnkiPaths resolves to /sdcard/SimpleAnki-test rather than /sdcard/SimpleAnki
  *   2. that directory is wiped and reseeded from the fixtures below, on every launch
  *   3. dump.json is written after every table render
- * Task 14 adds a fourth, the no-op ClickPlayer.
+ *   4. AppContainer.clickPlayer is the no-op, so an automated run makes no sound
  */
 package net.jacoblo.simpleanki.testmode
 

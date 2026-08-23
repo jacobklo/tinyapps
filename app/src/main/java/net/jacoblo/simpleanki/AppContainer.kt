@@ -2,6 +2,7 @@ package net.jacoblo.simpleanki
 
 import android.content.Context
 import android.os.Environment
+import android.widget.Toast
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -11,14 +12,17 @@ import net.jacoblo.simpleanki.data.HistoryRepository
 import net.jacoblo.simpleanki.data.Settings
 import net.jacoblo.simpleanki.data.SettingsRepository
 import net.jacoblo.simpleanki.data.ViewsRepository
+import net.jacoblo.simpleanki.metronome.ClickPlayer
+import net.jacoblo.simpleanki.metronome.NoOpClickPlayer
+import net.jacoblo.simpleanki.metronome.SoundPoolClickPlayer
 import net.jacoblo.simpleanki.table.RenderedTable
 import net.jacoblo.simpleanki.testmode.TestMode
 
 /**
  * Hand-rolled dependency graph, constructed once in MainActivity.onCreate.
  *
- * Context is a constructor parameter from the outset because Task 14 builds
- * SoundPoolClickPlayer from it; taking it later would churn every call site.
+ * Context is a constructor parameter because [clickPlayer] is built from it, and because
+ * the Toast an unreadable sound path raises needs one.
  */
 class AppContainer(
 	private val context: Context,
@@ -37,7 +41,6 @@ class AppContainer(
 	val historyRepository = HistoryRepository(paths)
 	val settingsRepository = SettingsRepository(paths)
 	val viewsRepository = ViewsRepository(paths)
-	// Task 14 adds: clickPlayer, selected on `testMode`.
 
 	/**
 	 * The settings in force: reloaded from disk on every resume, and rewritten whenever
@@ -51,6 +54,31 @@ class AppContainer(
 	 * value would let the badge and the stored count drift without anything noticing.
 	 */
 	var settings by mutableStateOf(Settings())
+
+	private val clickPlayerLazy = lazy<ClickPlayer> {
+		if (testMode) NoOpClickPlayer
+		else SoundPoolClickPlayer(context, settings.metronome.soundPath) { path ->
+			Toast.makeText(context, "Could not read $path - using the built-in click", Toast.LENGTH_LONG).show()
+		}
+	}
+
+	/**
+	 * The metronome tick, one sound for every tick including a timeout. [NoOpClickPlayer]
+	 * under test mode, so an automated run stays silent and nothing opens a SoundPool off a
+	 * device.
+	 *
+	 * Deliberately lazy. The player reads [net.jacoblo.simpleanki.data.MetronomeSettings.soundPath]
+	 * once, when it is built, and [settings] holds defaults until the first resume loads
+	 * settings.json - so a player built alongside the repositories above could only ever see
+	 * a null path, and the configured-sound branch would be unreachable. Deferring to first
+	 * use puts construction after that load.
+	 *
+	 * The consequence is that nothing may touch this during composition, which also runs
+	 * before the load. The intended first caller is the metronome tick, which is a timer, and
+	 * the tick that triggers the load is not lost: [SoundPoolClickPlayer] replays a play()
+	 * that arrived while the sample was still loading.
+	 */
+	val clickPlayer: ClickPlayer by clickPlayerLazy
 
 	/**
 	 * True when the app holds MANAGE_EXTERNAL_STORAGE, without which every path under
@@ -97,6 +125,8 @@ class AppContainer(
 
 	/** Releases held native resources. Called from MainActivity.onDestroy. */
 	fun release() {
-		// Task 14 releases the SoundPool here; nothing holds native resources yet.
+		// Only when something actually reached for the player. Forcing the lazy here would
+		// open a SoundPool purely to close it again.
+		if (clickPlayerLazy.isInitialized()) clickPlayer.release()
 	}
 }
