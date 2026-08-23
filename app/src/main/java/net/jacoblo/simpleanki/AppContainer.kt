@@ -73,10 +73,25 @@ class AppContainer(
 	 * a null path, and the configured-sound branch would be unreachable. Deferring to first
 	 * use puts construction after that load.
 	 *
-	 * The consequence is that nothing may touch this during composition, which also runs
-	 * before the load. The intended first caller is the metronome tick, which is a timer, and
-	 * the tick that triggers the load is not lost: [SoundPoolClickPlayer] replays a play()
-	 * that arrived while the sample was still loading.
+	 * TWO OBLIGATIONS COME WITH THAT, both on whoever touches this first.
+	 *
+	 * 1. NOT DURING COMPOSITION. A composition pass runs before the DisposableEffect that
+	 *    loads settings.json, so forcing the lazy there caches a player built from a null
+	 *    path for the life of the activity - the exact bug the laziness exists to avoid, and
+	 *    an invisible one, since the bundled asset still plays. Passing `clickPlayer` as a
+	 *    composable argument counts: the argument is evaluated during composition. Pass
+	 *    `() -> ClickPlayer`, or read it inside the effect that ticks.
+	 * 2. ON THE MAIN THREAD. [SoundPoolClickPlayer] is not thread safe and needs a Looper,
+	 *    and the onLoadFailure above raises a Toast, which throws off a Looper thread. A
+	 *    LaunchedEffect body is dispatched on AndroidUiDispatcher.Main by default, so a tick
+	 *    driven from one needs nothing special - but a withContext(Dispatchers.Default)
+	 *    around it would be both a data race and a crash.
+	 *
+	 * The tick that triggers construction is not lost: [SoundPoolClickPlayer] replays a
+	 * play() that arrived while the sample was still loading.
+	 *
+	 * Being lazy also moves WHEN the unreadable-path Toast appears. Not at launch, but at the
+	 * first tick - and never, if the metronome is never enabled, which is the default.
 	 */
 	val clickPlayer: ClickPlayer by clickPlayerLazy
 

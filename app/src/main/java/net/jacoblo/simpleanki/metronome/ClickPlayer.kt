@@ -26,12 +26,17 @@ interface ClickPlayer {
  * else silence. A configured path that cannot be read is reported through [onLoadFailure]
  * once, and the bundled asset is used instead.
  *
- * Everything here runs on the thread that constructed the player. SoundPool delivers its
- * load callback on that thread's Looper, and the metronome ticks from the main thread, so
- * [loaded] and [pendingPlay] are never touched concurrently.
+ * NOT THREAD SAFE, and that is a contract on the caller. [loaded], [pendingPlay] and
+ * [released] are plain vars with no @Volatile and no lock: construct this and call [play]
+ * and [release] from one thread, which must have a Looper, since SoundPool delivers its
+ * load callback on the constructing thread's Looper and a thread without one gets the main
+ * Looper instead. The main thread satisfies both. See AppContainer.clickPlayer, which is
+ * lazy and so hands that obligation to whoever touches it first.
  *
  * @param onLoadFailure receives the configured path that could not be used. Called at most
- *   once per instance, which is once per app launch.
+ *   once per instance - which is NOT once per launch: MainActivity declares no
+ *   configChanges, so a rotation recreates the activity, the container and this player, and
+ *   reports again.
  */
 class SoundPoolClickPlayer(
 	context: Context,
@@ -62,7 +67,7 @@ class SoundPoolClickPlayer(
 	private var loadedPath: String? = null
 
 	/** Zero when nothing could be loaded at all, in which case [play] is silent. */
-	private var soundId = 0
+	private val soundId: Int
 
 	private var loaded = false
 
@@ -76,8 +81,19 @@ class SoundPoolClickPlayer(
 	private var released = false
 
 	init {
-		pool.setOnLoadCompleteListener { _, sampleId, status ->
-			if (sampleId != soundId) return@setOnLoadCompleteListener
+		// Ordering is load-bearing, in both directions. Everything the listener reads is
+		// assigned BEFORE the listener exists, and the listener is registered BEFORE the
+		// load that can fire it - so neither a callback reading a half-built object nor a
+		// load completing into no listener is possible, without either depending on the
+		// Looper serialising the two.
+		val configured = soundPath?.takeIf { canRead(it) }
+		if (soundPath != null && configured == null) onLoadFailure(soundPath)
+		loadedPath = configured
+		// The sample id is deliberately NOT compared here. One sample is ever loaded, so
+		// there is nothing to disambiguate, and comparing would put soundId - assigned
+		// below - back on the callback's critical path, where reading a stale 0 would
+		// leave loaded false forever and silence every tick with no diagnostic.
+		pool.setOnLoadCompleteListener { _, _, status ->
 			if (status == 0) {
 				loaded = true
 				if (pendingPlay) {
@@ -91,9 +107,6 @@ class SoundPoolClickPlayer(
 				loadedPath?.let(onLoadFailure)
 			}
 		}
-		val configured = soundPath?.takeIf { canRead(it) }
-		if (soundPath != null && configured == null) onLoadFailure(soundPath)
-		loadedPath = configured
 		soundId = if (configured != null) pool.load(configured, 1) else loadAsset(context)
 	}
 
