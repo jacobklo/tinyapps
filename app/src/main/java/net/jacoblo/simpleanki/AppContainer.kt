@@ -60,8 +60,9 @@ class AppContainer(
 	 * Turns the metronome on or off, in memory first and then on disk.
 	 *
 	 * In memory first because the user asked for it now: a failed write leaves the
-	 * metronome doing what the switch says for the rest of the session, and the next
-	 * answer banks the flag alongside the review count, since recordAnswer copies the
+	 * metronome doing what the switch says until the next resume, which reloads [settings]
+	 * from disk and so quietly puts the stored value back. Before that the next answer may
+	 * bank the flag anyway, alongside the review count, since recordAnswer copies the
 	 * settings it was handed. Reverting the switch instead would trade a preference that
 	 * works for one that is merely truthful.
 	 *
