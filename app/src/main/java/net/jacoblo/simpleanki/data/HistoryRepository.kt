@@ -2,6 +2,7 @@ package net.jacoblo.simpleanki.data
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 
 /**
  * Reads and writes history.json, the single source of truth for every per-card figure.
@@ -19,10 +20,22 @@ class HistoryRepository(private val paths: AnkiPaths) {
 	 * A missing or malformed file yields an empty list rather than an exception. When a
 	 * migration runs, the original text is copied to [AnkiPaths.historyBackup] before
 	 * history.json is replaced, overwriting any previous backup.
+	 *
+	 * A file that exists but cannot be read throws instead of yielding an empty list.
+	 * The caller holds the list this returns and writes it back on the next answer, so
+	 * "no history" and "could not read the history" have to be told apart here or a
+	 * transient read failure would replace thousands of records with one.
+	 *
+	 * @throws IOException when history.json cannot be read, or when a migration cannot be
+	 *   written back.
 	 */
 	fun load(): List<HistoryEntry> {
 		val store = JsonStore(paths.history)
-		val raw = store.readOrNull() ?: return emptyList()
+		val raw = when (val read = store.read()) {
+			is ReadResult.Absent -> return emptyList()
+			is ReadResult.Unreadable -> throw IOException("could not read ${paths.history.path}")
+			is ReadResult.Present -> read.text
+		}
 		val migrated = migrate(raw) ?: return parse(raw)
 		paths.ensureRoot()
 		JsonStore(paths.historyBackup).write(raw)
@@ -30,14 +43,13 @@ class HistoryRepository(private val paths: AnkiPaths) {
 		return parse(migrated)
 	}
 
-	/** Appends one record and trims to the newest [maxEntries] before writing. */
-	fun append(entry: HistoryEntry, maxEntries: Int): List<HistoryEntry> {
-		val trimmed = (load() + entry).takeLast(maxEntries)
-		save(trimmed, maxEntries)
-		return trimmed
-	}
-
-	/** Writes the newest [maxEntries] of [entries], oldest-first. */
+	/**
+	 * Writes the newest [maxEntries] of [entries], oldest-first.
+	 *
+	 * There is deliberately no append. One that re-read the file would parse up to five
+	 * thousand records twice on the UI thread on every card flip, and the caller already
+	 * holds the authoritative list; see [net.jacoblo.simpleanki.data.recordAnswer].
+	 */
 	fun save(entries: List<HistoryEntry>, maxEntries: Int) {
 		paths.ensureRoot()
 		val array = JSONArray()

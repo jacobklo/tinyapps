@@ -11,9 +11,17 @@ import org.json.JSONObject
  */
 class DeckRepository(private val paths: AnkiPaths) {
 
-	/** Cards in file order, or an empty list when the file is missing or malformed. */
+	/**
+	 * Cards in file order, or an empty list when the file is missing, unreadable, or
+	 * malformed.
+	 *
+	 * The three are one case here because nothing ever writes the deck back: an empty
+	 * result costs the user this run's cards, never the file. MainActivity's own
+	 * "no cards, so offer to create the sample" branch is guarded by storage access, so
+	 * an unreadable deck does not get overwritten by the sample either.
+	 */
 	fun load(): List<AnkiCard> {
-		val raw = JsonStore(paths.deck).readOrNull() ?: return emptyList()
+		val raw = JsonStore(paths.deck).read().textOrNull ?: return emptyList()
 		return try {
 			val array = JSONArray(raw)
 			val list = ArrayList<AnkiCard>(array.length())

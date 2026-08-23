@@ -14,7 +14,7 @@ import org.junit.Test
 /**
  * Pins the shape of the three built-ins.
  *
- * Task 8 seeds views.json from these, so a change here changes what a new install gets
+ * views.json is seeded from these, so a change here changes what a new install gets
  * and what a factory reset restores - worth failing a test over rather than noticing on
  * a device.
  */

@@ -10,6 +10,7 @@ import net.jacoblo.simpleanki.data.DeckRepository
 import net.jacoblo.simpleanki.data.HistoryRepository
 import net.jacoblo.simpleanki.data.Settings
 import net.jacoblo.simpleanki.data.SettingsRepository
+import net.jacoblo.simpleanki.data.ViewsRepository
 import net.jacoblo.simpleanki.table.RenderedTable
 import net.jacoblo.simpleanki.testmode.TestMode
 
@@ -35,7 +36,7 @@ class AppContainer(
 	val deckRepository = DeckRepository(paths)
 	val historyRepository = HistoryRepository(paths)
 	val settingsRepository = SettingsRepository(paths)
-	// Task 8 adds: viewsRepository.
+	val viewsRepository = ViewsRepository(paths)
 	// Task 14 adds: clickPlayer, selected on `testMode`.
 
 	/**

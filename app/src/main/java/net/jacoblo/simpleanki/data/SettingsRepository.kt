@@ -25,12 +25,18 @@ class SettingsRepository(private val paths: AnkiPaths) {
 	 * which is what makes the seed idempotent - a user who later resets their count
 	 * cannot have it silently restored from a stale stats.json.
 	 *
-	 * Absent and unreadable are deliberately one path: with no valid settings.json
-	 * this is a first run, so the file is seeded from stats.json either way. A corrupt
-	 * file is quarantined to "settings.json.corrupt" first. Recovering the lifetime
-	 * count under-reports the reviews logged since the seed, but the alternative -
-	 * defaulting to zero with the real total sitting in stats.json - destroys the only
-	 * copy instead of merely aging it.
+	 * Absent and CORRUPT are one path: with no readable settings.json this is a first
+	 * run, so the file is seeded from stats.json either way, the corrupt case being
+	 * quarantined to "settings.json.corrupt" first. Recovering the lifetime count
+	 * under-reports the reviews logged since the seed, but the alternative - defaulting
+	 * to zero with the real total sitting in stats.json - destroys the only copy
+	 * instead of merely aging it.
+	 *
+	 * UNREADABLE is its own path and takes neither branch. A file that exists but will
+	 * not read is most likely a perfectly good one behind a transient failure or a
+	 * permission that has not been granted yet, and quarantining it would trade the
+	 * user's real lifetime total for whatever stats.json still remembers. Nothing is
+	 * written, defaults are returned for this run, and the next call retries.
 	 *
 	 * Never throws. When the new file cannot be written - typically because storage
 	 * permission has not been granted yet - the settings are still returned and the
@@ -39,14 +45,18 @@ class SettingsRepository(private val paths: AnkiPaths) {
 	 */
 	fun load(): Settings {
 		val store = JsonStore(paths.settings)
-		val root = parseObject(store.readOrNull())
+		val read = store.read()
+		if (read is ReadResult.Unreadable) return Settings()
+		val root = parseObject(read.textOrNull)
 		if (root != null) return fromJson(root)
 		// A no-op when there was no file to move, which is what lets the absent and
 		// corrupt cases share the seeding branch below.
 		store.quarantine()
 		val fresh = Settings(
 			counters = CounterSettings(
-				seedLifetimeReviews(JsonStore(paths.legacyStats).readOrNull())
+				// Absent and unreadable are one case here and only here: the seed is
+				// best effort, and a stats.json that will not read has nothing to offer.
+				seedLifetimeReviews(JsonStore(paths.legacyStats).read().textOrNull)
 			)
 		)
 		try {
@@ -61,12 +71,21 @@ class SettingsRepository(private val paths: AnkiPaths) {
 	 * Writes [settings], preserving every key already on disk that this build does not
 	 * know about, at the top level and inside each nested object.
 	 *
-	 * @throws IOException when the file cannot be written.
+	 * @throws IOException when the file cannot be written, or when it exists but cannot be
+	 *   read - see the refusal below.
 	 */
 	fun save(settings: Settings) {
 		paths.ensureRoot()
 		val store = JsonStore(paths.settings)
-		val root = parseObject(store.readOrNull()) ?: JSONObject()
+		val read = store.read()
+		// Refusing rather than overwriting, and the single most valuable line in this
+		// file. Merging needs the current contents; without them a save would replace a
+		// file that may be entirely healthy, taking the lifetime review count - which
+		// exists in no other copy - down to whatever this caller happened to be holding.
+		if (read is ReadResult.Unreadable) {
+			throw IOException("refusing to overwrite unreadable ${paths.settings.path}")
+		}
+		val root = parseObject(read.textOrNull) ?: JSONObject()
 		root.put(KEY_SCHEMA_VERSION, SCHEMA_VERSION)
 		child(root, KEY_METRONOME).apply {
 			put(KEY_ENABLED, settings.metronome.enabled)

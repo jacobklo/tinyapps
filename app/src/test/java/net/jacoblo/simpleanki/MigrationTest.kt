@@ -9,9 +9,11 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.IOException
 
 /** Covers the one-time timedOut migration applied to pre-existing history.json files. */
 class MigrationTest {
@@ -151,26 +153,25 @@ class MigrationTest {
 		assertEquals(listOf("q3", "q4", "q5"), reloaded.map { it.question })
 	}
 
+	/**
+	 * An unreadable file is not an empty one.
+	 *
+	 * The caller writes back the list this returns, so answering "no records" for a file
+	 * that is merely unreadable would replace every stored record with one on the next
+	 * card flip. A directory stands in for the unreadable file: it exists, and reading it
+	 * throws, which is exactly the shape of a permission failure on device.
+	 */
 	@Test
-	fun appendTrimsAndReturnsTheStoredList() {
+	fun loadThrowsRatherThanReportingAnUnreadableFileAsEmpty() {
 		val paths = AnkiPaths.at(tempFolder.root)
-		val repository = HistoryRepository(paths)
-		repository.save(
-			listOf(
-				HistoryEntry("q1", "a1", 1.0f, 1L, timedOut = false),
-				HistoryEntry("q2", "a2", 2.0f, 2L, timedOut = false)
-			),
-			10
-		)
+		assertTrue(paths.history.mkdirs())
 
-		val returned = repository.append(
-			HistoryEntry("q3", "a3", 10.0f, 3L, timedOut = true),
-			2
-		)
-
-		assertEquals(listOf("q2", "q3"), returned.map { it.question })
-		assertEquals(returned, repository.load())
-		assertTrue(returned.last().timedOut)
+		try {
+			HistoryRepository(paths).load()
+			fail("an unreadable history.json must not read as an empty one")
+		} catch (e: IOException) {
+			assertTrue(e.message!!.contains("history.json"))
+		}
 	}
 
 	private fun record(

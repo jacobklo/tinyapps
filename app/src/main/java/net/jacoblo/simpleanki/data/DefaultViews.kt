@@ -1,9 +1,9 @@
 /*
  * The three views the app ships with.
  *
- * Kotlin constants for now; Task 8 writes [DefaultViews.all] out as the seed content of
- * views.json the first time that file is missing, after which the stored copy wins and
- * these become the factory reset.
+ * Not what the app shows. [ViewsRepository] writes [DefaultViews.all] out as the seed
+ * content of views.json the first time that file is missing or unusable, and the stored
+ * copy wins from then on; these are the seed and the factory reset.
  *
  * Free of Android imports - TableEngine, whose column ids these name, is pure Kotlin -
  * so JVM tests can build and assert on them with no emulator.
@@ -68,7 +68,7 @@ object DefaultViews {
 		)
 	)
 
-	/** Drawer order, which is also the order Task 8 seeds views.json in. */
+	/** Drawer order, which is also the order views.json is seeded in. */
 	fun all(tableSettings: TableSettings): List<TableView> =
 		listOf(statsView(tableSettings), historyView(tableSettings), listRowsView(tableSettings))
 }

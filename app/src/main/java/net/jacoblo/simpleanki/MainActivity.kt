@@ -1,10 +1,6 @@
 package net.jacoblo.simpleanki
 
-import android.content.Intent
-import android.net.Uri
-import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -20,8 +16,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import net.jacoblo.simpleanki.data.AnkiCard
 import net.jacoblo.simpleanki.data.AnkiPaths
-import net.jacoblo.simpleanki.data.DefaultViews
 import net.jacoblo.simpleanki.data.HistoryEntry
+import net.jacoblo.simpleanki.data.ViewsRepository
 import net.jacoblo.simpleanki.data.recordAnswer
 import net.jacoblo.simpleanki.table.TableScreen
 import net.jacoblo.simpleanki.testmode.TestMode
@@ -52,29 +48,12 @@ class MainActivity : ComponentActivity() {
         // Ahead of the composable's ON_RESUME observer, which is what reads the files.
         container.seedTestModeIfNeeded()
         // 1) Check file permission on launch
-        checkPermission()
+        if (!container.hasStorageAccess) promptForStorageAccess()
     }
 
     override fun onDestroy() {
         container.release()
         super.onDestroy()
-    }
-
-    private fun checkPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            if (!container.hasStorageAccess) {
-                Toast.makeText(this, "Please allow file access to load questions", Toast.LENGTH_LONG).show()
-                try {
-                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                        data = Uri.parse("package:$packageName")
-                    }
-                    startActivity(intent)
-                } catch (e: Exception) {
-                    val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                    startActivity(intent)
-                }
-            }
-        }
     }
 }
 
@@ -89,9 +68,10 @@ fun AnkiScreen(container: AppContainer) {
     // History log, now the only source of every per-card figure
     var history by remember { mutableStateOf<List<HistoryEntry>>(emptyList()) }
 
-    // Navigation state. Task 8 swaps DefaultViews for the list stored in views.json.
+    // Navigation state, plus the stored views the drawer is built from.
     var currentScreen by remember { mutableStateOf<Screen>(Screen.FlipCards) }
-    val views = remember(container.settings.table) { DefaultViews.all(container.settings.table) }
+    var viewsFile by remember { mutableStateOf(ViewsRepository.defaults(container.settings.table)) }
+    val views = viewsFile.views
     val deckQuestions = remember(cards) { cards.map { it.question }.toSet() }
 
     // Watch lifecycle to reload cards when permission granted
@@ -102,6 +82,8 @@ fun AnkiScreen(container: AppContainer) {
                 // Never throws. Seeds settings.json from the retired stats.json on first
                 // run, and retries here on the resume after permission is granted.
                 container.settings = container.settingsRepository.load()
+                // Also never throws; creates views.json on first run.
+                viewsFile = container.viewsRepository.load(container.settings.table)
                 // Taking a deck starts the clock on a random card.
                 fun take(deck: List<AnkiCard>) {
                     cards = deck
@@ -156,7 +138,18 @@ fun AnkiScreen(container: AppContainer) {
                         if (view != null && view.id != screen.viewId) currentScreen = Screen.Table(view.id)
                     }
                     if (view == null) Text("No views to show.")
-                    else TableScreen(history, deckQuestions, view, onViewChanged = {}, onRendered = container::dumpRendered)
+                    else TableScreen(history, deckQuestions, view, onViewChanged = { changed ->
+                        // A header drag rebuilt the view; store it under the same id.
+                        val updated = viewsFile.copy(
+                            views = views.map { if (it.id == changed.id) changed else it }
+                        )
+                        viewsFile = updated
+                        try {
+                            container.viewsRepository.save(updated)
+                        } catch (e: IOException) {
+                            Toast.makeText(context, "Could not save views.json - check file permission or free space", Toast.LENGTH_SHORT).show()
+                        }
+                    }, onRendered = container::dumpRendered)
                 }
                 Screen.FlipCards -> GameView(
                     cards = cards,
@@ -180,10 +173,10 @@ fun AnkiScreen(container: AppContainer) {
                         val entry = HistoryEntry(card.question, card.answer, timeTaken, now, false)
                         // Both writes happen on every answer, so either can throw here.
                         try {
-                            // Task 8 replaces the literal with Settings.history.maxEntries.
                             val recorded = recordAnswer(
                                 container.historyRepository, container.settingsRepository,
-                                container.settings, entry, 5000
+                                container.settings, history, entry,
+                                container.settings.history.maxEntries
                             )
                             history = recorded.history
                             container.settings = recorded.settings

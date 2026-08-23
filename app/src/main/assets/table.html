@@ -234,11 +234,40 @@
       });
     }
 
+    /*
+     * The element both scrollbars live on.
+     *
+     * Queried rather than kept, because destroy() throws the previous one away and every
+     * caller here wants whichever one is current.
+     */
+    function holder() {
+      return document.querySelector("#grid .tabulator-tableholder");
+    }
+
+    // The sort the live grid was built with, so render() can tell a re-sort from a
+    // rebuild that only moved a column. Null until the first render.
+    var builtSort = null;
+
     function render(data) {
       document.documentElement.setAttribute("data-theme", data.dark ? "dark" : "light");
 
       var highlightEvery = data.highlightEvery || 0;
       var rows = buildRows(data);
+
+      /*
+       * Preserve the scrolled position unless the sort changed.
+       *
+       * Kotlin autosaves a column resize or reorder, which round-trips a new view back
+       * here and rebuilds the grid. Landing on row 1 after every drag would make a wide
+       * table unusable: the user drags a column while scrolled right and is thrown back
+       * to the top-left. A new sort is the one case where row 1 IS right, because the row
+       * order changed and the old offset points at nothing in particular.
+       */
+      var sortKey = data.sort ? data.sort.column + " " + data.sort.dir : "";
+      var previous = builtSort === sortKey ? holder() : null;
+      var left = previous ? previous.scrollLeft : 0;
+      var top = previous ? previous.scrollTop : 0;
+      builtSort = sortKey;
 
       // Rebuilding wholesale rather than calling setData, because a reload may also
       // change the columns, their widths, their order, and the sort indicator.
@@ -275,6 +304,25 @@
       });
 
       table.on("tableBuilt", function () {
+        // After a frame, not inside this handler: the holder has no scrollable extent
+        // until the rows have been laid out, and both assignments would clamp to zero.
+        // Assigning fires the holder's own scroll handler, which is what re-renders the
+        // right slice of the virtual DOM at the restored offset.
+        requestAnimationFrame(function () {
+          var next = holder();
+          if (next) {
+            next.scrollLeft = left;
+            next.scrollTop = top;
+            // Only when there was something to restore. Whether the viewport survived an
+            // autosave is invisible from outside the WebView, and the alternative way to
+            // check it is to look at the screen.
+            if (left || top) {
+              log("scroll restored to " + next.scrollLeft + "," + next.scrollTop);
+            }
+          }
+        });
+        // Outside the frame callback deliberately: a backgrounded WebView runs no
+        // animation frames, and this is what retires the host's renderer-death count.
         Android.renderComplete(rows.length);
       });
 
@@ -292,7 +340,7 @@
           return id !== undefined;
         });
         // A partial order is never worth sending. It cannot happen today, since
-        // fieldToId is rebuilt by the same render, but Task 8 autosaves this into
+        // fieldToId is rebuilt by the same render, but Kotlin autosaves this into
         // views.json - where a truncated list means columns silently deleted from the
         // user's saved view. Dropping the event costs one gesture; sending it costs the
         // view.

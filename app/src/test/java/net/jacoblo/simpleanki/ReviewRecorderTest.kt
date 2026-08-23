@@ -40,12 +40,18 @@ class ReviewRecorderTest {
 		val fixture = Fixture()
 
 		var settings = Settings()
+		var history = emptyList<HistoryEntry>()
 		repeat(5) { i ->
-			settings = fixture.record(
+			val recorded = fixture.record(
 				fixture.entry("q" + i),
 				maxEntries = 2,
-				settings = settings
-			).settings
+				settings = settings,
+				history = history
+			)
+			settings = recorded.settings
+			// Threaded through exactly as MainActivity threads it: the caller owns the
+			// list now, and recordAnswer no longer re-reads the file to find it.
+			history = recorded.history
 		}
 
 		// The exact divergence the counter exists to survive: five cards were reviewed,
@@ -92,7 +98,13 @@ class ReviewRecorderTest {
 		fun entry(question: String, timedOut: Boolean = false) =
 			HistoryEntry(question, "a", 1.0f, nextTimestamp++, timedOut)
 
-		fun record(entry: HistoryEntry, maxEntries: Int, settings: Settings = Settings()) =
-			recordAnswer(historyRepository, settingsRepository, settings, entry, maxEntries)
+		fun record(
+			entry: HistoryEntry,
+			maxEntries: Int,
+			settings: Settings = Settings(),
+			history: List<HistoryEntry> = emptyList()
+		) = recordAnswer(
+			historyRepository, settingsRepository, settings, history, entry, maxEntries
+		)
 	}
 }

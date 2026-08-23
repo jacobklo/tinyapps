@@ -7,6 +7,8 @@ import net.jacoblo.simpleanki.data.HistoryRepository
 import net.jacoblo.simpleanki.data.SettingsRepository
 import net.jacoblo.simpleanki.data.SortDir
 import net.jacoblo.simpleanki.data.SortSpec
+import net.jacoblo.simpleanki.data.TableSettings
+import net.jacoblo.simpleanki.data.ViewsRepository
 import net.jacoblo.simpleanki.table.RenderedColumn
 import net.jacoblo.simpleanki.table.RenderedTable
 import net.jacoblo.simpleanki.table.toPayloadJson
@@ -40,14 +42,21 @@ class TestModeTest {
 	val tempFolder = TemporaryFolder()
 
 	@Test
-	fun seedWritesTheThreeFixtureFiles() {
+	fun seedWritesTheFourFixtureFiles() {
 		val paths = seededRoot("SimpleAnki-test")
 
 		assertTrue(paths.deck.exists())
 		assertTrue(paths.history.exists())
 		assertTrue(paths.settings.exists())
-		// Task 8 owns views.json; nothing should be writing it yet.
-		assertFalse(paths.views.exists())
+		assertTrue(paths.views.exists())
+	}
+
+	@Test
+	fun seededViewsAreTheThreeBuiltIns() {
+		val views = ViewsRepository(seededRoot("views-test")).load(TableSettings())
+
+		assertEquals(listOf("stats", "history", "list_rows"), views.views.map { it.id })
+		assertEquals("stats", views.activeViewId)
 	}
 
 	@Test
@@ -164,6 +173,7 @@ class TestModeTest {
 		assertEquals(first.deck.readText(), second.deck.readText())
 		assertEquals(first.history.readText(), second.history.readText())
 		assertEquals(first.settings.readText(), second.settings.readText())
+		assertEquals(first.views.readText(), second.views.readText())
 		// A fixture that read the clock would still pass the above if it were fast enough.
 		assertFalse(first.history.readText().contains(System.currentTimeMillis().toString()))
 	}

@@ -3,8 +3,8 @@
  *
  * It owns exactly one piece of state, the sort the user currently has applied. Column
  * widths and column order are not state here: they belong to the view, so a resize or a
- * reorder rebuilds the view and hands it back to the caller, which is what lets Task 8
- * autosave them without this file learning about storage.
+ * reorder rebuilds the view and hands it back to the caller, which is what lets
+ * MainActivity autosave them without this file learning about storage.
  */
 package net.jacoblo.simpleanki.table
 
@@ -27,7 +27,7 @@ private const val LOG_TAG = "SimpleAnkiTable"
  * Renders [view] over [history].
  *
  * @param onViewChanged raised when a header drag changed the view - a new column width
- *   or a new column order. Task 8 wires it to autosave.
+ *   or a new column order. MainActivity wires it to ViewsRepository.save.
  * @param onRendered fired after each render, with the table that was produced. Task 7
  *   wires this to TestMode.writeDump.
  */

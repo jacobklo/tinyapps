@@ -27,6 +27,7 @@ import net.jacoblo.simpleanki.data.JsonStore
 import net.jacoblo.simpleanki.data.MetronomeSettings
 import net.jacoblo.simpleanki.data.Settings
 import net.jacoblo.simpleanki.data.SettingsRepository
+import net.jacoblo.simpleanki.data.ViewsRepository
 import net.jacoblo.simpleanki.table.RenderedTable
 import net.jacoblo.simpleanki.table.toWireToken
 import org.json.JSONArray
@@ -49,11 +50,10 @@ object TestMode {
 		BuildConfig.DEBUG && activity.intent?.getBooleanExtra(EXTRA, false) == true
 
 	/**
-	 * Wipes [paths] and writes the deck, history, and settings fixtures.
+	 * Wipes [paths] and writes the deck, history, settings, and views fixtures.
 	 *
 	 * Run once per activity launch, before anything reads those files, so every run starts
-	 * from an identical state no matter what the previous run left behind. Task 8 adds
-	 * views.json here once that file format exists.
+	 * from an identical state no matter what the previous run left behind.
 	 *
 	 * DESTRUCTIVE ON ROTATION. The activity declares no configChanges, so a rotation - or
 	 * any other configuration change - recreates it, and the fresh AppContainer seeds
@@ -76,6 +76,10 @@ object TestMode {
 			writeDeck(paths)
 			HistoryRepository(paths).save(HISTORY_FIXTURE, HistorySettings().maxEntries)
 			SettingsRepository(paths).save(SETTINGS_FIXTURE)
+			// The three built-ins, exactly as a first run would get them. Written here
+			// rather than left to ViewsRepository.load's auto-create so a seed failure
+			// still surfaces as the IOException below rather than being swallowed.
+			ViewsRepository(paths).save(ViewsRepository.defaults(SETTINGS_FIXTURE.table))
 		} catch (e: IOException) {
 			throw IOException(
 				"could not seed ${paths.root}: test mode needs MANAGE_EXTERNAL_STORAGE. " +
