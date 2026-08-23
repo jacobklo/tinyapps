@@ -34,8 +34,8 @@ import net.jacoblo.simpleanki.data.TableView
  * Where the app can be.
  *
  * Sealed rather than an enum because the table entries are data driven: one screen per
- * view in the view list, which the user edits from Task 8 onward, so the set of them is
- * not known at compile time.
+ * view in the view list, and the user adds, copies and deletes views, so the set of them
+ * is not known at compile time.
  */
 sealed interface Screen {
 	data object FlipCards : Screen

@@ -22,8 +22,9 @@ object Aggregates {
 	 * A member whose value is NaN marks a non-numeric source cell. Such a member is dropped
 	 * alongside the timeouts rather than poisoning the result, so nothing here ever returns
 	 * NaN; a set left with no usable member is undefined and returns null. Callers should
-	 * still not reach here with NaN when [requiresNumericSource] is true - Task 12 rejects
-	 * those formulas at parse time - but exclusion is the safe landing if one slips through.
+	 * still not reach here with NaN when [requiresNumericSource] is true - FormulaParser
+	 * rejects that pairing, from a typed formula and from the column sheet alike - but
+	 * exclusion is the safe landing if one slips through.
 	 *
 	 * @param values   source value per member; NaN where the source is non-numeric
 	 * @param timedOut whether each member's row timed out; same length as [values]

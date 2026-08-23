@@ -18,8 +18,8 @@ import androidx.compose.ui.unit.dp
 /**
  * The app bar: a hamburger opening the navigation drawer, and the lifetime review count.
  *
- * One button rather than one per screen, because from Task 8 the user can add views and
- * there is no fixed number of destinations to give a button each.
+ * One button rather than one per screen, because the user can add views and so there is
+ * no fixed number of destinations to give a button each.
  *
  * [lifetimeReviews] is every card ever shown, timeouts included. It is passed in rather
  * than read from the container so the bar stays a pure function of its arguments.

@@ -52,7 +52,7 @@ class TableBridge(
 	 *
 	 * JSON rather than a delimited string because the only shape this boundary accepts is
 	 * a String, and no delimiter is safe: the base column ids happen to be comma-free, but
-	 * Task 9 lets the user name a computed column and nothing stops them using a comma.
+	 * the user names their own computed columns and nothing stops them using a comma.
 	 * JSON escapes that away instead of assuming it never happens.
 	 */
 	@JavascriptInterface

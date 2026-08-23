@@ -8,7 +8,7 @@
  * Activated with:
  *   adb shell am start -n net.jacoblo.simpleanki/.MainActivity --ez test_mode true
  *
- * When active exactly three things change, and nothing else:
+ * When active exactly four things change, and nothing else:
  *   1. AnkiPaths resolves to /sdcard/SimpleAnki-test rather than /sdcard/SimpleAnki
  *   2. that directory is wiped and reseeded from the fixtures below, on every launch
  *   3. dump.json is written after every table render
@@ -243,7 +243,7 @@ object TestMode {
 	 * history.json: [ROUNDS] passes over the deck, oldest first, 30 records in all.
 	 *
 	 * Round-major so the questions interleave the way real practice does, which is what
-	 * makes the rolling and bucket partitions of Task 13 see a realistic order.
+	 * makes the rolling and bucket partitions see a realistic order.
 	 *
 	 * Every value is derived from the constants above; nothing reads the clock and nothing
 	 * is random, so the file is byte-identical on every seed.

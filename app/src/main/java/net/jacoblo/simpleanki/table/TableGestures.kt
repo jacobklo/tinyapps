@@ -34,10 +34,10 @@ internal fun TableView.withWidth(columnId: String, width: Int): TableView =
 /**
  * A copy of this view with its columns in the order [columnIds] names.
  *
- * The page only ever reports the columns it drew, so any column it could not draw -
- * hidden today, and from Task 9 a computed one whose formula failed - is missing from
- * that list. Those are appended in their existing relative order rather than dropped,
- * since dropping them would delete a column the user still owns.
+ * The page only ever reports the columns it drew, so any column it could not draw - a
+ * hidden one, or a computed one whose formula failed - is missing from that list. Those
+ * are appended in their existing relative order rather than dropped, since dropping them
+ * would delete a column the user still owns.
  */
 internal fun TableView.reordered(columnIds: List<String>): TableView {
 	val byId = columns.associateBy { it.id }

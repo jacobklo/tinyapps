@@ -65,7 +65,7 @@ class ReviewRecorderTest {
 	fun aTimedOutAnswerCountsLikeAnyOther() {
 		val fixture = Fixture()
 
-		// Task 15 appends a record on metronome timeout; every card shown counts.
+		// A metronome timeout appends a record like any other; every card shown counts.
 		val recorded = fixture.record(fixture.entry("q1", timedOut = true), maxEntries = 10)
 
 		assertEquals(1, recorded.settings.counters.lifetimeReviews)

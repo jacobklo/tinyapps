@@ -155,8 +155,8 @@
      * lookupFormatter falls back to the plaintext formatter, and both it and the textarea
      * formatter run their value through sanitizeHTML. Titles get no such treatment.
      *
-     * Every title is hardcoded today. Task 9 lets the user name a computed column and
-     * Task 13 renders it, and this page holds the Android bridge object, so a title of
+     * The user names their own computed columns and this page renders those names, and
+     * it also holds the Android bridge object, so a title of
      * `<img src=x onerror="Android.reorder(...)">` would be script injection with a path
      * to native code. Returning a Node takes Tabulator's other branch,
      * `i instanceof Node ? e.appendChild(i)`, where the text can never become markup.
@@ -164,7 +164,7 @@
      * Do NOT collapse this back into a template string, and do NOT enable the `tooltip`
      * or `headerTooltip` column options: the tooltip module ends in `s.innerHTML = i`
      * with `i` the raw cell value or the raw title, sanitizing neither. Showing a formula
-     * error on hover is an obvious Task 13 idea and would reopen both paths at once.
+     * error on hover is an obvious idea and would reopen both paths at once.
      */
     function titleNode(title, dir) {
       var wrapper = document.createElement("span");
@@ -354,7 +354,7 @@
           return;
         }
         // JSON rather than CSV: the bridge can only carry a String, and a column id is
-        // not guaranteed to be comma-free once Task 9 lets the user name one.
+        // not guaranteed to be comma-free, since the user names their own columns.
         Android.reorder(JSON.stringify(ids));
       });
     }
