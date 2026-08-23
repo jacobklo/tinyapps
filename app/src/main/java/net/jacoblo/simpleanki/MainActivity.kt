@@ -36,11 +36,10 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         // 8) Keep screen always on
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        // Debug-only; seeded before the container so its repositories open the fixtures.
         val testMode = TestMode.isActive(this)
         val paths = if (testMode) AnkiPaths.testMode() else AnkiPaths.production()
-        if (testMode) TestMode.seed(paths)
         container = AppContainer(this, paths, testMode)
+        container.seedTestModeIfNeeded()
         setContent {
             SimpleAnkiTheme {
                 AnkiScreen(container)
@@ -50,6 +49,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Ahead of the composable's ON_RESUME observer, which is what reads the files.
+        container.seedTestModeIfNeeded()
         // 1) Check file permission on launch
         checkPermission()
     }
@@ -155,8 +156,7 @@ fun AnkiScreen(container: AppContainer) {
                         if (view != null && view.id != screen.viewId) currentScreen = Screen.Table(view.id)
                     }
                     if (view == null) Text("No views to show.")
-                    else TableScreen(history, deckQuestions, view, onViewChanged = {},
-                        onRendered = { if (container.testMode) TestMode.writeDump(container.paths, it) })
+                    else TableScreen(history, deckQuestions, view, onViewChanged = {}, onRendered = container::dumpRendered)
                 }
                 Screen.FlipCards -> GameView(
                     cards = cards,

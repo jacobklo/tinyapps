@@ -21,14 +21,22 @@
 #-renamesourcefileattribute SourceFile
 
 # --- WebView Javascript Interface Protection ---
-# Keep the class and methods explicitly used by WebView.addJavascriptInterface
-# R8 Full Mode is aggressive, so we must be specific.
--keepclassmembers class net.jacoblo.notesoutloud.TocJavascriptInterface {
+# JavaScript calls TableBridge's four methods by name from table.html, so R8 must not
+# rename or remove them.
+#
+# Belt and braces, not a fix: proguard-android-optimize.txt, which this build already
+# includes, carries an app-wide "-keepclassmembers class * { @JavascriptInterface
+# <methods>; }" that covers TableBridge on its own. Verified against the release dex -
+# with this rule and without it, sort/resize/reorder/renderComplete keep their names and
+# their VISIBILITY_RUNTIME annotation while the class becomes a.qq0 and its fields a-f.
+# This rule names the one class that depends on that guarantee, so removing the default
+# file from proguardFiles cannot silently break the table.
+#
+# The class NAME is deliberately not kept: the page reaches the bridge through the
+# "Android" binding, never by class name, so only the method names are load bearing.
+-keepclassmembers class net.jacoblo.simpleanki.table.TableBridge {
     @android.webkit.JavascriptInterface <methods>;
 }
-
-# Protect the class name if you refer to it by string in any reflection (though your code doesn't seem to)
--keepnames class net.jacoblo.notesoutloud.TocJavascriptInterface
 
 # --- Aggressive Size Optimizations ---
 

@@ -10,6 +10,8 @@ import net.jacoblo.simpleanki.data.DeckRepository
 import net.jacoblo.simpleanki.data.HistoryRepository
 import net.jacoblo.simpleanki.data.Settings
 import net.jacoblo.simpleanki.data.SettingsRepository
+import net.jacoblo.simpleanki.table.RenderedTable
+import net.jacoblo.simpleanki.testmode.TestMode
 
 /**
  * Hand-rolled dependency graph, constructed once in MainActivity.onCreate.
@@ -58,6 +60,39 @@ class AppContainer(
 	 */
 	val hasStorageAccess: Boolean
 		get() = Environment.isExternalStorageManager()
+
+	/**
+	 * Seeds the test-mode fixtures once per launch, on the first call that has storage
+	 * access. A no-op outside test mode.
+	 *
+	 * Deferred rather than run from the constructor because without
+	 * MANAGE_EXTERNAL_STORAGE the first write fails with EPERM, and failing that way
+	 * inside onCreate kills the process before onResume can show the permission prompt -
+	 * which leaves the app unable to heal itself. MainActivity calls this from both, so
+	 * the resume after the grant seeds and the run carries on.
+	 *
+	 * The [seeded] latch matters as much as the permission check does: without it every
+	 * resume would wipe, discarding whatever the agent had just recorded.
+	 */
+	fun seedTestModeIfNeeded() {
+		if (!testMode || seeded || !hasStorageAccess) return
+		TestMode.seed(paths)
+		seeded = true
+	}
+
+	/** Whether [seedTestModeIfNeeded] has run. An activity recreation resets it. */
+	private var seeded = false
+
+	/**
+	 * Writes [table] to dump.json under test mode, and does nothing otherwise.
+	 *
+	 * The test-mode check sits here rather than at the call site so TableScreen's
+	 * onRendered can be wired unconditionally: a screen that has to remember to ask
+	 * whether it is under test is a screen that will one day forget to.
+	 */
+	fun dumpRendered(table: RenderedTable) {
+		if (testMode) TestMode.writeDump(paths, table)
+	}
 
 	/** Releases held native resources. Called from MainActivity.onDestroy. */
 	fun release() {

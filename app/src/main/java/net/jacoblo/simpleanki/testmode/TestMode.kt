@@ -28,6 +28,7 @@ import net.jacoblo.simpleanki.data.MetronomeSettings
 import net.jacoblo.simpleanki.data.Settings
 import net.jacoblo.simpleanki.data.SettingsRepository
 import net.jacoblo.simpleanki.table.RenderedTable
+import net.jacoblo.simpleanki.table.toWireToken
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -50,23 +51,39 @@ object TestMode {
 	/**
 	 * Wipes [paths] and writes the deck, history, and settings fixtures.
 	 *
-	 * Run once per activity launch, before the repositories are built, so every run starts
+	 * Run once per activity launch, before anything reads those files, so every run starts
 	 * from an identical state no matter what the previous run left behind. Task 8 adds
 	 * views.json here once that file format exists.
 	 *
+	 * DESTRUCTIVE ON ROTATION. The activity declares no configChanges, so a rotation - or
+	 * any other configuration change - recreates it, and the fresh AppContainer seeds
+	 * again, wiping whatever the run has recorded so far. An agent driving the app must
+	 * not rotate mid-scenario, or must expect to start the scenario over if it does.
+	 *
 	 * @throws IllegalArgumentException when [paths] is not a test root - see [wipe]. That
 	 *   is a programming error and must never be caught.
-	 * @throws IOException when the fixtures cannot be written, which in practice means
-	 *   MANAGE_EXTERNAL_STORAGE has not been granted yet. MainActivity lets it through:
-	 *   an unseeded test run reports fabricated results, which is worse than not starting.
-	 *   Launch once without the extra to reach the permission prompt, then relaunch.
+	 * @throws IllegalStateException when a stale file survives the wipe, which would leave
+	 *   the run non-pristine - the single thing this function exists to guarantee.
+	 * @throws IOException when the fixtures cannot be written despite storage access. The
+	 *   caller checks that access first, so getting here means something else is wrong;
+	 *   the message names the permission and the remedy rather than surfacing a bare
+	 *   FileNotFoundException about a .tmp file nobody asked for.
 	 */
 	fun seed(paths: AnkiPaths) {
 		wipe(paths.root)
-		paths.ensureRoot()
-		writeDeck(paths)
-		HistoryRepository(paths).save(HISTORY_FIXTURE, HistorySettings().maxEntries)
-		SettingsRepository(paths).save(SETTINGS_FIXTURE)
+		try {
+			paths.ensureRoot()
+			writeDeck(paths)
+			HistoryRepository(paths).save(HISTORY_FIXTURE, HistorySettings().maxEntries)
+			SettingsRepository(paths).save(SETTINGS_FIXTURE)
+		} catch (e: IOException) {
+			throw IOException(
+				"could not seed ${paths.root}: test mode needs MANAGE_EXTERNAL_STORAGE. " +
+					"Launch without --ez $EXTRA true, grant file access at the prompt, " +
+					"then relaunch with it.",
+				e
+			)
+		}
 	}
 
 	/**
@@ -102,7 +119,13 @@ object TestMode {
 		require(root.name.endsWith(TEST_ROOT_SUFFIX)) {
 			"refusing to wipe ${root.path}: only a directory named *$TEST_ROOT_SUFFIX is wipeable"
 		}
-		root.listFiles()?.forEach { it.deleteRecursively() }
+		root.listFiles()?.forEach { child ->
+			// Discarding this boolean would leave the run quietly non-pristine, which is
+			// the one outcome the wipe exists to prevent.
+			check(child.deleteRecursively()) {
+				"could not delete ${child.path}, so ${root.path} is not pristine"
+			}
+		}
 	}
 
 	/**
@@ -145,7 +168,7 @@ object TestMode {
 				"sort",
 				JSONObject()
 					.put("column", table.sort.column)
-					.put("dir", table.sort.dir.name.lowercase())
+					.put("dir", table.sort.dir.toWireToken())
 			)
 			.put("highlightEvery", table.highlightEvery)
 			.put("visibleRowCount", table.visibleRowCount)
@@ -245,6 +268,11 @@ object TestMode {
 	 *
 	 * 0.3 seconds is short enough that a timeout can be provoked faster than an agent can
 	 * act, and disabled so it only ticks when a test turns it on.
+	 *
+	 * It reaches the file as 0.30000001192092896, because SettingsRepository widens the
+	 * Float to a Double and 0.3 has no exact binary form. It reads back as exactly 0.3f, so
+	 * this is cosmetic - but an agent asserting on the TEXT of settings.json has to match
+	 * the long form, or parse the number and compare with a tolerance.
 	 */
 	private val SETTINGS_FIXTURE = Settings(
 		metronome = MetronomeSettings(enabled = false, intervalSeconds = 0.3f)

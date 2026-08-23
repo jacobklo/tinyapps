@@ -9,11 +9,14 @@ import net.jacoblo.simpleanki.data.SortDir
 import net.jacoblo.simpleanki.data.SortSpec
 import net.jacoblo.simpleanki.table.RenderedColumn
 import net.jacoblo.simpleanki.table.RenderedTable
+import net.jacoblo.simpleanki.table.toPayloadJson
 import net.jacoblo.simpleanki.testmode.TestMode
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
+import org.junit.Assume.assumeFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -233,6 +236,51 @@ class TestModeTest {
 		val dump = JSONObject(paths.dump.readText())
 		assertEquals("history", dump.getString("viewId"))
 		assertEquals(0, dump.getJSONArray("rows").length())
+	}
+
+	/**
+	 * A survivor of the wipe has to stop the run, not pass quietly.
+	 *
+	 * A read-only parent is the one portable way to make deleteRecursively fail: entries
+	 * cannot be removed from a directory that is not writable. Skipped when the test user
+	 * can write anyway, which is what happens as root.
+	 */
+	@Test
+	fun seedStopsWhenAStaleFileSurvivesTheWipe() {
+		val root = tempFolder.newFolder("locked-test")
+		File(root, "stale.txt").writeText("stale")
+		root.setWritable(false, false)
+		assumeFalse("running as root, where a read-only directory is still writable", root.canWrite())
+
+		try {
+			TestMode.seed(AnkiPaths.at(root))
+			fail("seed must not pass over a file it could not delete")
+		} catch (e: IllegalStateException) {
+			assertTrue(e.message!!.contains("not pristine"))
+		} finally {
+			// Or TemporaryFolder cannot clean up after itself.
+			root.setWritable(true, false)
+		}
+	}
+
+	/**
+	 * The dump exists to mirror what the page was handed, so the two documents have to
+	 * agree on every spelling. Direction is the only one either side converts.
+	 */
+	@Test
+	fun theDumpAndThePagePayloadSpellTheSortDirectionAlike() {
+		val paths = AnkiPaths.at(tempFolder.newFolder("wire-test"))
+		paths.ensureRoot()
+
+		for (dir in SortDir.entries) {
+			val table = SAMPLE_TABLE.copy(sort = SortSpec("Question", dir))
+			TestMode.writeDump(paths, table)
+
+			val dumped = JSONObject(paths.dump.readText()).getJSONObject("sort").getString("dir")
+			val sent = JSONObject(table.toPayloadJson(darkTheme = false))
+				.getJSONObject("sort").getString("dir")
+			assertEquals("dump and payload disagree on $dir", sent, dumped)
+		}
 	}
 
 	/** Seeds a fresh temp folder whose name ends in "-test", and returns its paths. */

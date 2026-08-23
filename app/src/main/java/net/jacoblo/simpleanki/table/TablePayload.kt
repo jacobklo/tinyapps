@@ -15,6 +15,21 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
+ * The wire spelling of a sort direction.
+ *
+ * Shared with TestMode's dump.json rather than spelled out at each site, because the dump
+ * exists to mirror exactly what the page was handed: two independent conversions would
+ * agree on these two values and diverge the moment a third is added.
+ *
+ * An exhaustive when rather than a comparison against ASC, so adding that third value is a
+ * compile error here instead of a silent "desc" in both documents.
+ */
+fun SortDir.toWireToken(): String = when (this) {
+	SortDir.ASC -> "asc"
+	SortDir.DESC -> "desc"
+}
+
+/**
  * The payload the page fetches: the whole table, already formatted, as one JSON document.
  *
  * Rows are arrays aligned with [RenderedTable.columns] rather than objects, which at five
@@ -46,7 +61,7 @@ fun RenderedTable.toPayloadJson(darkTheme: Boolean): String {
 			"sort",
 			JSONObject()
 				.put("column", sort.column)
-				.put("dir", if (sort.dir == SortDir.ASC) "asc" else "desc")
+				.put("dir", sort.dir.toWireToken())
 		)
 		.put("highlightEvery", highlightEvery)
 		.put("dark", darkTheme)
