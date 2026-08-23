@@ -1710,12 +1710,18 @@ fun MetronomeEffect(
 	cardKey: Any?,
 	isFlipScreen: Boolean,
 	isResumed: Boolean,
-	clickPlayer: ClickPlayer,
+	play: () -> Unit,
 	onFire: () -> Unit
 )
 ```
 
-Implemented as a single `LaunchedEffect(enabled, intervalSeconds, cardKey, isFlipScreen, isResumed)` that returns immediately unless all gates are open, then delays and calls `clickPlayer.play()` followed by `onFire()`.
+Implemented as a single `LaunchedEffect(enabled, intervalSeconds, cardKey, isFlipScreen, isResumed)` that returns immediately unless all gates are open, then delays and calls `play()` followed by `onFire()`.
+
+**`play` is a lambda, NOT a `ClickPlayer` parameter, and this is load-bearing.** Task 14 made `AppContainer.clickPlayer` lazy because the container is built in `onCreate` while `settings` only loads in the `ON_RESUME` observer - eager construction always saw `soundPath == null`, making the configured-path branch unreachable. A `clickPlayer: ClickPlayer` parameter would be evaluated during the composition pass, which runs BEFORE that observer, forcing the lazy with default settings and caching the stale instance forever. Pass `{ container.clickPlayer.play() }` so the lambda captures the container and the lazy is forced when the coroutine invokes it, after settings have loaded. The same applies to `remember` keys or anything else evaluated during composition.
+
+**Tick on the main thread.** `LaunchedEffect` bodies run on `AndroidUiDispatcher.Main` by default, which is what the player needs: its `loaded`, `pendingPlay`, `released` and `soundId` fields are unsynchronized, and the bad-path Toast would throw off a non-Looper thread. Do not wrap the tick in `withContext(Dispatchers.Default)` or hand the play call to an executor.
+
+**The first click after enabling is about 140 ms late, not lost.** The tick that forces construction is buffered in `pendingPlay` and replayed by `SoundPool`'s load callback. Do not add a warm-up.
 
 `onFire` in `MainActivity` does:
 
