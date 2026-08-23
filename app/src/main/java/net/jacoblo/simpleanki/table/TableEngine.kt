@@ -120,12 +120,18 @@ object TableEngine {
 	 * average a zero into the answer. So the type is checked here, at render time, rather
 	 * than trusted from the parse that may never have happened.
 	 *
-	 * The display index is 0 because numbering happens after the collapse, below this -
-	 * the sort comparators pass 0 for the same reason. No zone either: the two numeric
-	 * base columns are the row's own number and its answer time, neither of them calendar
-	 * text.
+	 * "#" is excluded by NAME rather than by type, and it is the one case a type check
+	 * cannot catch: it is a NUMBER column, but its value is the display number, which is
+	 * not assigned until after the collapse below the pivot. There is nothing to read
+	 * here, so the 0 the sort comparators harmlessly pass would make every member 0.0 and
+	 * hand back a plausible "0.00" precisely where a "-" belongs. That "#" is already
+	 * unsortable is the same fact in a different place: it describes a row's position in
+	 * the finished table, never its content.
+	 *
+	 * No zone: the one aggregable base column is the row's answer time, not calendar text.
 	 */
 	fun numericSource(entry: HistoryEntry, columnId: String): Double {
+		if (columnId == ID_INDEX) return Double.NaN
 		if (baseColumn(columnId)?.type != ColumnType.NUMBER) return Double.NaN
 		return (rawValue(entry, columnId, 0) as? Number)?.toDouble() ?: Double.NaN
 	}
@@ -193,9 +199,17 @@ object TableEngine {
 		// aggregate wrong.
 		val pivot = Pivot(sorted, zone)
 		val values = columns.map { column ->
-			// An errored column renders a marker in every cell, so there is nothing to
-			// compute for it - and its struct is the one that may be untrustworthy.
-			if (column.rendered.error != null) null else column.spec.computed?.let { pivot.values(it) }
+			// Only a column with no base column of its own takes its value from here. A
+			// base id carrying an aggregate too - reachable by hand-editing views.json -
+			// renders from the record, so computing its pivot would buy a partition pass
+			// per render whose answer cell() then throws away. An errored column is
+			// skipped for its own reason: it renders a marker in every cell, and its
+			// struct is the one that may be untrustworthy.
+			if (column.base != null || column.rendered.error != null) {
+				null
+			} else {
+				column.spec.computed?.let { pivot.values(it) }
+			}
 		}
 
 		// 3b) Reorder by the computed sort, if that is what the sort is. This is the only
@@ -240,6 +254,18 @@ object TableEngine {
 
 	/** A spec is computed when it carries an aggregate or a formula. */
 	private fun isComputed(spec: ColumnSpec): Boolean = spec.computed != null || spec.formula != null
+
+	/**
+	 * The struct a sort on this column would order by, or null when it cannot be sorted.
+	 *
+	 * The single rule [resolveSort] and [orderByComputed] both read, so that what the
+	 * header reports sortable and what the pipeline can actually order by cannot drift.
+	 * Being computed is not enough: [isComputed] is true for a formula alone, and a column
+	 * with a formula but no struct - or with a struct beside a parse failure - has no
+	 * values, so calling it sortable would draw a sort arrow that does nothing.
+	 */
+	private fun sortableSpec(spec: ColumnSpec): ComputedSpec? =
+		if (spec.formulaError == null) spec.computed else null
 
 	/**
 	 * Validates every spec and keeps the visible ones, in view order.
@@ -297,7 +323,7 @@ object TableEngine {
 		val computed = view.columns.firstOrNull { it.id == sort.column && isComputed(it) }
 		val sortable = when {
 			base != null -> base.sortable
-			computed != null -> computed.formulaError == null
+			computed != null -> sortableSpec(computed) != null
 			else -> {
 				warnings.add("unknown sort column \"${sort.column}\", sorted by When descending")
 				return FALLBACK_SORT
@@ -331,11 +357,9 @@ object TableEngine {
 	): List<Int> {
 		val positions = List(rowCount) { it }
 		if (baseColumn(sort.column) != null) return positions
-		// A column whose formula failed is unsortable and its struct untrustworthy, and
-		// one that has a formula but no struct has no values to sort by either.
 		val spec = view.columns
-			.firstOrNull { it.id == sort.column && it.formulaError == null }
-			?.computed ?: return positions
+			.firstOrNull { it.id == sort.column && isComputed(it) }
+			?.let { sortableSpec(it) } ?: return positions
 		val values = pivot.values(spec)
 		return positions.sortedWith(nullsLast(sort.dir) { position: Int -> values[position] })
 	}
@@ -491,11 +515,17 @@ private class Pivot(private val rows: List<HistoryEntry>, private val zone: Zone
 
 	private fun partitionFor(spec: ComputedSpec): PartitionResult {
 		val partition = capped(spec.partition)
-		return partitions.getOrPut(PartitionKey(partition, spec.limit)) {
+		// A limit bounds a group only - forPartition ignores it for a bucket and a rolling
+		// window, which are bounded by their own size - so carrying it in the key would
+		// split one pass into two for a pair of bucket columns differing in nothing the
+		// selector reads. Normalised once and used for both the key and the pass below, so
+		// the two cannot disagree about what was cached.
+		val limit = if (partition is Partition.Group) spec.limit else 0
+		return partitions.getOrPut(PartitionKey(partition, limit)) {
 			// Any column can be a group key, Date and Time included, so the key is the
 			// rendered raw value as text. A row a column has no value for - Seconds on a
 			// timed-out attempt - keys to the empty string and groups with its like.
-			MemberSelectors.forPartition(partition, spec.limit) { entry, columnId ->
+			MemberSelectors.forPartition(partition, limit) { entry, columnId ->
 				TableEngine.rawValue(entry, columnId, 0, zone)?.toString() ?: ""
 			}.partition(rows)
 		}

@@ -491,6 +491,26 @@ class TableEngineTest {
 	}
 
 	@Test
+	fun theIndexColumnIsNotAnAggregateSource() {
+		// "#" passes a type check - it IS a NUMBER column - but its value is the display
+		// number, which is not assigned until after the collapse below the pivot. Reading
+		// it at aggregation time makes every member 0.0 and renders a plausible "0.00"
+		// exactly where a "-" belongs, with nothing in warnings to say so.
+		val view = view(
+			column("Seconds"),
+			column("AvgIndex", computed = bucket(Aggregate.AVG, size = 2, source = "#")),
+			column("SumIndex", computed = rolling(Aggregate.SUM, size = 3, source = "#")),
+			column("GroupIndex", computed = group(Aggregate.MEDIAN, source = "#"))
+		)
+
+		val table = render(ladder(), view)
+
+		assertEquals(List(5) { "-" }, table.rows.map { it[1] })
+		assertEquals(List(5) { "-" }, table.rows.map { it[2] })
+		assertEquals(List(5) { "-" }, table.rows.map { it[3] })
+	}
+
+	@Test
 	fun aQuestionWhoseEveryAttemptTimedOutRendersADashRatherThanZero() {
 		val history = listOf(
 			entry("missed", seconds = 9.0f, timestamp = 10L, timedOut = true),
@@ -507,6 +527,43 @@ class TableEngineTest {
 		val table = render(history, view)
 
 		assertEquals(listOf(listOf("missed", "-", "2", "0.0%")), table.rows)
+	}
+
+	@Test
+	fun sortingByAColumnWithAFormulaButNoStructFallsBackRatherThanDoingNothing() {
+		// The one shape that can call itself computed while having nothing to sort by. It
+		// must not report itself as sorted: that draws a sort arrow on a column whose order
+		// never changed, which reads as the sort having been applied and found the rows
+		// already in order.
+		val history = listOf(entry("old", timestamp = 10L), entry("new", timestamp = 20L))
+		val view = view(column("Question"), column("Ghost", formula = "Best / Avg"))
+
+		val table = render(history, view, sort = SortSpec("Ghost", SortDir.ASC))
+
+		assertEquals(TableEngine.FALLBACK_SORT, table.sort)
+		assertEquals(listOf("new", "old"), table.rows.map { it[0] })
+		assertEquals(
+			listOf("column \"Ghost\" cannot be sorted, sorted by When descending"),
+			table.warnings
+		)
+	}
+
+	@Test
+	fun aLimitIsIgnoredByABucketAndDoesNotChangeItsFigures() {
+		// forPartition reads a limit for a group only, so these two columns describe the
+		// same member sets and must render the same thing - which is also what lets them
+		// share one partition pass.
+		val view = view(
+			column("Seconds"),
+			column("Plain", computed = bucket(Aggregate.SUM, size = 2)),
+			column("Limited", computed = ComputedSpec(Aggregate.SUM, "Seconds", Partition.Bucket(2), limit = 1))
+		)
+
+		val table = render(ladder(), view)
+
+		val expected = listOf("3.00", "3.00", "7.00", "7.00", "5.00")
+		assertEquals(expected, table.rows.map { it[1] })
+		assertEquals(expected, table.rows.map { it[2] })
 	}
 
 	@Test

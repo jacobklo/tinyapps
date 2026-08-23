@@ -291,7 +291,12 @@ private fun NameEditor(
  */
 @Composable
 private fun ComputedBuilder(onCancel: () -> Unit, onAdd: (ColumnSpec) -> Unit) {
-	val sources = remember { TableEngine.BASE_COLUMNS.map { it.id } }
+	// Every base column but "#", which names a row's position in the finished table rather
+	// than anything about the row. It is neither a value to aggregate - TableEngine.
+	// numericSource returns NaN for it - nor a key worth grouping on, since every row
+	// would answer the same. Dropped from the picker so the easy path cannot build one;
+	// the engine covers the hand-edited path.
+	val sources = remember { TableEngine.BASE_COLUMNS.map { it.id } - TableEngine.ID_INDEX }
 	var aggregate by remember { mutableStateOf(Aggregate.AVG) }
 	var source by remember { mutableStateOf(TableEngine.ID_SECONDS) }
 	var mode by remember { mutableStateOf(MODE_GROUP) }
