@@ -210,7 +210,10 @@
           frozen: col.frozen === true,
           // Kotlin owns sorting. Tabulator must never reorder a row.
           headerSort: false,
-          resizable: true,
+          // Repeated from columnDefaults on purpose, because a per-column value
+          // OVERRIDES the default: left at true here, the border drag would still be
+          // live however columnDefaults was set. Sizing is the column sheet's field.
+          resizable: false,
           cssClass: sorted ? "is-sorted" : "",
           headerClick: function () {
             // A header tap reports the intent and nothing else; Kotlin decides.
@@ -277,9 +280,9 @@
       /*
        * Preserve the scrolled position unless the view or the sort changed.
        *
-       * Kotlin autosaves a column resize or reorder, which round-trips a new view back
-       * here and rebuilds the grid. Landing on row 1 after every drag would make a wide
-       * table unusable: the user drags a column while scrolled right and is thrown back
+       * Kotlin autosaves every column edit, which round-trips a new view back here and
+       * rebuilds the grid. Landing on row 1 after each one would make a wide table
+       * unusable: the user sets a column's width while scrolled right and is thrown back
        * to the top-left. A new sort is the one case where row 1 IS right, because the row
        * order changed and the old offset points at nothing in particular.
        *
@@ -306,14 +309,19 @@
         index: "_i",
         height: "100%",
         // fitData leaves an explicitly sized column at its own width, which is what
-        // honours the widths the user dragged. A layout that redistributes width, such
-        // as fitColumns, would quietly overwrite them.
+        // honours the widths the user set. A layout that redistributes width, such as
+        // fitColumns, would quietly overwrite them.
         layout: "fitData",
         // No renderVertical: Tabulator 6 already defaults to "virtual", which is what
         // keeps 5000 rows to about 60 row elements. The Tabulator 4 spelling of this
         // option was `virtualDom` and no longer exists.
-        movableColumns: true,
-        columnDefaults: { headerSort: false, resizable: true },
+        // Both drags off. Order and width are set from the column sheet instead - a
+        // drag inside a grid that scrolls both ways fights the scroll, and neither drag
+        // could reach a column that was hidden or off the right-hand edge. The two
+        // handlers below stay wired: they are how any later header affordance would
+        // report the same two edits, and they cost nothing while nothing fires them.
+        movableColumns: false,
+        columnDefaults: { headerSort: false, resizable: false },
         placeholder: "No rows",
         rowFormatter: function (row) {
           if (highlightEvery <= 0) {

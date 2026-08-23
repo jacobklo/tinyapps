@@ -23,9 +23,9 @@ import java.io.IOException
 /**
  * Shows the view [viewId] names and autosaves every edit to it.
  *
- * There is no explicit save anywhere in this flow. A header drag, a visibility toggle, a
- * rename - each rebuilds the stored file and writes it immediately, so what is on screen
- * and what is on disk never disagree.
+ * There is no explicit save anywhere in this flow. A width, a move, a visibility toggle,
+ * a rename - each rebuilds the stored file and writes it immediately, so what is on
+ * screen and what is on disk never disagree.
  *
  * @param onViewsFile hands the rebuilt file back to the caller, which holds it.
  * @param onSelect switches the drawer's selection, which a save-as-new and a delete both

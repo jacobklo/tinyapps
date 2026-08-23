@@ -186,7 +186,7 @@ class RepositoryTest {
 			columns = history.columns.map { if (it.id == "Question") it.copy(width = 313) else it }
 		)
 
-		// Exactly what MainActivity's onViewChanged does with a header drag.
+		// Exactly what MainActivity's onViewChanged does with a width from the sheet.
 		repository.save(loaded.copy(views = loaded.views.map { if (it.id == "history") widened else it }))
 
 		val reloaded = ViewsRepository(paths).load(tableSettings)

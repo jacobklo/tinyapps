@@ -15,10 +15,11 @@ package net.jacoblo.simpleanki.data
 import net.jacoblo.simpleanki.table.FormulaParser
 import net.jacoblo.simpleanki.table.FormulaWriter
 import net.jacoblo.simpleanki.table.TableEngine
+import net.jacoblo.simpleanki.table.reordered
 import java.util.Locale
 
 /**
- * Width a column created from the sheet starts at; the user drags it from there.
+ * Width a column created from the sheet starts at; the width field takes it from there.
  *
  * Matches the width [ViewsRepository] gives a hand-written column that names none, so a
  * column has the same starting width however it got into views.json.
@@ -151,6 +152,47 @@ fun TableView.addComputed(spec: ColumnSpec): TableView {
 	return copy(columns = columns + spec.copy(id = uniqueId(spec.id, taken, fallback = "column")))
 }
 
+/**
+ * A copy with [columnId]'s spec replaced by [spec], in place.
+ *
+ * In place is the whole of it. The edited column keeps its id, because the sort, the
+ * collapse key, and views.json all name a column by it, and it keeps its POSITION,
+ * because the alternative - drop it and append the rebuilt one - moves a column to the
+ * end of the table for the crime of being edited, which is the delete-and-rebuild this
+ * replaced.
+ *
+ * It keeps its width, visibility and frozen flag too. Those are the user's, and
+ * [buildComputedSpec] has no opinion on any of them: it opens every column at
+ * [NEW_COLUMN_WIDTH] because that is where a NEW column starts, not because an edited one
+ * should snap back to it.
+ *
+ * What the builder does own is taken from [spec] - the title, the struct, the formula
+ * mirror, and the format the struct implies. The format in particular must follow the
+ * aggregate rather than be preserved: an AVG changed to a COUNT would otherwise keep
+ * TWO_DP and render five attempts as "5.00". See [defaultFormat].
+ *
+ * A base column is refused. It has no struct to edit, and writing a computed spec onto
+ * its id would leave two meanings for one name. An unknown id is left alone.
+ */
+fun TableView.replaceComputed(columnId: String, spec: ColumnSpec): TableView {
+	if (TableEngine.baseColumn(columnId) != null) return this
+	if (columns.none { it.id == columnId }) return this
+	return copy(
+		columns = columns.map { existing ->
+			if (existing.id != columnId) {
+				existing
+			} else {
+				spec.copy(
+					id = existing.id,
+					width = existing.width,
+					visible = existing.visible,
+					frozen = existing.frozen
+				)
+			}
+		}
+	)
+}
+
 /** What the column sheet's builder produced: the column, or why it was refused. */
 sealed interface BuildResult {
 	data class Ok(val spec: ColumnSpec) : BuildResult
@@ -212,6 +254,59 @@ fun buildComputedSpec(
 }
 
 /**
+ * What the computed-column builder's pickers open on.
+ *
+ * [groupKey] and [size] are both carried whatever [partition] is, because the three
+ * partition buttons share one builder: switching from a rolling window to a group has to
+ * put SOMETHING in the By picker, and switching back has to put something in Size.
+ */
+data class BuilderSeed(
+	val aggregate: Aggregate,
+	val source: String,
+	val partition: Partition,
+	val groupKey: String,
+	val size: Int,
+	val limit: Int
+)
+
+/**
+ * The values the builder opens on for [spec], or the ones a new column starts from when
+ * it is null.
+ *
+ * This is what "edit" means on the UI side: reopening the builder on the column's own
+ * pickers rather than on the defaults, so that saving an edit that changed nothing gives
+ * back the column it started from. Pure and here rather than in the composable because
+ * the fallbacks are the whole content of it, and two of them are not obvious.
+ *
+ * The first is [size] for a grouped column, which has no window at all. It opens at the
+ * user's default rather than at zero, since zero is the one value [sized] refuses.
+ *
+ * The second is [limit], which is read from [spec] only for a GROUP. A bucket or rolling
+ * column stores a limit of 0 - [buildComputedSpec] writes it, because a window is already
+ * a count of rows - so seeding the group field from it would silently turn "the last 10
+ * attempts" into "all of them" the moment the user switched a rolling column to a group.
+ */
+fun builderSeed(spec: ComputedSpec?, tableSettings: TableSettings): BuilderSeed {
+	val partition = spec?.partition ?: Partition.Group(TableEngine.ID_QUESTION)
+	return BuilderSeed(
+		aggregate = spec?.aggregate ?: Aggregate.AVG,
+		source = spec?.source ?: TableEngine.ID_SECONDS,
+		partition = partition,
+		groupKey = (partition as? Partition.Group)?.by ?: TableEngine.ID_QUESTION,
+		size = when (partition) {
+			is Partition.Group -> tableSettings.defaultWindowSize
+			is Partition.Bucket -> partition.size
+			is Partition.Rolling -> partition.size
+		},
+		limit = if (partition is Partition.Group && spec != null) {
+			spec.limit
+		} else {
+			tableSettings.defaultLimit
+		}
+	)
+}
+
+/**
  * How a computed column renders when the user picked no format, derived from what the
  * aggregate answers in.
  *
@@ -259,4 +354,70 @@ private fun sized(partition: Partition, tableSettings: TableSettings): Partition
 fun TableView.removeColumn(columnId: String): TableView {
 	if (TableEngine.baseColumn(columnId) != null) return this
 	return copy(columns = columns.filterNot { it.id == columnId })
+}
+
+/**
+ * A copy that collapses duplicate rows on [columnId], or shows every row when it is null.
+ *
+ * Only a base column is accepted, and that is why this exists rather than the sheet
+ * writing the field itself. TableEngine warns and collapses nothing when the key names a
+ * computed column - a computed value belongs to a partition rather than to a row, and
+ * does not exist until after the sort the collapse follows - or an unknown one. The
+ * dropdown offers the eight base columns; this is what stops any other id reaching the
+ * field however the caller was wired.
+ *
+ * A bad key already in a hand-edited views.json is untouched by this and still warns. It
+ * is the UI that must not be able to MAKE one.
+ */
+fun TableView.collapseOn(columnId: String?): TableView {
+	if (columnId != null && TableEngine.baseColumn(columnId) == null) return this
+	return copy(collapseDuplicatesOn = columnId)
+}
+
+/**
+ * A copy with [columnId] moved [delta] places along the view's own column list.
+ *
+ * Positions are counted over ALL of [TableView.columns], hidden columns included, rather
+ * than over the visible subset the sheet ticks. The stored order is what the page is
+ * handed and what a later unhide reveals, so a move that stepped over a hidden column
+ * without moving past it would reshuffle the hidden ones behind the user's back.
+ *
+ * A move off either end is refused rather than clamped. The sheet disables the button
+ * there, and clamping would leave a live-looking button that quietly did nothing.
+ *
+ * Expressed as a reorder because [reordered] is already the one place a new column order
+ * is applied to a view - it was written for the header drag this replaces. All this adds
+ * is which order a tap asks for.
+ */
+fun TableView.moveColumn(columnId: String, delta: Int): TableView {
+	val from = columns.indexOfFirst { it.id == columnId }
+	if (from < 0) return this
+	val to = from + delta
+	if (to < 0 || to >= columns.size) return this
+	val ids = columns.mapTo(ArrayList()) { it.id }
+	ids.add(to, ids.removeAt(from))
+	return reordered(ids)
+}
+
+/** Narrowest column the width field accepts. Zero is not a column and a negative is not a width. */
+const val MIN_COLUMN_WIDTH = 1
+
+/**
+ * The column width [text] describes, refusing anything that is not a positive whole
+ * number of pixels.
+ *
+ * [FieldResult] rather than [BuildResult] for the reason SettingsOps.kt gives beside it:
+ * the same Ok/Err shape, made generic because a field's value need not be a [ColumnSpec].
+ *
+ * The empty string is refused rather than special-cased, and has to be: the field writes
+ * on the keystroke that parses, so clearing "120" to type "80" passes through "" and
+ * through "8". Refusing "" is what keeps the column from being written to nothing halfway
+ * through. "8" is a width the user asked for, briefly, and is written.
+ */
+fun parseColumnWidth(text: String): FieldResult<Int> {
+	val value = text.trim().toIntOrNull()
+	if (value == null || value < MIN_COLUMN_WIDTH) {
+		return FieldResult.Err("Must be a whole number of pixels, $MIN_COLUMN_WIDTH or more")
+	}
+	return FieldResult.Ok(value)
 }
