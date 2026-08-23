@@ -18,9 +18,14 @@ class SettingsRepository(private val paths: AnkiPaths) {
 	 *
 	 * A file that parses is authoritative and stats.json is never consulted again,
 	 * which is what makes the seed idempotent - a user who later resets their count
-	 * cannot have it silently restored from a stale stats.json. An absent file is
-	 * seeded once from stats.json; see [seedLifetimeReviews]. A corrupt file is
-	 * quarantined to "settings.json.corrupt" and replaced with defaults.
+	 * cannot have it silently restored from a stale stats.json.
+	 *
+	 * Absent and unreadable are deliberately one path: with no valid settings.json
+	 * this is a first run, so the file is seeded from stats.json either way. A corrupt
+	 * file is quarantined to "settings.json.corrupt" first. Recovering the lifetime
+	 * count under-reports the reviews logged since the seed, but the alternative -
+	 * defaulting to zero with the real total sitting in stats.json - destroys the only
+	 * copy instead of merely aging it.
 	 *
 	 * Never throws. When the new file cannot be written - typically because storage
 	 * permission has not been granted yet - the settings are still returned and the
@@ -29,19 +34,16 @@ class SettingsRepository(private val paths: AnkiPaths) {
 	 */
 	fun load(): Settings {
 		val store = JsonStore(paths.settings)
-		val raw = store.readOrNull()
-		val fresh = if (raw == null) {
-			Settings(
-				counters = CounterSettings(
-					seedLifetimeReviews(JsonStore(paths.legacyStats).readOrNull())
-				)
+		val root = parseObject(store.readOrNull())
+		if (root != null) return fromJson(root)
+		// A no-op when there was no file to move, which is what lets the absent and
+		// corrupt cases share the seeding branch below.
+		store.quarantine()
+		val fresh = Settings(
+			counters = CounterSettings(
+				seedLifetimeReviews(JsonStore(paths.legacyStats).readOrNull())
 			)
-		} else {
-			val root = parseObject(raw)
-			if (root != null) return fromJson(root)
-			store.quarantine()
-			Settings()
-		}
+		)
 		try {
 			save(fresh)
 		} catch (_: IOException) {
@@ -154,7 +156,9 @@ class SettingsRepository(private val paths: AnkiPaths) {
 		 * rolling window - so a bad file costs the user their total, but it must never
 		 * take the app down with it.
 		 *
-		 * Only ever called by [load] when settings.json does not yet exist.
+		 * Only ever called by [load], and only when settings.json is absent or
+		 * unreadable. A doubly broken state - no settings.json and no usable stats.json -
+		 * therefore degrades to a count of zero rather than to a crash.
 		 */
 		fun seedLifetimeReviews(statsJson: String?): Int {
 			if (statsJson == null) return 0

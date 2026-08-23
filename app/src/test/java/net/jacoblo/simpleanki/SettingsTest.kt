@@ -136,20 +136,37 @@ class SettingsTest {
 	}
 
 	@Test
-	fun aCorruptSettingsFileIsQuarantinedBeforeDefaultsAreWritten() {
+	fun aCorruptSettingsFileIsQuarantinedAndTheCountRecovered() {
 		val paths = AnkiPaths.at(tempFolder.root)
 		paths.legacyStats.writeText(STATS_FIXTURE)
 		paths.settings.writeText(TRUNCATED)
 
 		val loaded = SettingsRepository(paths).load()
 
+		// The unreadable text is kept, so nothing is discarded without a trace.
 		val quarantined = File(paths.settings.path + ".corrupt")
 		assertTrue(quarantined.exists())
 		assertEquals(TRUNCATED, quarantined.readText())
-		// Defaults are written, NOT the stats.json seed: settings.json was not absent.
-		assertEquals(Settings(), loaded)
+		// Recovered from stats.json rather than reset to zero. Zeroing would throw away
+		// the only surviving copy of a total the user cannot recompute; re-seeding only
+		// loses the reviews logged since the seed.
+		assertEquals(15700, loaded.counters.lifetimeReviews)
 		val stored = JSONObject(paths.settings.readText())
-		assertEquals(0, stored.getJSONObject("counters").getInt("lifetimeReviews"))
+		assertEquals(15700, stored.getJSONObject("counters").getInt("lifetimeReviews"))
+	}
+
+	@Test
+	fun aCorruptSettingsFileSeedsExactlyLikeAnAbsentOne() {
+		val corrupt = AnkiPaths.at(tempFolder.newFolder("corrupt"))
+		val absent = AnkiPaths.at(tempFolder.newFolder("absent"))
+		corrupt.legacyStats.writeText(STATS_FIXTURE)
+		absent.legacyStats.writeText(STATS_FIXTURE)
+		corrupt.settings.writeText(TRUNCATED)
+
+		// No readable settings.json is a first run, however it came to be one. The two
+		// cases are one code path and must not drift into disagreeing about the count.
+		assertEquals(SettingsRepository(absent).load(), SettingsRepository(corrupt).load())
+		assertEquals(15700, SettingsRepository(corrupt).load().counters.lifetimeReviews)
 	}
 
 	@Test
@@ -157,6 +174,8 @@ class SettingsTest {
 		val paths = AnkiPaths.at(tempFolder.root)
 		paths.settings.writeText("[1, 2, 3]")
 
+		// Zero here because no stats.json exists to recover from, not because a corrupt
+		// settings.json resets the count.
 		assertEquals(Settings(), SettingsRepository(paths).load())
 		assertTrue(File(paths.settings.path + ".corrupt").exists())
 	}
