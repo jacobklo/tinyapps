@@ -7,7 +7,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -18,7 +17,7 @@ import net.jacoblo.simpleanki.data.AnkiCard
 import net.jacoblo.simpleanki.data.AnkiPaths
 import net.jacoblo.simpleanki.data.HistoryEntry
 import net.jacoblo.simpleanki.data.ViewsRepository
-import net.jacoblo.simpleanki.data.recordAnswer
+import net.jacoblo.simpleanki.metronome.MetronomeEffect
 import net.jacoblo.simpleanki.testmode.TestMode
 import net.jacoblo.simpleanki.ui.theme.SimpleAnkiTheme
 import java.io.IOException
@@ -64,6 +63,8 @@ fun AnkiScreen(container: AppContainer) {
     var isShowingAnswer by remember { mutableStateOf(false) }
     var currentRoundTime by remember { mutableStateOf(0f) }
     var startTime by remember { mutableStateOf(0L) }
+    // Bumped on every draw; see cardKey below for why the index alone will not do.
+    var cardDraw by remember { mutableStateOf(0) }
     // History log, now the only source of every per-card figure
     var history by remember { mutableStateOf<List<HistoryEntry>>(emptyList()) }
 
@@ -72,29 +73,35 @@ fun AnkiScreen(container: AppContainer) {
     var viewsFile by remember { mutableStateOf(ViewsRepository.defaults(container.settings.table)) }
     // The column sheet lives on the table screen but is opened from the top bar, above it.
     var sheetOpen by remember { mutableStateOf(false) }
-    val views = viewsFile.views
-    val deckQuestions = remember(cards) { cards.map { it.question }.toSet() }
+    // The metronome's foreground gate. Composition survives backgrounding, so nothing but
+    // the lifecycle observer below can tell the countdown the app went away.
+    var isResumed by remember { mutableStateOf(false) }
+
+    // Every card change goes through here, so every card starts hidden with a fresh clock.
+    fun drawCard() {
+        if (cards.isEmpty()) return
+        isShowingAnswer = false
+        currentCardIndex = cards.indices.random()
+        cardDraw++
+        startTime = System.currentTimeMillis()
+    }
 
     // Watch lifecycle to reload cards when permission granted
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE) isResumed = false
             if (event == Lifecycle.Event.ON_RESUME) {
+                isResumed = true
                 // Never throws. Seeds settings.json from the retired stats.json on first
                 // run, and retries here on the resume after permission is granted.
                 container.settings = container.settingsRepository.load()
                 // Also never throws; creates views.json on first run.
                 viewsFile = container.viewsRepository.load(container.settings.table)
-                // Taking a deck starts the clock on a random card.
-                fun take(deck: List<AnkiCard>) {
-                    cards = deck
-                    currentCardIndex = deck.indices.random()
-                    startTime = System.currentTimeMillis()
-                }
                 // 2) Read cards
                 val loaded = container.deckRepository.load()
                 if (loaded.isNotEmpty()) {
-                    if (cards.isEmpty()) take(loaded)
+                    if (cards.isEmpty()) { cards = loaded; drawCard() }
                 } else if (container.hasStorageAccess) {
                     Toast.makeText(context, "Creating sample simple-anki.json", Toast.LENGTH_LONG).show()
                     // createSample propagates IOException; unhandled that is a crash on resume.
@@ -104,7 +111,7 @@ fun AnkiScreen(container: AppContainer) {
                         Toast.makeText(context, "Could not create simple-anki.json - check file permission or free space", Toast.LENGTH_LONG).show()
                     }
                     val reloaded = container.deckRepository.load()
-                    if (reloaded.isNotEmpty()) take(reloaded)
+                    if (reloaded.isNotEmpty()) { cards = reloaded; drawCard() }
                 }
                 // load() rewrites the file when it migrates, so it can throw as well.
                 try {
@@ -118,12 +125,39 @@ fun AnkiScreen(container: AppContainer) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    MetronomeEffect(
+        enabled = container.settings.metronome.enabled,
+        intervalSeconds = container.settings.metronome.intervalSeconds,
+        // The draw counter, not the card index: random() can return the index it just
+        // returned, and an unchanged key would hand that repeat draw whatever was left
+        // of the previous card's interval. Null until a deck loads - no cards, no timer.
+        cardKey = if (cards.isEmpty() || currentCardIndex < 0) null else cardDraw,
+        isFlipScreen = currentScreen == Screen.FlipCards,
+        isResumed = isResumed,
+        // A lambda rather than container.clickPlayer: an argument is evaluated during
+        // composition, which would force that lazy before settings.json has been read.
+        play = { container.clickPlayer.play() },
+        onFire = {
+            val card = cards.getOrNull(currentCardIndex)
+            // An answered card was recorded at flip time, so the tick that follows it
+            // only clicks and advances. timeTaken holds the interval that elapsed and
+            // stays positive; timedOut is the only failure signal.
+            if (card != null && !isShowingAnswer) {
+                val interval = container.settings.metronome.intervalSeconds
+                history = recordAttempt(container, context, history, HistoryEntry(card.question, card.answer, interval, System.currentTimeMillis(), true))
+            }
+            drawCard()
+        }
+    )
+
     AnkiNavShell(
         lifetimeReviews = container.settings.counters.lifetimeReviews,
-        views = views,
+        views = viewsFile.views,
         current = currentScreen,
+        metronomeEnabled = container.settings.metronome.enabled,
         onOpenColumns = if (currentScreen is Screen.Table) ({ sheetOpen = true }) else null,
-        onSelect = { currentScreen = it; sheetOpen = false }
+        onSelect = { currentScreen = it; sheetOpen = false },
+        onMetronomeChange = { container.setMetronomeEnabled(it) }
     ) { innerPadding ->
         Box(
             modifier = Modifier
@@ -137,7 +171,7 @@ fun AnkiScreen(container: AppContainer) {
                     viewsFile = viewsFile,
                     viewId = screen.viewId,
                     history = history,
-                    deckQuestions = deckQuestions,
+                    deckQuestions = remember(cards) { cards.map { it.question }.toSet() },
                     sheetOpen = sheetOpen,
                     onViewsFile = { viewsFile = it },
                     onSelect = { currentScreen = Screen.Table(it) },
@@ -147,39 +181,15 @@ fun AnkiScreen(container: AppContainer) {
                     cards = cards,
                     currentCardIndex = currentCardIndex,
                     isShowingAnswer = isShowingAnswer,
-                    summary = remember(history, cards, currentCardIndex) {
-                        summarizeCard(history, cards, currentCardIndex)
-                    },
+                    summary = remember(history, cards, currentCardIndex) { summarizeCard(history, cards, currentCardIndex) },
                     currentRoundTime = currentRoundTime,
-                    onNextCard = {
-                        isShowingAnswer = false
-                        currentCardIndex = cards.indices.random()
-                        startTime = System.currentTimeMillis()
-                    },
+                    onNextCard = { drawCard() },
                     onFlip = {
                         val now = System.currentTimeMillis()
                         val timeTaken = (now - startTime) / 1000f
                         currentRoundTime = timeTaken
                         val card = cards[currentCardIndex]
-                        // Task 14 sets timedOut when the metronome interval elapses.
-                        val entry = HistoryEntry(card.question, card.answer, timeTaken, now, false)
-                        val cap = container.settings.history.maxEntries
-                        // Both writes happen on every answer, so either can throw here.
-                        try {
-                            val recorded = recordAnswer(
-                                container.historyRepository, container.settingsRepository,
-                                container.settings, history, entry, cap
-                            )
-                            history = recorded.history
-                            container.settings = recorded.settings
-                        } catch (e: IOException) {
-                            // Appended even on failure. The history write runs first and
-                            // may well have succeeded; a list left BEHIND disk gets written
-                            // back on the next flip and silently drops what it is missing,
-                            // while a list ahead of disk is caught up by the next write.
-                            history = (history + entry).takeLast(cap)
-                            Toast.makeText(context, "Could not save your progress: ${e.message}", Toast.LENGTH_SHORT).show()
-                        }
+                        history = recordAttempt(container, context, history, HistoryEntry(card.question, card.answer, timeTaken, now, false))
                         isShowingAnswer = true
                     }
                 )

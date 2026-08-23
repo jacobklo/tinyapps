@@ -20,6 +20,7 @@ import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
@@ -53,8 +54,10 @@ fun AnkiNavShell(
 	lifetimeReviews: Int,
 	views: List<TableView>,
 	current: Screen,
+	metronomeEnabled: Boolean,
 	onOpenColumns: (() -> Unit)?,
 	onSelect: (Screen) -> Unit,
+	onMetronomeChange: (Boolean) -> Unit,
 	content: @Composable (PaddingValues) -> Unit
 ) {
 	val drawerState = rememberDrawerState(DrawerValue.Closed)
@@ -72,7 +75,15 @@ fun AnkiNavShell(
 		// an edge gesture anyway.
 		gesturesEnabled = drawerState.isOpen,
 		drawerContent = {
-			AnkiDrawer(views, current) {
+			AnkiDrawer(
+				views = views,
+				current = current,
+				metronomeEnabled = metronomeEnabled,
+				// Deliberately not routed through the close below: the switch is a
+				// preference, not a destination, and shutting the drawer on a toggle
+				// would hide the state the user just changed.
+				onMetronomeChange = onMetronomeChange
+			) {
 				onSelect(it)
 				scope.launch { drawerState.close() }
 			}
@@ -92,14 +103,19 @@ fun AnkiNavShell(
 }
 
 /**
- * The drawer body: the game, then one entry per view, then the room Task 15's metronome
- * switch goes in.
+ * The drawer body: the game, then one entry per view, then the metronome switch.
  *
  * Entries are written out names rather than icons because the view list is open ended -
  * a user defined view has no icon to give it, and nothing sensible could be guessed.
  */
 @Composable
-private fun AnkiDrawer(views: List<TableView>, current: Screen, onSelect: (Screen) -> Unit) {
+private fun AnkiDrawer(
+	views: List<TableView>,
+	current: Screen,
+	metronomeEnabled: Boolean,
+	onMetronomeChange: (Boolean) -> Unit,
+	onSelect: (Screen) -> Unit
+) {
 	ModalDrawerSheet {
 		// Inside the sheet, not on it: a modifier passed to ModalDrawerSheet lands
 		// outside its Surface and above M3's own fillMaxHeight, and verticalScroll
@@ -120,7 +136,17 @@ private fun AnkiDrawer(views: List<TableView>, current: Screen, onSelect: (Scree
 					onSelect(Screen.Table(view.id))
 				}
 			}
-			// Task 15 adds a third divider and the metronome switch here.
+			HorizontalDivider()
+			// A setting rather than a destination, so it is never the selected entry.
+			// The whole row toggles, which is the larger target; the switch is there to
+			// show the state, and both go through the same handler.
+			NavigationDrawerItem(
+				label = { Text("Metronome") },
+				selected = false,
+				onClick = { onMetronomeChange(!metronomeEnabled) },
+				badge = { Switch(checked = metronomeEnabled, onCheckedChange = onMetronomeChange) },
+				modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+			)
 		}
 	}
 }

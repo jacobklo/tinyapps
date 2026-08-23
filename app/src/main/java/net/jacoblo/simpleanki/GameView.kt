@@ -1,5 +1,7 @@
 package net.jacoblo.simpleanki
 
+import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -10,6 +12,39 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import net.jacoblo.simpleanki.data.AnkiCard
 import net.jacoblo.simpleanki.data.HistoryEntry
+import net.jacoblo.simpleanki.data.recordAnswer
+import java.io.IOException
+
+/**
+ * Banks one attempt - a flip or a metronome timeout - and returns the history to show.
+ *
+ * Shared by both because they differ only in the entry they build: recordAnswer counts
+ * the record, not the gesture, so a timeout is a review for the same reason a flip is.
+ *
+ * Never throws. On a failed write the entry is still appended to what is returned. The
+ * history write runs first and may well have succeeded; a list left BEHIND disk gets
+ * written back on the next attempt and silently drops what it is missing, while a list
+ * ahead of disk is caught up by the next write.
+ */
+fun recordAttempt(
+	container: AppContainer,
+	context: Context,
+	history: List<HistoryEntry>,
+	entry: HistoryEntry
+): List<HistoryEntry> {
+	val cap = container.settings.history.maxEntries
+	return try {
+		val recorded = recordAnswer(
+			container.historyRepository, container.settingsRepository,
+			container.settings, history, entry, cap
+		)
+		container.settings = recorded.settings
+		recorded.history
+	} catch (e: IOException) {
+		Toast.makeText(context, "Could not save your progress: ${e.message}", Toast.LENGTH_SHORT).show()
+		(history + entry).takeLast(cap)
+	}
+}
 
 /** Attempts a summary looks at, matching the ten the retired CardStats kept. */
 const val SUMMARY_LIMIT = 10

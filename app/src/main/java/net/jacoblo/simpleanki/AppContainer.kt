@@ -17,6 +17,7 @@ import net.jacoblo.simpleanki.metronome.NoOpClickPlayer
 import net.jacoblo.simpleanki.metronome.SoundPoolClickPlayer
 import net.jacoblo.simpleanki.table.RenderedTable
 import net.jacoblo.simpleanki.testmode.TestMode
+import java.io.IOException
 
 /**
  * Hand-rolled dependency graph, constructed once in MainActivity.onCreate.
@@ -54,6 +55,27 @@ class AppContainer(
 	 * value would let the badge and the stored count drift without anything noticing.
 	 */
 	var settings by mutableStateOf(Settings())
+
+	/**
+	 * Turns the metronome on or off, in memory first and then on disk.
+	 *
+	 * In memory first because the user asked for it now: a failed write leaves the
+	 * metronome doing what the switch says for the rest of the session, and the next
+	 * answer banks the flag alongside the review count, since recordAnswer copies the
+	 * settings it was handed. Reverting the switch instead would trade a preference that
+	 * works for one that is merely truthful.
+	 *
+	 * Never throws; a write that fails is reported and the run carries on.
+	 */
+	fun setMetronomeEnabled(enabled: Boolean) {
+		val updated = settings.copy(metronome = settings.metronome.copy(enabled = enabled))
+		settings = updated
+		try {
+			settingsRepository.save(updated)
+		} catch (e: IOException) {
+			Toast.makeText(context, "Could not save the metronome setting: ${e.message}", Toast.LENGTH_SHORT).show()
+		}
+	}
 
 	private val clickPlayerLazy = lazy<ClickPlayer> {
 		if (testMode) NoOpClickPlayer
