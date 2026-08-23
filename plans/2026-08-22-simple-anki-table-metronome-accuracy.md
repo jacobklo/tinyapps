@@ -1471,6 +1471,8 @@ Validation rules, each producing a distinct message:
 | `group:` key not in `knownColumns` | `unknown column "Quesiton"` |
 | Non-numeric source for a function where `Aggregates.requiresNumericSource` is true | `AVG requires a numeric column, but "Question" is text` |
 | Unparseable integer, or a size below 1 | `bucket size must be a positive integer` |
+| A partition with no `size` at all | do NOT default it to 0. `ViewsRepository` currently reads `optInt(size, 0)`, and Task 11 clamps 0 to 1 - so a missing size silently becomes `bucket(1)`/`rolling(1)`, a computed column that renders each row's own value while looking like an aggregate. Reject it, or default to `TableSettings.defaultWindowSize` |
+| `group:` naming a computed column | reject explicitly. `MemberSelectors.forPartition`'s `keyOf` can only read a base column, so grouping by a computed one would silently key off a missing column |
 | Unbalanced parentheses or trailing text | `malformed formula` |
 
 `write` emits arguments in a fixed order - source, then the partition argument, then `last:` when the partition is `group` and `limit` is above 0 - so the round-trip property holds and saved files are stable rather than churning.
@@ -1561,6 +1563,7 @@ The full stats view, replacing the base-columns-only placeholder from Task 6:
 
 **Requirements:**
 - [ ] Computed columns are calculated after sorting and before collapsing
+- [ ] **Cap the effective `rolling` size at the row count.** Task 11 materialises one `IntArray` per row, so `rolling:999999` against the 5000-record history cap allocates roughly 12.5M ints - about 50 MB - before a single aggregate is computed, then runs 5000 `Aggregates.compute` calls averaging 2500 members each, with `MEDIAN` sorting every window. `rolling:999999` is the blessed spelling for a running cumulative, so this is reachable by a user following the documented idiom, not a pathological input. At the realistic `defaultWindowSize` of 100 it is a harmless 2 MB
 - [ ] Each distinct `PartitionKey` triggers exactly one partition pass per render
 - [ ] Each partition's aggregate is computed once and broadcast, not recomputed per row
 - [ ] A column with `formulaError` renders `#ERR` in every cell, is not sortable, and adds a warning
