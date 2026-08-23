@@ -455,19 +455,31 @@ class RepositoryTest {
 				"best10", "Best", 70, visible = false, frozen = false, format = CellFormat.TWO_DP,
 				computed = ComputedSpec(Aggregate.MIN, "Seconds", Partition.Group("Question"), 10),
 				formula = "=MIN(Seconds, group:Question, last:10)",
-				formulaError = "kept verbatim until Task 12 recomputes it"
+				// A struct that parses leaves this field alone; only a parse writes it.
+				formulaError = "kept as stored beside a struct that needed no parse"
 			),
+			// The formula on these two is the mirror the writer regenerates, spelled here
+			// exactly as it lands on disk. A column carrying a struct and no formula is not
+			// a shape that can survive a save any more.
 			ColumnSpec(
 				"acc", "Accuracy", 80, format = CellFormat.PERCENT,
-				computed = ComputedSpec(Aggregate.ACCURACY, "TimedOut", Partition.Bucket(25), 0)
+				computed = ComputedSpec(Aggregate.ACCURACY, "TimedOut", Partition.Bucket(25), 0),
+				formula = "=ACCURACY(TimedOut, bucket:25)"
 			),
+			// The limit is meaningless for a rolling window and the mirror drops it, so this
+			// column only round-trips if the struct rather than the formula is what is read.
 			ColumnSpec(
 				"avg", "Avg", 90, format = CellFormat.ONE_DP,
-				computed = ComputedSpec(Aggregate.AVG, "Seconds", Partition.Rolling(5), 3)
+				computed = ComputedSpec(Aggregate.AVG, "Seconds", Partition.Rolling(5), 3),
+				formula = "=AVG(Seconds, rolling:5)"
 			),
-			// A formula and no aggregate: the shape Task 12 produces before it can resolve
-			// one, and the reason the two are written and read independently.
-			ColumnSpec("pending", "Pending", 95, formula = "=AVG(Seconds, rolling:20)"),
+			// A formula and no aggregate, which after a load can only mean the formula did
+			// not parse - the text is kept verbatim and the failure rides along with it.
+			ColumnSpec(
+				"pending", "Pending", 95,
+				formula = "=AVG(Seconds)",
+				formulaError = "a partition argument is required: group:, bucket:, or rolling:"
+			),
 			ColumnSpec("n", "N", 100, format = CellFormat.INT),
 			ColumnSpec("when", "When", 110, format = CellFormat.TIME),
 			// No format, no aggregate, no formula: every optional key absent.

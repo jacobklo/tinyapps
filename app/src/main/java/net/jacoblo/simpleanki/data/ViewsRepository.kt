@@ -8,6 +8,10 @@
  */
 package net.jacoblo.simpleanki.data
 
+import net.jacoblo.simpleanki.table.FormulaParser
+import net.jacoblo.simpleanki.table.FormulaWriter
+import net.jacoblo.simpleanki.table.ParseResult
+import net.jacoblo.simpleanki.table.TableEngine
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
@@ -50,7 +54,7 @@ class ViewsRepository(private val paths: AnkiPaths) {
 		val store = JsonStore(paths.views)
 		val read = store.read()
 		if (read is ReadResult.Unreadable) return defaults(tableSettings)
-		parseObject(read.textOrNull)?.let { fromJson(it) }?.let { return it }
+		parseObject(read.textOrNull)?.let { fromJson(it, tableSettings) }?.let { return it }
 		store.quarantine()
 		val fresh = defaults(tableSettings)
 		try {
@@ -106,11 +110,12 @@ class ViewsRepository(private val paths: AnkiPaths) {
 	// -- reading ------------------------------------------------------------------------
 
 	/** Null when [root] is not a usable views document; see [load] for what happens then. */
-	private fun fromJson(root: JSONObject): ViewsFile? {
+	private fun fromJson(root: JSONObject, tableSettings: TableSettings): ViewsFile? {
 		val array = root.optJSONArray(KEY_VIEWS) ?: return null
 		val views = ArrayList<TableView>(array.length())
 		for (i in 0 until array.length()) {
-			views.add(viewFromJson(array.optJSONObject(i) ?: return null) ?: return null)
+			val element = array.optJSONObject(i) ?: return null
+			views.add(viewFromJson(element, tableSettings) ?: return null)
 		}
 		// An empty list is corrupt rather than a user who deleted every view: it leaves the
 		// drawer with no table entries at all, and so with no way back to a working state.
@@ -123,12 +128,13 @@ class ViewsRepository(private val paths: AnkiPaths) {
 		return ViewsFile(activeIdOf(root.stringOrNull(KEY_ACTIVE_VIEW_ID), views), views)
 	}
 
-	private fun viewFromJson(o: JSONObject): TableView? {
+	private fun viewFromJson(o: JSONObject, tableSettings: TableSettings): TableView? {
 		val id = o.stringOrNull(KEY_ID)?.takeIf { it.isNotEmpty() } ?: return null
 		val array = o.optJSONArray(KEY_COLUMNS) ?: JSONArray()
 		val columns = ArrayList<ColumnSpec>(array.length())
 		for (i in 0 until array.length()) {
-			columns.add(columnFromJson(array.optJSONObject(i) ?: return null) ?: return null)
+			val element = array.optJSONObject(i) ?: return null
+			columns.add(columnFromJson(element, tableSettings) ?: return null)
 		}
 		// As above, and for the same reason: a rewrite matches columns by id.
 		if (columns.distinctBy { it.id }.size != columns.size) return null
@@ -143,15 +149,38 @@ class ViewsRepository(private val paths: AnkiPaths) {
 		)
 	}
 
-	private fun columnFromJson(o: JSONObject): ColumnSpec? {
+	private fun columnFromJson(o: JSONObject, tableSettings: TableSettings): ColumnSpec? {
 		val id = o.stringOrNull(KEY_ID)?.takeIf { it.isNotEmpty() } ?: return null
-		val computed = computedFromJson(o)
+		val structured = computedFromJson(o, tableSettings)
 		// An aggregate this build cannot make sense of is structurally invalid rather than
 		// something to quietly drop. Dropping it would read the column back as a plain one
 		// and the next autosave would then DELETE the aggregate keys, so a single typo in
 		// a file that exists to be hand-edited would cost the user the text itself.
 		// Quarantining costs them one trip to views.json.corrupt, with the text intact.
-		if (computed == null && !o.isNull(KEY_AGGREGATE)) return null
+		if (structured == null && !o.isNull(KEY_AGGREGATE)) return null
+		val stored = o.stringOrNull(KEY_FORMULA)
+		var computed = structured
+		var formula = stored
+		var error = o.stringOrNull(KEY_FORMULA_ERROR)
+		if (structured != null) {
+			// The struct wins, and the mirror is rewritten from it. A formula hand-edited
+			// out of step with the aggregate keys beside it is therefore discarded rather
+			// than obeyed, which is what stops the two representations drifting apart.
+			formula = FormulaWriter.write(structured)
+		} else if (stored != null) {
+			// Formula and no aggregate: the shape a hand-written column arrives in, and
+			// the only case where the string is the authority. A failure is reported in
+			// the column rather than thrown, so one typo costs one "#ERR" column; the text
+			// itself is kept verbatim so the next autosave cannot swallow it.
+			when (val parsed = FormulaParser.parse(stored, BASE_COLUMN_IDS)) {
+				is ParseResult.Ok -> {
+					computed = parsed.spec
+					formula = FormulaWriter.write(parsed.spec)
+					error = null
+				}
+				is ParseResult.Err -> error = parsed.message
+			}
+		}
 		return ColumnSpec(
 			id = id,
 			title = o.stringOrNull(KEY_TITLE) ?: id,
@@ -160,11 +189,8 @@ class ViewsRepository(private val paths: AnkiPaths) {
 			frozen = o.optBoolean(KEY_FROZEN, false),
 			format = CellFormat.entries.firstOrNull { formatToken(it) == o.stringOrNull(KEY_FORMAT) },
 			computed = computed,
-			// A plain string until Task 12 parses it. Round-tripping it verbatim is what
-			// lets a user hand-write a formula this build cannot yet read without losing it
-			// on the next autosave.
-			formula = o.stringOrNull(KEY_FORMULA),
-			formulaError = o.stringOrNull(KEY_FORMULA_ERROR)
+			formula = formula,
+			formulaError = error
 		)
 	}
 
@@ -176,10 +202,11 @@ class ViewsRepository(private val paths: AnkiPaths) {
 	 * default. [save] always writes a partition beside an aggregate, so this only fires on
 	 * a hand-edit.
 	 */
-	private fun computedFromJson(o: JSONObject): ComputedSpec? {
+	private fun computedFromJson(o: JSONObject, tableSettings: TableSettings): ComputedSpec? {
 		val token = o.stringOrNull(KEY_AGGREGATE) ?: return null
 		val aggregate = Aggregate.entries.firstOrNull { it.name == token } ?: return null
-		val partition = partitionFromJson(o.optJSONObject(KEY_PARTITION)) ?: return null
+		val nested = o.optJSONObject(KEY_PARTITION)
+		val partition = partitionFromJson(nested, tableSettings) ?: return null
 		return ComputedSpec(
 			aggregate = aggregate,
 			source = o.stringOrNull(KEY_SOURCE) ?: "",
@@ -188,15 +215,28 @@ class ViewsRepository(private val paths: AnkiPaths) {
 		)
 	}
 
-	private fun partitionFromJson(o: JSONObject?): Partition? {
+	private fun partitionFromJson(o: JSONObject?, tableSettings: TableSettings): Partition? {
 		if (o == null) return null
 		return when (o.stringOrNull(KEY_MODE)) {
 			MODE_GROUP -> Partition.Group(o.stringOrNull(KEY_BY) ?: return null)
-			MODE_BUCKET -> Partition.Bucket(o.optInt(KEY_SIZE, 0))
-			MODE_ROLLING -> Partition.Rolling(o.optInt(KEY_SIZE, 0))
+			MODE_BUCKET -> Partition.Bucket(sizeFromJson(o, tableSettings))
+			MODE_ROLLING -> Partition.Rolling(sizeFromJson(o, tableSettings))
 			else -> null
 		}
 	}
+
+	/**
+	 * The stored block or window size, or [TableSettings.defaultWindowSize] when there is
+	 * none this build can use.
+	 *
+	 * Absent, unparseable and below 1 all land on the default rather than on optInt's 0,
+	 * which MemberSelectors would clamp to 1 - a partition of one row, so a computed column
+	 * that renders each row's own value while looking like an aggregate. Defaulted rather
+	 * than rejected because ColumnSheet can build a size of 0 from an empty field, and
+	 * rejecting would leave the app writing a file it then refuses to read.
+	 */
+	private fun sizeFromJson(o: JSONObject, tableSettings: TableSettings): Int =
+		o.optInt(KEY_SIZE, 0).takeIf { it >= 1 } ?: tableSettings.defaultWindowSize
 
 	/**
 	 * The stored sort, or the first column descending when there is none.
@@ -251,7 +291,10 @@ class ViewsRepository(private val paths: AnkiPaths) {
 			o.put(KEY_LIMIT, computed.limit)
 			o.put(KEY_PARTITION, partitionToJson(computed.partition))
 		}
-		putOrRemove(o, KEY_FORMULA, column.formula)
+		// Regenerated from the struct whenever there is one, so the mirror on disk always
+		// describes the aggregate beside it. Without a struct there is nothing to generate
+		// from and the stored text is the only copy, so it goes back out untouched.
+		putOrRemove(o, KEY_FORMULA, computed?.let { FormulaWriter.write(it) } ?: column.formula)
 		putOrRemove(o, KEY_FORMULA_ERROR, column.formulaError)
 		return o
 	}
@@ -360,6 +403,15 @@ class ViewsRepository(private val paths: AnkiPaths) {
 			SortDir.ASC -> "asc"
 			SortDir.DESC -> "desc"
 		}
+
+		/**
+		 * The only column ids a formula may name, source or group key alike.
+		 *
+		 * Base columns and nothing else, which is what stops a computed column referencing
+		 * another one: MemberSelectors reads a group key straight off a HistoryEntry, so a
+		 * group on a computed column would key off a column that does not exist there.
+		 */
+		private val BASE_COLUMN_IDS: Set<String> = TableEngine.BASE_COLUMNS.map { it.id }.toSet()
 
 		/** Width for a hand-written column that gives none. */
 		private const val DEFAULT_WIDTH = 120
