@@ -2,9 +2,10 @@
  * The one screen every table view is shown through.
  *
  * It owns exactly one piece of state, the sort the user currently has applied. Column
- * widths and column order are not state here: they belong to the view, so a resize or a
- * reorder rebuilds the view and hands it back to the caller, which is what lets
- * MainActivity autosave them without this file learning about storage.
+ * widths, column order, and column visibility are not state here: they belong to the
+ * view, so a resize, a reorder, or a checkbox in the sheet rebuilds the view and hands it
+ * back to the caller, which is what lets TableRoute autosave every one of them without
+ * this file learning about storage.
  */
 package net.jacoblo.simpleanki.table
 
@@ -20,24 +21,40 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import net.jacoblo.simpleanki.data.HistoryEntry
 import net.jacoblo.simpleanki.data.TableView
+import net.jacoblo.simpleanki.data.addComputed
+import net.jacoblo.simpleanki.data.removeColumn
+import net.jacoblo.simpleanki.data.toggleColumn
 
 private const val LOG_TAG = "SimpleAnkiTable"
 
 /**
- * Renders [view] over [history].
+ * Renders [view] over [history], with the column sheet over the top of it.
  *
- * @param onViewChanged raised when a header drag changed the view - a new column width
- *   or a new column order. MainActivity wires it to ViewsRepository.save.
- * @param onRendered fired after each render, with the table that was produced. Task 7
- *   wires this to TestMode.writeDump.
+ * The sheet is hosted here rather than beside the caller because this is where the render
+ * happens, and the sheet's warnings are the render's own. Its three column edits are
+ * ordinary view edits and go out through [onViewChanged] like a resize does; the four
+ * that create or destroy a VIEW cannot be expressed that way and are passed in.
+ *
+ * @param sheetOpen whether the column sheet is showing. Hoisted because the action that
+ *   opens it lives in the top bar, which is above this screen.
+ * @param onViewChanged raised whenever the view changed - a header drag's new width or
+ *   order, or one of the sheet's column edits. The caller saves it to views.json.
+ * @param onRendered fired after each render, with the table that was produced. Wired to
+ *   TestMode.writeDump.
  */
 @Composable
 fun TableScreen(
 	history: List<HistoryEntry>,
 	deckQuestions: Set<String>,
 	view: TableView,
+	sheetOpen: Boolean,
 	onViewChanged: (TableView) -> Unit,
 	onRendered: (RenderedTable) -> Unit,
+	onSaveAsNew: (name: String) -> Unit,
+	onRename: (name: String) -> Unit,
+	onDelete: () -> Unit,
+	onResetDefaults: () -> Unit,
+	onDismissSheet: () -> Unit,
 	modifier: Modifier = Modifier
 ) {
 	// One state object for the life of the screen, reset when the drawer switches to a
@@ -87,4 +104,19 @@ fun TableScreen(
 	}
 
 	TableWebView(table, bridge, modifier.fillMaxSize())
+
+	if (sheetOpen) {
+		ColumnSheet(
+			view = view,
+			warnings = table.warnings,
+			onToggleVisible = { columnId -> onViewChanged(view.toggleColumn(columnId)) },
+			onAddComputed = { spec -> onViewChanged(view.addComputed(spec)) },
+			onRemoveColumn = { columnId -> onViewChanged(view.removeColumn(columnId)) },
+			onSaveAsNew = onSaveAsNew,
+			onRename = onRename,
+			onDelete = onDelete,
+			onResetDefaults = onResetDefaults,
+			onDismiss = onDismissSheet
+		)
+	}
 }

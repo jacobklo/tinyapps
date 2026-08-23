@@ -19,7 +19,6 @@ import net.jacoblo.simpleanki.data.AnkiPaths
 import net.jacoblo.simpleanki.data.HistoryEntry
 import net.jacoblo.simpleanki.data.ViewsRepository
 import net.jacoblo.simpleanki.data.recordAnswer
-import net.jacoblo.simpleanki.table.TableScreen
 import net.jacoblo.simpleanki.testmode.TestMode
 import net.jacoblo.simpleanki.ui.theme.SimpleAnkiTheme
 import java.io.IOException
@@ -71,6 +70,8 @@ fun AnkiScreen(container: AppContainer) {
     // Navigation state, plus the stored views the drawer is built from.
     var currentScreen by remember { mutableStateOf<Screen>(Screen.FlipCards) }
     var viewsFile by remember { mutableStateOf(ViewsRepository.defaults(container.settings.table)) }
+    // The column sheet lives on the table screen but is opened from the top bar, above it.
+    var sheetOpen by remember { mutableStateOf(false) }
     val views = viewsFile.views
     val deckQuestions = remember(cards) { cards.map { it.question }.toSet() }
 
@@ -121,7 +122,8 @@ fun AnkiScreen(container: AppContainer) {
         lifetimeReviews = container.settings.counters.lifetimeReviews,
         views = views,
         current = currentScreen,
-        onSelect = { currentScreen = it }
+        onOpenColumns = if (currentScreen is Screen.Table) ({ sheetOpen = true }) else null,
+        onSelect = { currentScreen = it; sheetOpen = false }
     ) { innerPadding ->
         Box(
             modifier = Modifier
@@ -130,27 +132,17 @@ fun AnkiScreen(container: AppContainer) {
         ) {
             when (val screen = currentScreen) {
                 // 6) Every table view, including the retired stats and history pages.
-                is Screen.Table -> {
-                    // A stored id naming no view falls back to the first, and re-points
-                    // the selection so the drawer highlights what is actually showing.
-                    val view = views.firstOrNull { it.id == screen.viewId } ?: views.firstOrNull()
-                    LaunchedEffect(view?.id) {
-                        if (view != null && view.id != screen.viewId) currentScreen = Screen.Table(view.id)
-                    }
-                    if (view == null) Text("No views to show.")
-                    else TableScreen(history, deckQuestions, view, onViewChanged = { changed ->
-                        // A header drag rebuilt the view; store it under the same id.
-                        val updated = viewsFile.copy(
-                            views = views.map { if (it.id == changed.id) changed else it }
-                        )
-                        viewsFile = updated
-                        try {
-                            container.viewsRepository.save(updated)
-                        } catch (e: IOException) {
-                            Toast.makeText(context, "Could not save views.json - check file permission or free space", Toast.LENGTH_SHORT).show()
-                        }
-                    }, onRendered = container::dumpRendered)
-                }
+                is Screen.Table -> TableRoute(
+                    container = container,
+                    viewsFile = viewsFile,
+                    viewId = screen.viewId,
+                    history = history,
+                    deckQuestions = deckQuestions,
+                    sheetOpen = sheetOpen,
+                    onViewsFile = { viewsFile = it },
+                    onSelect = { currentScreen = Screen.Table(it) },
+                    onDismissSheet = { sheetOpen = false }
+                )
                 Screen.FlipCards -> GameView(
                     cards = cards,
                     currentCardIndex = currentCardIndex,

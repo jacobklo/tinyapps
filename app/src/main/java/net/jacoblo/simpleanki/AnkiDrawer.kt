@@ -53,6 +53,7 @@ fun AnkiNavShell(
 	lifetimeReviews: Int,
 	views: List<TableView>,
 	current: Screen,
+	onOpenColumns: (() -> Unit)?,
 	onSelect: (Screen) -> Unit,
 	content: @Composable (PaddingValues) -> Unit
 ) {
@@ -79,7 +80,11 @@ fun AnkiNavShell(
 	) {
 		Scaffold(
 			topBar = {
-				AnkiTopBar(lifetimeReviews, onOpenDrawer = { scope.launch { drawerState.open() } })
+				AnkiTopBar(
+					lifetimeReviews,
+					onOpenColumns = onOpenColumns,
+					onOpenDrawer = { scope.launch { drawerState.open() } }
+				)
 			},
 			content = content
 		)
