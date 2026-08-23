@@ -2,6 +2,9 @@ package net.jacoblo.simpleanki
 
 import android.content.Context
 import android.os.Environment
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import net.jacoblo.simpleanki.data.AnkiPaths
 import net.jacoblo.simpleanki.data.DeckRepository
 import net.jacoblo.simpleanki.data.HistoryRepository
@@ -31,8 +34,12 @@ class AppContainer(
 	 *
 	 * Defaults until that first load, because the container is built before storage
 	 * permission has been checked and settings.json may not be readable yet.
+	 *
+	 * Compose state rather than a plain field so the top bar's review count reads
+	 * straight through and recomposes on its own. Mirroring it into a second remembered
+	 * value would let the badge and the stored count drift without anything noticing.
 	 */
-	var settings: Settings = Settings()
+	var settings by mutableStateOf(Settings())
 
 	/**
 	 * True when the app holds MANAGE_EXTERNAL_STORAGE, without which every path under

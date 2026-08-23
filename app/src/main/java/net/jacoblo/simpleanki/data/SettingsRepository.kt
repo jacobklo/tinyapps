@@ -10,6 +10,11 @@ import java.io.IOException
  * Keys this build does not recognise are carried through untouched: [save] merges onto
  * whatever is already on disk instead of replacing it, so a file written by a newer
  * build survives a downgrade with its extra fields intact.
+ *
+ * [SCHEMA_VERSION] is the deliberate exception: it describes the shape the writer just
+ * wrote, so a downgrade stamps it back down while still keeping those extra keys. That
+ * is what tells the next newer build "a v1 build wrote this last, re-run your
+ * migration", and it is why any migration added here must be idempotent.
  */
 class SettingsRepository(private val paths: AnkiPaths) {
 
@@ -81,8 +86,8 @@ class SettingsRepository(private val paths: AnkiPaths) {
 
 	/**
 	 * Reads every field, falling back to the declared default for anything missing or
-	 * of the wrong type. The schema version is read but not acted on; it exists so a
-	 * future migration has something to branch on.
+	 * of the wrong type. The schema version is deliberately not read; it is written on
+	 * every save so that a future migration has something to branch on.
 	 */
 	private fun fromJson(root: JSONObject): Settings {
 		val fallback = Settings()
@@ -145,7 +150,7 @@ class SettingsRepository(private val paths: AnkiPaths) {
 	}
 
 	companion object {
-		/** Written on every save, read but not acted on. Reserved for a future migration. */
+		/** Written on every save; not read yet - reserved for a future migration. */
 		const val SCHEMA_VERSION = 1
 
 		/**

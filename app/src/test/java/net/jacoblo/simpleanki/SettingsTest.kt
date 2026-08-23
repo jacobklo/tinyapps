@@ -74,7 +74,9 @@ class SettingsTest {
 		val paths = AnkiPaths.at(tempFolder.root)
 
 		assertEquals(Settings(), SettingsRepository(paths).load())
-		// Read back off disk rather than trusting the value load() just returned.
+		// The defaults must be persisted, not merely returned: with no file on disk the
+		// seed would re-fire on every launch instead of once.
+		assertTrue(paths.settings.exists())
 		assertEquals(Settings(), SettingsRepository(paths).load())
 	}
 
