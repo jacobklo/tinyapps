@@ -303,14 +303,14 @@ class TableEngineTest {
 	}
 
 	@Test
-	fun aComputedColumnRendersDashesWithoutWarning() {
+	fun aComputedColumnRendersItsFigureWithoutWarning() {
 		val computed = avgSeconds()
-		val history = listOf(entry("a", timestamp = 10L))
+		val history = listOf(entry("a", seconds = 3.0f, timestamp = 10L))
 		val view = view(column("Question"), column("Avg", computed = computed))
 
 		val table = render(history, view)
 
-		assertEquals(listOf(listOf("a", "-")), table.rows)
+		assertEquals(listOf(listOf("a", "3.00")), table.rows)
 		assertTrue(table.warnings.isEmpty())
 		val avg = table.columns[1]
 		assertEquals(ColumnType.NUMBER, avg.type)
@@ -319,16 +319,233 @@ class TableEngineTest {
 	}
 
 	@Test
-	fun sortingByANotYetComputedColumnLeavesTheBaseOrderAlone() {
-		val computed = avgSeconds()
-		val history = listOf(entry("old", timestamp = 10L), entry("new", timestamp = 20L))
-		val view = view(column("Question"), column("Avg", computed = computed))
+	fun aGroupPivotComputesOneFigurePerQuestionAndBroadcastsItToEveryRow() {
+		// q1 has three answered attempts; q2 has one answered and one timeout. MIN and AVG
+		// read the answered members only, COUNT and ACCURACY read every member, and all
+		// four columns share one partition key, so this also asserts that a shared pass
+		// serves four different aggregates correctly.
+		val history = listOf(
+			entry("q1", seconds = 2.0f, timestamp = 10L),
+			entry("q2", seconds = 1.0f, timestamp = 15L),
+			entry("q1", seconds = 4.0f, timestamp = 20L),
+			entry("q2", seconds = 9.0f, timestamp = 25L, timedOut = true),
+			entry("q1", seconds = 6.0f, timestamp = 30L)
+		)
+		val view = view(
+			column("Question"),
+			column("Best", computed = group(Aggregate.MIN)),
+			column("Avg", computed = group(Aggregate.AVG)),
+			column("Attempts", format = CellFormat.INT, computed = group(Aggregate.COUNT, source = "*")),
+			column("Accuracy", format = CellFormat.PERCENT, computed = group(Aggregate.ACCURACY))
+		)
+
+		val table = render(history, view)
+
+		// Base order is When descending: q1, q2, q1, q2, q1.
+		val q1 = listOf("q1", "2.00", "4.00", "3", "100.0%")
+		val q2 = listOf("q2", "1.00", "1.00", "2", "50.0%")
+		assertEquals(listOf(q1, q2, q1, q2, q1), table.rows)
+	}
+
+	@Test
+	fun theSpecWorkedExampleForQ03PinsTheLimitSemantics() {
+		// Straight from the design spec, where it was worked by hand long before any of
+		// this existed: Q03 with attempts 2.4, 8.0, 1.0, 0.5 newest first.
+		//
+		// It also pins the order of the pipeline. The view collapses on Question, so if
+		// the aggregates were computed after the collapse the sole surviving row would be
+		// a partition of one and every figure here would read 2.40.
+		val history = listOf(
+			entry("Q03", seconds = 0.5f, timestamp = 10L),
+			entry("Q03", seconds = 1.0f, timestamp = 20L),
+			entry("Q03", seconds = 8.0f, timestamp = 30L),
+			entry("Q03", seconds = 2.4f, timestamp = 40L)
+		)
+
+		assertEquals(listOf(listOf("Q03", "0.50", "2.98", "1.70")), workedExample(history, limit = 0))
+		assertEquals(listOf(listOf("Q03", "2.40", "5.20", "5.20")), workedExample(history, limit = 2))
+	}
+
+	@Test
+	fun aBucketColumnBlocksBySortPositionAndLeavesTheLastBlockShort() {
+		val view = view(column("Seconds"), column("Block", computed = bucket(Aggregate.SUM, size = 2)))
+
+		val table = render(ladder(), view)
+
+		// Base order is 1.0 through 5.0, so blocks of two are [1,2], [3,4] and a short [5].
+		assertEquals(listOf("1.00", "2.00", "3.00", "4.00", "5.00"), table.rows.map { it[0] })
+		assertEquals(listOf("3.00", "3.00", "7.00", "7.00", "5.00"), table.rows.map { it[1] })
+	}
+
+	@Test
+	fun aRollingColumnClampsItsWindowAtTheTopOfTheTable() {
+		val view = view(column("Seconds"), column("Trailing", computed = rolling(Aggregate.AVG, size = 3)))
+
+		val table = render(ladder(), view)
+
+		// Windows are [1], [1,2], [1,2,3], [2,3,4], [3,4,5] - short ones at the top are
+		// averaged over what exists rather than left blank.
+		assertEquals(listOf("1.00", "1.50", "2.00", "3.00", "4.00"), table.rows.map { it[1] })
+	}
+
+	@Test
+	fun aRollingSizePastTheRowCountIsStillARunningCumulative() {
+		// The documented spelling of a running cumulative, and the size the engine caps at
+		// the row count. Capping must not turn it into a grand total, which is what the
+		// same size on a bucket would give.
+		val view = view(column("Seconds"), column("SoFar", computed = rolling(Aggregate.AVG, size = 999999)))
+
+		val table = render(ladder(), view)
+
+		assertEquals(listOf("1.00", "1.50", "2.00", "2.50", "3.00"), table.rows.map { it[1] })
+	}
+
+	@Test
+	fun sortingByAComputedColumnReordersTheRowsWithNullsLastInBothDirections() {
+		val history = listOf(
+			entry("a", seconds = 5.0f, timestamp = 10L),
+			entry("b", seconds = 1.0f, timestamp = 20L),
+			entry("c", seconds = 3.0f, timestamp = 30L),
+			entry("d", seconds = 9.0f, timestamp = 40L, timedOut = true)
+		)
+		val view = view(column("Question"), column("Avg", computed = group(Aggregate.AVG)))
+
+		val ascending = render(history, view, sort = SortSpec("Avg", SortDir.ASC))
+		assertEquals(SortSpec("Avg", SortDir.ASC), ascending.sort)
+		assertEquals(listOf("b", "c", "a", "d"), ascending.rows.map { it[0] })
+		assertEquals(listOf("1.00", "3.00", "5.00", "-"), ascending.rows.map { it[1] })
+
+		val descending = render(history, view, sort = SortSpec("Avg", SortDir.DESC))
+		assertEquals(listOf("a", "c", "b", "d"), descending.rows.map { it[0] })
+		assertEquals(listOf("5.00", "3.00", "1.00", "-"), descending.rows.map { it[1] })
+	}
+
+	@Test
+	fun aHiddenComputedColumnIsExcludedFromTheOutputButStillSorts() {
+		val history = listOf(
+			entry("a", seconds = 5.0f, timestamp = 10L),
+			entry("b", seconds = 1.0f, timestamp = 20L),
+			entry("c", seconds = 3.0f, timestamp = 30L)
+		)
+		val view = view(
+			column("Question"),
+			column("Avg", visible = false, computed = group(Aggregate.AVG))
+		)
 
 		val table = render(history, view, sort = SortSpec("Avg", SortDir.ASC))
 
-		assertEquals(SortSpec("Avg", SortDir.ASC), table.sort)
-		assertEquals(listOf("new", "old"), table.rows.map { it[0] })
+		assertEquals(listOf("Question"), table.columns.map { it.id })
+		assertEquals(listOf("b", "c", "a"), table.rows.map { it[0] })
 		assertTrue(table.warnings.isEmpty())
+	}
+
+	@Test
+	fun reSortingRecomputesARollingColumnButLeavesAGroupOneWithItsRow() {
+		val history = listOf(
+			entry("a", seconds = 4.0f, timestamp = 30L),
+			entry("b", seconds = 2.0f, timestamp = 20L),
+			entry("c", seconds = 6.0f, timestamp = 10L)
+		)
+		val view = view(
+			column("Question"),
+			column("PerCard", computed = group(Aggregate.AVG)),
+			column("Trailing", computed = rolling(Aggregate.AVG, size = 2))
+		)
+
+		val byWhen = render(history, view)
+		assertEquals(listOf("a", "b", "c"), byWhen.rows.map { it[0] })
+		assertEquals(listOf("4.00", "2.00", "6.00"), byWhen.rows.map { it[1] })
+		assertEquals(listOf("4.00", "3.00", "4.00"), byWhen.rows.map { it[2] })
+
+		val bySeconds = render(history, view, sort = SortSpec("Seconds", SortDir.ASC))
+		assertEquals(listOf("b", "a", "c"), bySeconds.rows.map { it[0] })
+		// The group figure travelled with its row; the trailing window was recomputed from
+		// the new positions, so every row of it changed and b - now at the top of the
+		// table - went from an average of two rows to an average of one.
+		assertEquals(listOf("2.00", "4.00", "6.00"), bySeconds.rows.map { it[1] })
+		assertEquals(listOf("2.00", "3.00", "5.00"), bySeconds.rows.map { it[2] })
+	}
+
+	@Test
+	fun aNonNumericSourceIsExcludedRatherThanCountedAsZero() {
+		// Nothing validates this pairing. ColumnSheet builds the aggregate and the source
+		// from two independent pickers, so AVG over Question is two taps away and persists
+		// with no error anywhere; feeding 0.0 would answer "0.00" and look like a figure.
+		// COUNT never reads a value, so it is unaffected by the same source.
+		val history = listOf(
+			entry("a", seconds = 2.0f, timestamp = 10L),
+			entry("a", seconds = 4.0f, timestamp = 20L)
+		)
+		val view = view(
+			column("Question"),
+			column("AvgText", computed = group(Aggregate.AVG, source = "Question")),
+			column("MinFlag", computed = group(Aggregate.MIN, source = "TimedOut")),
+			column("Attempts", format = CellFormat.INT, computed = group(Aggregate.COUNT, source = "Question"))
+		)
+
+		val table = render(history, view)
+
+		assertEquals(listOf("-", "-"), table.rows.map { it[1] })
+		assertEquals(listOf("-", "-"), table.rows.map { it[2] })
+		assertEquals(listOf("2", "2"), table.rows.map { it[3] })
+	}
+
+	@Test
+	fun aQuestionWhoseEveryAttemptTimedOutRendersADashRatherThanZero() {
+		val history = listOf(
+			entry("missed", seconds = 9.0f, timestamp = 10L, timedOut = true),
+			entry("missed", seconds = 9.0f, timestamp = 20L, timedOut = true)
+		)
+		val view = view(
+			column("Question"),
+			column("Best", computed = group(Aggregate.MIN)),
+			column("Attempts", format = CellFormat.INT, computed = group(Aggregate.COUNT, source = "*")),
+			column("Accuracy", format = CellFormat.PERCENT, computed = group(Aggregate.ACCURACY)),
+			collapseDuplicatesOn = "Question"
+		)
+
+		val table = render(history, view)
+
+		assertEquals(listOf(listOf("missed", "-", "2", "0.0%")), table.rows)
+	}
+
+	@Test
+	fun collapsingOnAComputedColumnSaysSoRatherThanCallingItUnknown() {
+		val history = listOf(entry("a", timestamp = 10L), entry("a", timestamp = 20L))
+		val view = view(
+			column("Question"),
+			column("Avg", computed = avgSeconds()),
+			collapseDuplicatesOn = "Avg"
+		)
+
+		val table = render(history, view)
+
+		assertEquals(2, table.visibleRowCount)
+		assertEquals(listOf("cannot collapse duplicates on computed column \"Avg\""), table.warnings)
+	}
+
+	@Test
+	fun anErroredColumnRendersErrWhileItsNeighboursRenderNormally() {
+		val history = listOf(
+			entry("a", seconds = 2.0f, timestamp = 10L),
+			entry("b", seconds = 4.0f, timestamp = 20L)
+		)
+		val view = view(
+			column("Question"),
+			column("Broken", computed = avgSeconds(), formulaError = "unknown function \"AVERAGE\""),
+			column("Avg", computed = group(Aggregate.AVG)),
+			column("Seconds")
+		)
+
+		val table = render(history, view)
+
+		assertEquals(
+			listOf(listOf("b", "#ERR", "4.00", "4.00"), listOf("a", "#ERR", "2.00", "2.00")),
+			table.rows
+		)
+		assertFalse(table.columns[1].sortable)
+		assertTrue(table.columns[2].sortable)
+		assertEquals(listOf("column \"Broken\" failed: unknown function \"AVERAGE\""), table.warnings)
 	}
 
 	@Test
@@ -547,8 +764,34 @@ class TableEngineTest {
 		entry("in1", timestamp = 40L)
 	)
 
+	/** Five answered attempts at five questions, whose base order is 1.0 through 5.0. */
+	private fun ladder(): List<HistoryEntry> = (1..5).map {
+		entry("q$it", seconds = it.toFloat(), timestamp = (60 - it * 10).toLong())
+	}
+
+	/** The spec's Q03 table, rendered as Question, Best, Avg, Med at one [limit]. */
+	private fun workedExample(history: List<HistoryEntry>, limit: Int): List<List<String>> = render(
+		history,
+		view(
+			column("Question"),
+			column("Best", computed = group(Aggregate.MIN, limit = limit)),
+			column("Avg", computed = group(Aggregate.AVG, limit = limit)),
+			column("Med", computed = group(Aggregate.MEDIAN, limit = limit)),
+			collapseDuplicatesOn = "Question"
+		)
+	).rows
+
 	private fun avgSeconds() =
 		ComputedSpec(Aggregate.AVG, "Seconds", Partition.Group("Question"), limit = 10)
+
+	private fun group(fn: Aggregate, source: String = "Seconds", limit: Int = 0, by: String = "Question") =
+		ComputedSpec(fn, source, Partition.Group(by), limit)
+
+	private fun bucket(fn: Aggregate, size: Int, source: String = "Seconds") =
+		ComputedSpec(fn, source, Partition.Bucket(size), limit = 0)
+
+	private fun rolling(fn: Aggregate, size: Int, source: String = "Seconds") =
+		ComputedSpec(fn, source, Partition.Rolling(size), limit = 0)
 
 	private fun render(
 		history: List<HistoryEntry>,

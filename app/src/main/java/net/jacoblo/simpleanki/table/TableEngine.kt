@@ -11,7 +11,9 @@ package net.jacoblo.simpleanki.table
 import net.jacoblo.simpleanki.data.CellFormat
 import net.jacoblo.simpleanki.data.ColumnSpec
 import net.jacoblo.simpleanki.data.ColumnType
+import net.jacoblo.simpleanki.data.ComputedSpec
 import net.jacoblo.simpleanki.data.HistoryEntry
+import net.jacoblo.simpleanki.data.Partition
 import net.jacoblo.simpleanki.data.SortDir
 import net.jacoblo.simpleanki.data.SortSpec
 import net.jacoblo.simpleanki.data.TableView
@@ -39,7 +41,7 @@ object TableEngine {
 	const val ID_SECONDS = "Seconds"
 	const val ID_TIMED_OUT = "TimedOut"
 
-	/** Rendered for a null value, which includes every cell of a not-yet-computed column. */
+	/** Rendered for a null value, an undefined aggregate included. */
 	const val EMPTY_CELL = "-"
 
 	/** Rendered in every cell of a column whose formula failed. */
@@ -109,6 +111,26 @@ object TableEngine {
 	}
 
 	/**
+	 * Source value of a base column for aggregation, or NaN when it has none to give.
+	 *
+	 * NaN rather than 0.0 for a non-numeric source, and the difference is the whole point:
+	 * nothing validates the pairing of an aggregate with a source column. ColumnSheet
+	 * builds the two from independent pickers, so AVG over Question is two taps away and
+	 * persists with no error anywhere, and [Aggregates] drops a NaN member where it would
+	 * average a zero into the answer. So the type is checked here, at render time, rather
+	 * than trusted from the parse that may never have happened.
+	 *
+	 * The display index is 0 because numbering happens after the collapse, below this -
+	 * the sort comparators pass 0 for the same reason. No zone either: the two numeric
+	 * base columns are the row's own number and its answer time, neither of them calendar
+	 * text.
+	 */
+	fun numericSource(entry: HistoryEntry, columnId: String): Double {
+		if (baseColumn(columnId)?.type != ColumnType.NUMBER) return Double.NaN
+		return (rawValue(entry, columnId, 0) as? Number)?.toDouble() ?: Double.NaN
+	}
+
+	/**
 	 * Formats one value for display. Null renders "-".
 	 *
 	 * A Boolean under [CellFormat.TEXT] renders "x" or the empty string, which is how the
@@ -165,21 +187,36 @@ object TableEngine {
 		// of the collapse below the most recent attempt.
 		val sorted = sortRows(filtered.sortedByDescending { it.timestamp }, activeSort, zone)
 
-		// 3) Compute computed columns. Deliberately a no-op; Task 13 plugs the pivot
-		// engine in HERE, and it has to stay above the collapse below. Collapsing first
-		// would strip every partition of its members and make every aggregate wrong.
-		//
-		// A sort on a computed column also runs here, after the values exist and still
-		// above the collapse. It cannot run at step 2 because the values do not exist
-		// yet, and it cannot run below the collapse because bucket and rolling
-		// partition by sort position.
+		// 3) Compute the computed columns, over every row that survived the filter and in
+		// the order step 2 left them. This has to stay above the collapse below:
+		// collapsing first would strip every partition of its members and make every
+		// aggregate wrong.
+		val pivot = Pivot(sorted, zone)
+		val values = columns.map { column ->
+			// An errored column renders a marker in every cell, so there is nothing to
+			// compute for it - and its struct is the one that may be untrustworthy.
+			if (column.rendered.error != null) null else column.spec.computed?.let { pivot.values(it) }
+		}
+
+		// 3b) Reorder by the computed sort, if that is what the sort is. This is the only
+		// place it can go: not at step 2, where the values do not exist yet, and not below
+		// the collapse, because bucket and rolling partition by sort position and ordering
+		// by a value derived from sort position would be circular. The consequence is that
+		// the aggregates were computed against the BASE order and the rows are then
+		// reordered for display, which is the only non-circular reading of "sort by an
+		// aggregate that is itself a function of the sort".
+		val order = orderByComputed(view, activeSort, sorted.size, pivot)
 
 		// 4) Collapse duplicates, keeping the first row of each key in the current order.
-		val survivors = collapse(sorted, view.collapseDuplicatesOn, warnings, zone)
+		// Positions rather than rows from here down, because the per-column value arrays
+		// above are indexed by position in [sorted].
+		val survivors = collapse(sorted, order, view, warnings, zone)
 
 		// 5) Number the survivors 1..N, and 6) format every cell.
-		val rows = survivors.mapIndexed { index, entry ->
-			columns.map { column -> cell(entry, column, index + 1, zone) }
+		val rows = survivors.mapIndexed { display, position ->
+			columns.mapIndexed { column, resolved ->
+				cell(sorted[position], resolved, display + 1, values[column]?.get(position), zone)
+			}
 		}
 
 		return RenderedTable(
@@ -196,7 +233,7 @@ object TableEngine {
 	/** A column that survived validation, paired with the pieces needed to fill its cells. */
 	private data class ResolvedColumn(
 		val spec: ColumnSpec,
-		/** Null for an aggregate or formula column, whose values Task 13 will supply. */
+		/** Null for an aggregate or formula column, whose values come from [Pivot]. */
 		val base: BaseColumn?,
 		val rendered: RenderedColumn
 	)
@@ -249,9 +286,11 @@ object TableEngine {
 	 * The sort to actually apply, falling back to [FALLBACK_SORT] when the requested column
 	 * is unknown or unsortable.
 	 *
-	 * A hidden column still sorts, since visibility is presentation only. A computed column
-	 * sorts too, and until Task 13 fills it every key is null, which leaves the base order
-	 * untouched. An errored column does not sort, since every one of its cells is a marker.
+	 * A hidden column still sorts, since visibility is presentation only - which is why
+	 * this and [orderByComputed] both read the view's columns rather than the resolved
+	 * ones, the resolved list being the visible columns alone. A computed column sorts
+	 * too, in [orderByComputed] below the values it needs. An errored column does not
+	 * sort, since every one of its cells is a marker.
 	 */
 	private fun resolveSort(view: TableView, sort: SortSpec, warnings: MutableList<String>): SortSpec {
 		val base = baseColumn(sort.column)
@@ -269,10 +308,36 @@ object TableEngine {
 		return FALLBACK_SORT
 	}
 
-	/** Leaves [rows] in their base order when the sort names a column with no values yet. */
+	/** Leaves [rows] in their base order when the sort names a computed column. */
 	private fun sortRows(rows: List<HistoryEntry>, sort: SortSpec, zone: ZoneId): List<HistoryEntry> {
 		val column = baseColumn(sort.column) ?: return rows
 		return rows.sortedWith(comparatorFor(column, sort.dir, zone))
+	}
+
+	/**
+	 * Row positions in display order: the identity when the sort is on a base column,
+	 * since [sortRows] has already applied it, and the computed order otherwise.
+	 *
+	 * Positions rather than rows because the value arrays are indexed by the position a
+	 * row held in the base order, and reordering the rows must not lose that mapping.
+	 * sortedWith is stable, so rows tied on the aggregate - every row of one group, for a
+	 * group pivot - keep the order step 2 gave them.
+	 */
+	private fun orderByComputed(
+		view: TableView,
+		sort: SortSpec,
+		rowCount: Int,
+		pivot: Pivot
+	): List<Int> {
+		val positions = List(rowCount) { it }
+		if (baseColumn(sort.column) != null) return positions
+		// A column whose formula failed is unsortable and its struct untrustworthy, and
+		// one that has a formula but no struct has no values to sort by either.
+		val spec = view.columns
+			.firstOrNull { it.id == sort.column && it.formulaError == null }
+			?.computed ?: return positions
+		val values = pivot.values(spec)
+		return positions.sortedWith(nullsLast(sort.dir) { position: Int -> values[position] })
 	}
 
 	/**
@@ -286,16 +351,16 @@ object TableEngine {
 		zone: ZoneId
 	): Comparator<HistoryEntry> =
 		when (column.type) {
-			ColumnType.TEXT -> nullsLast(dir) { entry ->
+			ColumnType.TEXT -> nullsLast(dir) { entry: HistoryEntry ->
 				(rawValue(entry, column.id, 0, zone) as? String)?.lowercase(Locale.ROOT)
 			}
-			ColumnType.NUMBER -> nullsLast(dir) { entry ->
+			ColumnType.NUMBER -> nullsLast(dir) { entry: HistoryEntry ->
 				(rawValue(entry, column.id, 0, zone) as? Number)?.toDouble()
 			}
-			ColumnType.TIME -> nullsLast(dir) { entry ->
+			ColumnType.TIME -> nullsLast(dir) { entry: HistoryEntry ->
 				(rawValue(entry, column.id, 0, zone) as? Number)?.toLong()
 			}
-			ColumnType.BOOL -> nullsLast(dir) { entry ->
+			ColumnType.BOOL -> nullsLast(dir) { entry: HistoryEntry ->
 				rawValue(entry, column.id, 0, zone) as? Boolean
 			}
 		}
@@ -304,12 +369,17 @@ object TableEngine {
 	 * Orders by [key], with null keys last in BOTH directions.
 	 *
 	 * Reversing the whole comparator instead would drag a timed-out row to the top of a
-	 * descending Seconds sort, where it would read as the slowest attempt.
+	 * descending Seconds sort, where it would read as the slowest attempt. A "-" cell of a
+	 * computed column sorts last for exactly the same reason.
+	 *
+	 * Generic in the element as well as the key so that [orderByComputed] can share it:
+	 * that one orders row POSITIONS, and a key of `(HistoryEntry) -> T?` cannot express a
+	 * lookup into an array indexed by position.
 	 */
-	private fun <T : Comparable<T>> nullsLast(
+	private fun <S, T : Comparable<T>> nullsLast(
 		dir: SortDir,
-		key: (HistoryEntry) -> T?
-	): Comparator<HistoryEntry> = Comparator { left, right ->
+		key: (S) -> T?
+	): Comparator<S> = Comparator { left, right ->
 		val a = key(left)
 		val b = key(right)
 		when {
@@ -331,17 +401,26 @@ object TableEngine {
 	 */
 	private fun collapse(
 		rows: List<HistoryEntry>,
-		columnId: String?,
+		order: List<Int>,
+		view: TableView,
 		warnings: MutableList<String>,
 		zone: ZoneId
-	): List<HistoryEntry> {
-		if (columnId == null) return rows
+	): List<Int> {
+		val columnId = view.collapseDuplicatesOn ?: return order
 		if (baseColumn(columnId) == null) {
-			warnings.add("cannot collapse duplicates on unknown column \"$columnId\"")
-			return rows
+			// A computed column is a real column that simply cannot be a collapse key: its
+			// value is a property of a partition rather than of a row, and it does not
+			// even exist until after the sort that this step follows. Calling it unknown
+			// would send the user hunting for a typo that is not there.
+			val computed = view.columns.any { it.id == columnId && isComputed(it) }
+			val kind = if (computed) "computed" else "unknown"
+			warnings.add("cannot collapse duplicates on $kind column \"$columnId\"")
+			return order
 		}
-		return rows.withIndex()
-			.distinctBy { (index, entry) -> rawValue(entry, columnId, index, zone) }
+		// Keyed on the display index rather than the underlying position, so that "#"
+		// still keys every row to its own number and folds nothing.
+		return order.withIndex()
+			.distinctBy { (index, position) -> rawValue(rows[position], columnId, index, zone) }
 			.map { it.value }
 	}
 
@@ -349,10 +428,14 @@ object TableEngine {
 		entry: HistoryEntry,
 		column: ResolvedColumn,
 		displayIndex: Int,
+		computed: Double?,
 		zone: ZoneId
 	): String {
 		if (column.rendered.error != null) return ERROR_CELL
-		val base = column.base ?: return EMPTY_CELL
+		// TWO_DP by default: a computed column has no base column to take a format from,
+		// and every aggregate but COUNT and ACCURACY answers in the units of its source.
+		val base = column.base
+			?: return format(computed, column.spec.format ?: CellFormat.TWO_DP, zone)
 		val cellFormat = column.spec.format ?: base.format
 		return format(rawValue(entry, base.id, displayIndex, zone), cellFormat, zone)
 	}
@@ -361,4 +444,80 @@ object TableEngine {
 		val number = value as? Number ?: return value.toString()
 		return "%.${places}f".format(Locale.ROOT, number.toDouble())
 	}
+}
+
+/** Cache key so two columns with identical partitioning share one partition pass. */
+private data class PartitionKey(val partition: Partition, val limit: Int)
+
+/**
+ * The computed columns of ONE render, as one value per row.
+ *
+ * Two caches, both dead at the end of the render that made them. [partitions] means two
+ * columns partitioned the same way cost one pass over the rows - the stats view has three
+ * columns keyed group:Question, last:10 and two more keyed group:Question, so its five
+ * aggregates cost two passes. [byColumn] means a column that is both displayed and sorted
+ * on is aggregated once rather than twice.
+ *
+ * A top-level private class rather than a nested one so that its calls back into
+ * [TableEngine] read as the deliberate collaboration they are.
+ *
+ * @param rows already filtered and sorted; position means sort position
+ */
+private class Pivot(private val rows: List<HistoryEntry>, private val zone: ZoneId) {
+
+	private val partitions = HashMap<PartitionKey, PartitionResult>()
+	private val byColumn = HashMap<ComputedSpec, Array<Double?>>()
+
+	/**
+	 * One value per row of [rows], in that order, null where the aggregate is undefined.
+	 *
+	 * Computed once per PARTITION and broadcast to its rows, never once per row: a group
+	 * pivot recomputed per row would be quadratic, and returning partitions rather than a
+	 * member list per row is what MemberSelectors exists to make possible.
+	 */
+	fun values(spec: ComputedSpec): Array<Double?> = byColumn.getOrPut(spec) {
+		val result = partitionFor(spec)
+		val perPartition = arrayOfNulls<Double>(result.membersOfPartition.size)
+		for (id in result.membersOfPartition.indices) {
+			val members = result.membersOfPartition[id]
+			perPartition[id] = Aggregates.compute(
+				spec.aggregate,
+				DoubleArray(members.size) { TableEngine.numericSource(rows[members[it]], spec.source) },
+				BooleanArray(members.size) { rows[members[it]].timedOut }
+			)
+		}
+		Array(rows.size) { perPartition[result.partitionOfRow[it]] }
+	}
+
+	private fun partitionFor(spec: ComputedSpec): PartitionResult {
+		val partition = capped(spec.partition)
+		return partitions.getOrPut(PartitionKey(partition, spec.limit)) {
+			// Any column can be a group key, Date and Time included, so the key is the
+			// rendered raw value as text. A row a column has no value for - Seconds on a
+			// timed-out attempt - keys to the empty string and groups with its like.
+			MemberSelectors.forPartition(partition, spec.limit) { entry, columnId ->
+				TableEngine.rawValue(entry, columnId, 0, zone)?.toString() ?: ""
+			}.partition(rows)
+		}
+	}
+
+	/**
+	 * A rolling window no wider than the table itself.
+	 *
+	 * "rolling:999999" is the documented spelling of a running cumulative, so a size far
+	 * past the row count is an idiom a user is meant to reach for rather than a
+	 * pathological input. Clamping changes no member set - a window already stops at the
+	 * top of the table, so every size at or above the row count selects the same rows -
+	 * but it does collapse all of those spellings onto one [PartitionKey], so a view
+	 * carrying both "rolling:999999" and a rolling window the size of the table pays for
+	 * one pass rather than two.
+	 */
+	private fun capped(partition: Partition): Partition =
+		if (partition is Partition.Rolling && partition.size > rows.size) {
+			// Not below 1: MemberSelectors would clamp it there anyway, and going through
+			// zero would make an empty table's key depend on the size it started from.
+			Partition.Rolling(if (rows.isEmpty()) 1 else rows.size)
+		} else {
+			partition
+		}
 }

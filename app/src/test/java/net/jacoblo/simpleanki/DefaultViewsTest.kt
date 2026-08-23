@@ -1,5 +1,6 @@
 package net.jacoblo.simpleanki
 
+import net.jacoblo.simpleanki.data.CellFormat
 import net.jacoblo.simpleanki.data.DefaultViews
 import net.jacoblo.simpleanki.data.SortDir
 import net.jacoblo.simpleanki.data.SortSpec
@@ -25,13 +26,47 @@ class DefaultViewsTest {
 	private fun ids(view: TableView): List<String> = view.columns.map { it.id }
 
 	@Test
-	fun statsCarriesOnlyItsBaseColumns() {
+	fun statsCarriesTwoBaseColumnsAndFiveAggregates() {
 		val view = DefaultViews.statsView(settings)
 		assertEquals("stats", view.id)
 		assertEquals("Stats", view.name)
-		assertEquals(listOf(TableEngine.ID_QUESTION, TableEngine.ID_SECONDS), ids(view))
-		// The aggregates arrive in Task 13, once a pivot engine exists to express them.
-		assertTrue(view.columns.all { it.computed == null && it.formula == null })
+		assertEquals(
+			listOf(TableEngine.ID_QUESTION, TableEngine.ID_SECONDS, "Best", "Avg", "Med", "Attempts", "Accuracy"),
+			ids(view)
+		)
+		val base = view.columns.take(2)
+		assertTrue(base.all { it.computed == null && it.formula == null })
+	}
+
+	@Test
+	fun statsAggregatesSpellTheFormulasFromTheSpec() {
+		val view = DefaultViews.statsView(settings)
+		val formulas = view.columns.mapNotNull { it.formula }
+		assertEquals(
+			listOf(
+				"=MIN(Seconds, group:Question, last:10)",
+				"=AVG(Seconds, group:Question, last:10)",
+				"=MEDIAN(Seconds, group:Question, last:10)",
+				"=COUNT(*, group:Question)",
+				"=ACCURACY(Seconds, group:Question)"
+			),
+			formulas
+		)
+		// The mirror is written from the struct, never parsed into one, so every aggregate
+		// column must carry both and neither may carry an error.
+		val computed = view.columns.filter { it.formula != null }
+		assertEquals(5, computed.size)
+		assertTrue(computed.all { it.computed != null && it.formulaError == null })
+	}
+
+	@Test
+	fun statsAggregatesCarryTheFormatsFromTheSpec() {
+		val formats = DefaultViews.statsView(settings).columns.associate { it.id to it.format }
+		assertEquals(CellFormat.TWO_DP, formats["Best"])
+		assertEquals(CellFormat.TWO_DP, formats["Avg"])
+		assertEquals(CellFormat.TWO_DP, formats["Med"])
+		assertEquals(CellFormat.INT, formats["Attempts"])
+		assertEquals(CellFormat.PERCENT, formats["Accuracy"])
 	}
 
 	@Test
