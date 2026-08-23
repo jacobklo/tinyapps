@@ -2,10 +2,7 @@ package net.jacoblo.simpleanki
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Style
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -18,39 +15,33 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 /**
- * The app bar: the lifetime review count, then one button per screen.
+ * The app bar: a hamburger opening the navigation drawer, and the lifetime review count.
+ *
+ * One button rather than one per screen, because from Task 8 the user can add views and
+ * there is no fixed number of destinations to give a button each.
  *
  * [lifetimeReviews] is every card ever shown, timeouts included. It is passed in rather
  * than read from the container so the bar stays a pure function of its arguments.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AnkiTopBar(lifetimeReviews: Int, onNavigate: (Screen) -> Unit) {
+fun AnkiTopBar(lifetimeReviews: Int, onOpenDrawer: () -> Unit) {
 	TopAppBar(
 		title = { Text("Simple Anki") },
+		navigationIcon = {
+			IconButton(onClick = onOpenDrawer) {
+				Icon(Icons.Default.Menu, contentDescription = "Open navigation menu")
+			}
+		},
 		actions = {
 			// 2) Lifetime review counter
 			Text(
 				text = "$lifetimeReviews",
 				modifier = Modifier
 					.align(Alignment.CenterVertically)
-					.padding(end = 8.dp),
+					.padding(end = 16.dp),
 				style = MaterialTheme.typography.titleMedium
 			)
-
-			// 6.4) Navigation Icons
-			IconButton(onClick = { onNavigate(Screen.HOME) }) {
-				Icon(Icons.Default.Home, contentDescription = "Home")
-			}
-			IconButton(onClick = { onNavigate(Screen.STATS) }) {
-				Icon(Icons.Default.List, contentDescription = "Stats")
-			}
-			IconButton(onClick = { onNavigate(Screen.HISTORY) }) {
-				Icon(Icons.Default.DateRange, contentDescription = "History")
-			}
-			IconButton(onClick = { onNavigate(Screen.QUESTIONS) }) {
-				Icon(Icons.Default.Style, contentDescription = "Questions")
-			}
 		}
 	)
 }

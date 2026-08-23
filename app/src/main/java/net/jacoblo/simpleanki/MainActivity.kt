@@ -20,13 +20,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import net.jacoblo.simpleanki.data.AnkiCard
 import net.jacoblo.simpleanki.data.AnkiPaths
+import net.jacoblo.simpleanki.data.DefaultViews
 import net.jacoblo.simpleanki.data.HistoryEntry
 import net.jacoblo.simpleanki.data.recordAnswer
-import net.jacoblo.simpleanki.table.HardcodedHistoryTable
+import net.jacoblo.simpleanki.table.TableScreen
 import net.jacoblo.simpleanki.ui.theme.SimpleAnkiTheme
 import java.io.IOException
-
-enum class Screen { HOME, STATS, HISTORY, QUESTIONS }
 
 class MainActivity : ComponentActivity() {
     private lateinit var container: AppContainer
@@ -85,8 +84,10 @@ fun AnkiScreen(container: AppContainer) {
     // History log, now the only source of every per-card figure
     var history by remember { mutableStateOf<List<HistoryEntry>>(emptyList()) }
 
-    // Navigation state
-    var currentScreen by remember { mutableStateOf(Screen.HOME) }
+    // Navigation state. Task 8 swaps DefaultViews for the list stored in views.json.
+    var currentScreen by remember { mutableStateOf<Screen>(Screen.FlipCards) }
+    val views = remember(container.settings.table) { DefaultViews.all(container.settings.table) }
+    val deckQuestions = remember(cards) { cards.map { it.question }.toSet() }
 
     // Watch lifecycle to reload cards when permission granted
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -129,20 +130,26 @@ fun AnkiScreen(container: AppContainer) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    Scaffold(
-        topBar = { AnkiTopBar(container.settings.counters.lifetimeReviews, onNavigate = { currentScreen = it }) }
+    AnkiNavShell(
+        lifetimeReviews = container.settings.counters.lifetimeReviews,
+        views = views,
+        current = currentScreen,
+        onSelect = { currentScreen = it }
     ) { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            when (currentScreen) {
-                // 6) Stats Page
-                Screen.STATS -> HardcodedHistoryTable(history, cards.map { it.question }.toSet())
-                Screen.HISTORY -> HistoryScreen(history)
-                Screen.QUESTIONS -> QuestionsScreen(history)
-                Screen.HOME -> GameView(
+            when (val screen = currentScreen) {
+                // 6) Every table view, including the retired stats and history pages.
+                // A view id with no view left behind it falls back to the first view.
+                is Screen.Table -> TableScreen(
+                    history, deckQuestions,
+                    views.firstOrNull { it.id == screen.viewId } ?: views.first(),
+                    onViewChanged = {}, onRendered = {}
+                )
+                Screen.FlipCards -> GameView(
                     cards = cards,
                     currentCardIndex = currentCardIndex,
                     isShowingAnswer = isShowingAnswer,

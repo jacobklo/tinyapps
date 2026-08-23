@@ -1,0 +1,56 @@
+/*
+ * The JSON document table.html fetches, built from a RenderedTable.
+ *
+ * Its own file rather than a neighbour of TableWebView because RenderedTable.kt's rule -
+ * stay free of Android imports so JVM tests can reach these types - binds per FILE, not
+ * per package. Kotlin compiles every top-level declaration of a file into one XxxKt
+ * class, so a single non-const Android-touching val sitting beside this function would
+ * drag android.webkit into that class's initialiser and fail TablePayloadTest with a
+ * NoClassDefFoundError naming the test rather than the cause.
+ */
+package net.jacoblo.simpleanki.table
+
+import net.jacoblo.simpleanki.data.SortDir
+import org.json.JSONArray
+import org.json.JSONObject
+
+/**
+ * The payload the page fetches: the whole table, already formatted, as one JSON document.
+ *
+ * Rows are arrays aligned with [RenderedTable.columns] rather than objects, which at five
+ * thousand rows saves a few hundred kilobytes of repeated keys and sidesteps any question
+ * about key order.
+ */
+fun RenderedTable.toPayloadJson(darkTheme: Boolean): String {
+	val columnsJson = JSONArray()
+	for (column in columns) {
+		columnsJson.put(
+			JSONObject()
+				.put("id", column.id)
+				.put("title", column.title)
+				.put("width", column.width)
+				.put("frozen", column.frozen)
+				.put("sortable", column.sortable)
+				// JSONObject.put drops a Kotlin null outright, and the page reads this
+				// key to decide whether the column renders "#ERR".
+				.put("error", column.error ?: JSONObject.NULL)
+		)
+	}
+	val rowsJson = JSONArray()
+	for (row in rows) {
+		rowsJson.put(JSONArray(row))
+	}
+	return JSONObject()
+		.put("viewId", viewId)
+		.put(
+			"sort",
+			JSONObject()
+				.put("column", sort.column)
+				.put("dir", if (sort.dir == SortDir.ASC) "asc" else "desc")
+		)
+		.put("highlightEvery", highlightEvery)
+		.put("dark", darkTheme)
+		.put("columns", columnsJson)
+		.put("rows", rowsJson)
+		.toString()
+}

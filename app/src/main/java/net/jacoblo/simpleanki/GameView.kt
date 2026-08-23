@@ -46,7 +46,7 @@ fun summarizeCard(history: List<HistoryEntry>, cards: List<AnkiCard>, index: Int
  * The window is taken before the timeout filter, so a timed-out attempt still consumes
  * one of the [limit] slots instead of letting an older attempt take its place.
  */
-internal fun recentTimes(history: List<HistoryEntry>, question: String, limit: Int): List<Float> =
+private fun recentTimes(history: List<HistoryEntry>, question: String, limit: Int): List<Float> =
 	history.filter { it.question == question }
 		.sortedByDescending { it.timestamp }
 		.take(limit)
