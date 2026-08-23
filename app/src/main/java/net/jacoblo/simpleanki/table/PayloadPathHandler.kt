@@ -21,8 +21,10 @@ class PayloadPathHandler : WebViewAssetLoader.PathHandler {
 	 * The JSON served on the next fetch.
 	 *
 	 * Volatile because it is written from the main thread and read on the WebView's
-	 * request thread. An empty object rather than null so a fetch that beats the first
-	 * assignment still gets valid JSON.
+	 * request thread. That is sufficient only because a String is immutable, so publishing
+	 * the reference publishes the whole payload; a StringBuilder or a retained
+	 * InputStream here would still look correct and no longer be. An empty object rather
+	 * than null so a fetch that beats the first assignment still gets valid JSON.
 	 */
 	@Volatile
 	var payload: String = "{}"

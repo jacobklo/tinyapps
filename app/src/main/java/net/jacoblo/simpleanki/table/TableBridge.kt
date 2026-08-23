@@ -2,7 +2,7 @@
  * The @JavascriptInterface object the table page calls back through, bound as "Android".
  *
  * Only primitives and String cross this boundary, which is why a column order arrives as
- * CSV rather than as a list.
+ * a JSON array in a String rather than as a list.
  */
 package net.jacoblo.simpleanki.table
 

@@ -151,8 +151,9 @@
      *
      * This is a security boundary, not a style choice. Tabulator writes a string title
      * straight into the header element - Column._formatColumnHeaderTitle ends in
-     * `default: e.innerHTML = i` - so a title is parsed as markup. Cell values are safe,
-     * because the plaintext formatter sanitizes them, but titles are not.
+     * `default: e.innerHTML = i` - so a title is parsed as markup. Cell values are safe:
+     * lookupFormatter falls back to the plaintext formatter, and both it and the textarea
+     * formatter run their value through sanitizeHTML. Titles get no such treatment.
      *
      * Every title is hardcoded today. Task 9 lets the user name a computed column and
      * Task 13 renders it, and this page holds the Android bridge object, so a title of
@@ -160,7 +161,10 @@
      * to native code. Returning a Node takes Tabulator's other branch,
      * `i instanceof Node ? e.appendChild(i)`, where the text can never become markup.
      *
-     * Do NOT collapse this back into a template string.
+     * Do NOT collapse this back into a template string, and do NOT enable the `tooltip`
+     * or `headerTooltip` column options: the tooltip module ends in `s.innerHTML = i`
+     * with `i` the raw cell value or the raw title, sanitizing neither. Showing a formula
+     * error on hover is an obvious Task 13 idea and would reopen both paths at once.
      */
     function titleNode(title, dir) {
       var wrapper = document.createElement("span");
@@ -252,6 +256,9 @@
         // honours the widths the user dragged. A layout that redistributes width, such
         // as fitColumns, would quietly overwrite them.
         layout: "fitData",
+        // No renderVertical: Tabulator 6 already defaults to "virtual", which is what
+        // keeps 5000 rows to about 60 row elements. The Tabulator 4 spelling of this
+        // option was `virtualDom` and no longer exists.
         movableColumns: true,
         columnDefaults: { headerSort: false, resizable: true },
         placeholder: "No rows",
@@ -284,6 +291,15 @@
         }).filter(function (id) {
           return id !== undefined;
         });
+        // A partial order is never worth sending. It cannot happen today, since
+        // fieldToId is rebuilt by the same render, but Task 8 autosaves this into
+        // views.json - where a truncated list means columns silently deleted from the
+        // user's saved view. Dropping the event costs one gesture; sending it costs the
+        // view.
+        if (ids.length !== columns.length) {
+          log("reorder ignored: " + ids.length + " of " + columns.length + " columns mapped");
+          return;
+        }
         // JSON rather than CSV: the bridge can only carry a String, and a column id is
         // not guaranteed to be comma-free once Task 9 lets the user name one.
         Android.reorder(JSON.stringify(ids));
@@ -303,7 +319,13 @@
           render(data);
         })
         .catch(function (error) {
+          // render() runs inside the then above, so a malformed payload lands here too.
+          // Saying so on screen matters: leaving the previous table up would present
+          // stale rows as current, which is worse than showing nothing. textContent
+          // rather than innerHTML deliberately - the failure path must not itself
+          // become a sink.
           log("payload failed: " + error);
+          document.getElementById("grid").textContent = "Could not load the table";
         });
     }
 
