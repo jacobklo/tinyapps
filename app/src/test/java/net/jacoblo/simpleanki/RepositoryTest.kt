@@ -1,10 +1,12 @@
 package net.jacoblo.simpleanki
 
 import net.jacoblo.simpleanki.data.Aggregate
+import net.jacoblo.simpleanki.data.AnkiCard
 import net.jacoblo.simpleanki.data.AnkiPaths
 import net.jacoblo.simpleanki.data.CellFormat
 import net.jacoblo.simpleanki.data.ColumnSpec
 import net.jacoblo.simpleanki.data.ComputedSpec
+import net.jacoblo.simpleanki.data.DeckRepository
 import net.jacoblo.simpleanki.data.DefaultViews
 import net.jacoblo.simpleanki.data.HistoryEntry
 import net.jacoblo.simpleanki.data.HistoryRepository
@@ -340,6 +342,186 @@ class RepositoryTest {
 
 		assertEquals(DefaultViews.all(tableSettings), ViewsRepository(paths).load(tableSettings).views)
 		assertEquals(unknown, File(paths.views.path + ".corrupt").readText())
+	}
+
+	/**
+	 * The on-disk key and token vocabulary, spelled out.
+	 *
+	 * Every other views.json test here is a round trip, and a round trip cannot see a
+	 * rename: reader and writer share one private KEY_* constant each, so renaming
+	 * "format" to "fmt" in both passes the whole file while silently resetting that field
+	 * on every views.json already on a user's disk. These literals are the only thing that
+	 * fails when that happens, which is why they are typed out rather than read back from
+	 * the constants they are meant to pin.
+	 *
+	 * Parsed rather than string-matched, because key ORDER is arbitrary on this classpath
+	 * - see the note on the class - while the spellings asserted below are not.
+	 */
+	@Test
+	fun theStoredKeysAndTokensAreTheContractWithFilesOnTheUsersDisk() {
+		val paths = AnkiPaths.at(tempFolder.root)
+		ViewsRepository(paths).save(ViewsFile("custom", listOf(kitchenSinkView())))
+
+		val root = JSONObject(paths.views.readText())
+		assertEquals(1, root.getInt("schemaVersion"))
+		assertEquals("custom", root.getString("activeViewId"))
+
+		val view = root.getJSONArray("views").getJSONObject(0)
+		assertEquals("custom", view.getString("id"))
+		assertEquals("Custom", view.getString("name"))
+		assertFalse(view.getBoolean("filterToCurrentDeck"))
+		assertEquals("Question", view.getString("collapseDuplicatesOn"))
+		assertEquals(7, view.getInt("highlightEvery"))
+		assertEquals("best10", view.getJSONObject("defaultSort").getString("column"))
+		assertEquals("desc", view.getJSONObject("defaultSort").getString("dir"))
+
+		val columns = view.getJSONArray("columns")
+		val question = columns.getJSONObject(0)
+		assertEquals("Question", question.getString("id"))
+		assertEquals("Question", question.getString("title"))
+		assertEquals(160, question.getInt("width"))
+		assertTrue(question.getBoolean("visible"))
+		assertTrue(question.getBoolean("frozen"))
+		assertEquals("text", question.getString("format"))
+
+		val best = columns.getJSONObject(1)
+		assertFalse(best.getBoolean("visible"))
+		assertEquals("0.00", best.getString("format"))
+		assertEquals("MIN", best.getString("aggregate"))
+		assertEquals("Seconds", best.getString("source"))
+		assertEquals(10, best.getInt("limit"))
+		assertEquals("group", best.getJSONObject("partition").getString("mode"))
+		assertEquals("Question", best.getJSONObject("partition").getString("by"))
+		assertEquals("=MIN(Seconds, group:Question, last:10)", best.getString("formula"))
+
+		val accuracy = columns.getJSONObject(2)
+		assertEquals("percent", accuracy.getString("format"))
+		assertEquals("bucket", accuracy.getJSONObject("partition").getString("mode"))
+		assertEquals(25, accuracy.getJSONObject("partition").getInt("size"))
+
+		val average = columns.getJSONObject(3)
+		assertEquals("0.0", average.getString("format"))
+		assertEquals("rolling", average.getJSONObject("partition").getString("mode"))
+		assertEquals(5, average.getJSONObject("partition").getInt("size"))
+
+		val pending = columns.getJSONObject(4)
+		assertEquals("=AVG(Seconds)", pending.getString("formula"))
+		assertEquals(
+			"a partition argument is required: group:, bucket:, or rolling:",
+			pending.getString("formulaError")
+		)
+
+		assertEquals("int", columns.getJSONObject(5).getString("format"))
+		assertEquals("time", columns.getJSONObject(6).getString("format"))
+		// Every optional key absent rather than written out as a JSON null.
+		val bare = columns.getJSONObject(7)
+		assertFalse(bare.has("format"))
+		assertFalse(bare.has("aggregate"))
+		assertFalse(bare.has("partition"))
+		assertFalse(bare.has("formula"))
+		assertFalse(bare.has("formulaError"))
+
+		// The one token no column above spells, and the only other value "dir" may take.
+		val ascending = kitchenSinkView().copy(defaultSort = SortSpec("best10", SortDir.ASC))
+		ViewsRepository(paths).save(ViewsFile("custom", listOf(ascending)))
+		assertEquals(
+			"asc",
+			JSONObject(paths.views.readText()).getJSONArray("views").getJSONObject(0)
+				.getJSONObject("defaultSort").getString("dir")
+		)
+	}
+
+	@Test
+	fun aStaleFormulaErrorOnABaseColumnIsClearedRatherThanKeptForGood() {
+		val paths = AnkiPaths.at(tempFolder.root)
+		// What one hand-edit leaves behind. TableEngine keys "#ERR" and unsortability off
+		// this field alone, so a message on a base column blanks a real data column in
+		// every row - and nothing here can have failed, since a base column's values come
+		// from the record and never from a formula.
+		paths.views.writeText(
+			"{\"activeViewId\":\"v\",\"views\":[{\"id\":\"v\",\"columns\":[" +
+				"{\"id\":\"Seconds\",\"formulaError\":\"anything\"}]}]}"
+		)
+		val repository = ViewsRepository(paths)
+
+		val loaded = repository.load(tableSettings)
+
+		val column = loaded.views.single().columns.single()
+		assertEquals("Seconds", column.id)
+		assertNull(column.formulaError)
+		// And cleared on disk by the next autosave, not merely in memory. Left in the file
+		// it would come back on the following launch, which is what made it permanent.
+		repository.save(loaded)
+		val stored = JSONObject(paths.views.readText())
+			.getJSONArray("views").getJSONObject(0).getJSONArray("columns").getJSONObject(0)
+		assertFalse(stored.has("formulaError"))
+	}
+
+	@Test
+	fun aStrayFormulaOnABaseColumnIsStillNeitherParsedNorErrored() {
+		val paths = AnkiPaths.at(tempFolder.root)
+		// Inert, as it was before the parser existed: parsing it could only blank a real
+		// data column, and the text is kept so the autosave cannot swallow it either.
+		paths.views.writeText(
+			"{\"activeViewId\":\"v\",\"views\":[{\"id\":\"v\",\"columns\":[" +
+				"{\"id\":\"Seconds\",\"formula\":\"not a formula at all\"}]}]}"
+		)
+
+		val column = ViewsRepository(paths).load(tableSettings).views.single().columns.single()
+		assertEquals("not a formula at all", column.formula)
+		assertNull(column.computed)
+		assertNull(column.formulaError)
+	}
+
+	// -- DeckRepository -------------------------------------------------------------------
+
+	@Test
+	fun aMalformedDeckIsQuarantinedRatherThanReplacedBySample() {
+		val paths = AnkiPaths.at(tempFolder.root)
+		val handAuthored = "[{\"question\":\"q\",\"answer\":\"a\"},"
+		paths.deck.writeText(handAuthored)
+		val repository = DeckRepository(paths)
+
+		// The chain MainActivity walks: a malformed deck reads as no cards, and no cards
+		// plus storage access is what makes it offer the sample. The deck is hand-authored
+		// and has no backup, no rolling window and no other copy, so the five sample cards
+		// must never be what is left of it.
+		assertEquals(emptyList<AnkiCard>(), repository.load())
+		repository.createSample()
+
+		assertEquals(handAuthored, File(paths.deck.path + ".corrupt").readText())
+		assertEquals(5, repository.load().size)
+	}
+
+	@Test
+	fun createSampleRefusesWhenTheDeckCannotBeMovedAside() {
+		val paths = AnkiPaths.at(tempFolder.root)
+		File(paths.deck.path + ".corrupt").writeText("the user's real deck")
+		paths.deck.writeText("[")
+
+		try {
+			// A second incident, whose quarantine slot is already taken by the first one's
+			// file. Refusing costs the user the sample; overwriting would cost them a deck.
+			DeckRepository(paths).createSample()
+			fail("createSample must refuse to overwrite an existing deck")
+		} catch (e: IOException) {
+			assertTrue(e.message, e.message!!.startsWith("refusing to overwrite"))
+			assertTrue(e.message!!.contains("simple-anki.json"))
+		}
+
+		assertEquals("the user's real deck", File(paths.deck.path + ".corrupt").readText())
+		assertEquals("[", paths.deck.readText())
+	}
+
+	@Test
+	fun createSampleWritesStraightAwayWhenThereIsNoDeckAtAll() {
+		val paths = AnkiPaths.at(tempFolder.root)
+
+		DeckRepository(paths).createSample()
+
+		// The first-run path, and the only one with nothing to preserve.
+		assertEquals(5, DeckRepository(paths).load().size)
+		assertFalse(File(paths.deck.path + ".corrupt").exists())
 	}
 
 	// -- HistoryRepository ----------------------------------------------------------------

@@ -137,6 +137,44 @@ class SettingsTest {
 		assertNull(repository.load().metronome.soundPath)
 	}
 
+	/**
+	 * The on-disk key vocabulary, spelled out.
+	 *
+	 * The round trip above cannot see a rename: reader and writer share one private KEY_*
+	 * constant each, so renaming "lifetimeReviews" in both passes every other test in this
+	 * file while resetting the user's real total to zero the next time the app starts.
+	 * These literals are typed out rather than read back from the constants precisely so
+	 * that they disagree when that happens.
+	 */
+	@Test
+	fun theStoredKeysAreTheContractWithFilesOnTheUsersDisk() {
+		val paths = AnkiPaths.at(tempFolder.root)
+		SettingsRepository(paths).save(
+			Settings(
+				metronome = MetronomeSettings(enabled = true, intervalSeconds = 4.5f, soundPath = "/sdcard/tick.wav"),
+				table = TableSettings(defaultLimit = 3, highlightEvery = 2, defaultWindowSize = 40),
+				history = HistorySettings(maxEntries = 120),
+				counters = CounterSettings(lifetimeReviews = 15701)
+			)
+		)
+
+		val root = JSONObject(paths.settings.readText())
+		assertEquals(1, root.getInt("schemaVersion"))
+
+		val metronome = root.getJSONObject("metronome")
+		assertTrue(metronome.getBoolean("enabled"))
+		assertEquals(4.5, metronome.getDouble("intervalSeconds"), 1e-9)
+		assertEquals("/sdcard/tick.wav", metronome.getString("soundPath"))
+
+		val table = root.getJSONObject("table")
+		assertEquals(3, table.getInt("defaultLimit"))
+		assertEquals(2, table.getInt("highlightEvery"))
+		assertEquals(40, table.getInt("defaultWindowSize"))
+
+		assertEquals(120, root.getJSONObject("history").getInt("maxEntries"))
+		assertEquals(15701, root.getJSONObject("counters").getInt("lifetimeReviews"))
+	}
+
 	@Test
 	fun aCorruptSettingsFileIsQuarantinedAndTheCountRecovered() {
 		val paths = AnkiPaths.at(tempFolder.root)
