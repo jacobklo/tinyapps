@@ -7,6 +7,7 @@
 package net.jacoblo.simpleanki
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -62,6 +63,13 @@ fun AnkiNavShell(
 	BackHandler(enabled = drawerState.isOpen) { scope.launch { drawerState.close() } }
 	ModalNavigationDrawer(
 		drawerState = drawerState,
+		// Only while open. Material3 1.3 hangs the horizontal drag detector on the Box
+		// wrapping BOTH the sheet and the content, so an enabled detector spans the whole
+		// screen rather than the left edge and swallows the History view's sideways
+		// scroll - measured at 4px of travel against 304px with this off. Closing by
+		// swipe still works; opening is the hamburger's job, and Material3 cannot scope
+		// an edge gesture anyway.
+		gesturesEnabled = drawerState.isOpen,
 		drawerContent = {
 			AnkiDrawer(views, current) {
 				onSelect(it)
@@ -87,22 +95,28 @@ fun AnkiNavShell(
  */
 @Composable
 private fun AnkiDrawer(views: List<TableView>, current: Screen, onSelect: (Screen) -> Unit) {
-	// Scrollable because Task 8 lets the view list grow past the height of a phone.
-	ModalDrawerSheet(modifier = Modifier.verticalScroll(rememberScrollState())) {
-		Text(
-			text = "Simple Anki",
-			modifier = Modifier.padding(16.dp),
-			style = MaterialTheme.typography.titleLarge
-		)
-		HorizontalDivider()
-		DrawerEntry("Flip Cards", current == Screen.FlipCards) { onSelect(Screen.FlipCards) }
-		HorizontalDivider()
-		for (view in views) {
-			DrawerEntry(view.name, current is Screen.Table && current.viewId == view.id) {
-				onSelect(Screen.Table(view.id))
+	ModalDrawerSheet {
+		// Inside the sheet, not on it: a modifier passed to ModalDrawerSheet lands
+		// outside its Surface and above M3's own fillMaxHeight, and verticalScroll
+		// measures with an infinite maxHeight, which turns that fillMaxHeight into a
+		// no-op and shrinks the sheet to wrap its entries - 945px of sheet and 1455px
+		// of bare scrim on a 2400px screen.
+		Column(Modifier.verticalScroll(rememberScrollState())) {
+			Text(
+				text = "Simple Anki",
+				modifier = Modifier.padding(16.dp),
+				style = MaterialTheme.typography.titleLarge
+			)
+			HorizontalDivider()
+			DrawerEntry("Flip Cards", current == Screen.FlipCards) { onSelect(Screen.FlipCards) }
+			HorizontalDivider()
+			for (view in views) {
+				DrawerEntry(view.name, current is Screen.Table && current.viewId == view.id) {
+					onSelect(Screen.Table(view.id))
+				}
 			}
+			// Task 15 adds a third divider and the metronome switch here.
 		}
-		// Task 15 adds a third divider and the metronome switch here.
 	}
 }
 

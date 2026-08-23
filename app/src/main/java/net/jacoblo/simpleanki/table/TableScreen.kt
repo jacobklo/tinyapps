@@ -19,8 +19,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import net.jacoblo.simpleanki.data.HistoryEntry
-import net.jacoblo.simpleanki.data.SortDir
-import net.jacoblo.simpleanki.data.SortSpec
 import net.jacoblo.simpleanki.data.TableView
 
 private const val LOG_TAG = "SimpleAnkiTable"
@@ -72,14 +70,10 @@ fun TableScreen(
 			// Tapping a column sorts it ascending; tapping the one already sorted
 			// reverses it.
 			onSort = { columnId ->
-				sort = if (sort.column == columnId) {
-					SortSpec(columnId, if (sort.dir == SortDir.ASC) SortDir.DESC else SortDir.ASC)
-				} else {
-					SortSpec(columnId, SortDir.ASC)
-				}
-				// The applied sort, not the tapped column: which of the two branches
-				// above ran is the only thing a header tap can get wrong, and it is
-				// invisible from outside the WebView without this.
+				sort = nextSort(sort, columnId)
+				// The applied sort, not the tapped column: which branch of nextSort ran
+				// is the only thing a header tap can get wrong, and it is invisible from
+				// outside the WebView without this.
 				Log.d(LOG_TAG, "sort ${sort.column} ${sort.dir}")
 			},
 			onResize = { columnId, width ->
@@ -93,24 +87,4 @@ fun TableScreen(
 	}
 
 	TableWebView(table, bridge, modifier.fillMaxSize())
-}
-
-/** A copy of this view with [columnId]'s width replaced, or the same view if it has no such column. */
-private fun TableView.withWidth(columnId: String, width: Int): TableView =
-	copy(columns = columns.map { if (it.id == columnId) it.copy(width = width) else it })
-
-/**
- * A copy of this view with its columns in the order [columnIds] names.
- *
- * The page only ever reports the columns it drew, so any column it could not draw -
- * hidden today, and from Task 9 a computed one whose formula failed - is missing from
- * that list. Those are appended in their existing relative order rather than dropped,
- * since dropping them would delete a column the user still owns.
- */
-private fun TableView.reordered(columnIds: List<String>): TableView {
-	val byId = columns.associateBy { it.id }
-	val named = columnIds.toSet()
-	val moved = columnIds.mapNotNull { byId[it] }
-	val rest = columns.filter { it.id !in named }
-	return copy(columns = moved + rest)
 }

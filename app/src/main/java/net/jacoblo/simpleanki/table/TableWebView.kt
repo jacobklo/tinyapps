@@ -48,10 +48,12 @@ private const val ASSET_DOMAIN = "appassets.androidplatform.net"
 private const val PAGE_URL = "https://$ASSET_DOMAIN/assets/table.html"
 
 /**
- * Rebuilds allowed after a dead render process before the screen gives up.
+ * Consecutive rebuilds allowed after a dead render process before the screen gives up.
  *
  * A cap rather than an unconditional rebuild because a table big enough to be killed for
  * memory once is big enough to be killed again, and rebuilding forever would spin.
+ * Consecutive is the load-bearing word: the count resets on the next completed render,
+ * so three unrelated reclaims spread over an afternoon do not add up to a dead screen.
  */
 private const val MAX_RENDERER_RESTARTS = 3
 
@@ -85,11 +87,15 @@ fun TableWebView(table: RenderedTable, bridge: TableBridge, modifier: Modifier =
 	val darkTheme = isSystemInDarkTheme()
 	val surface = MaterialTheme.colorScheme.surface.toArgb()
 	val payload = remember(table, darkTheme) { table.toPayloadJson(darkTheme) }
-	// Bumped when the render process dies, which builds a whole new WebView around a
-	// whole new state.
-	var generation by remember { mutableStateOf(0) }
+	// Two counters, because they answer different questions and must not share one.
+	// [instance] identifies the live WebView and only ever increases, so keying on it
+	// replaces a dead one wholesale; [deaths] counts renderer deaths since the last
+	// completed render, so it resets. Folding them into one would make a reset tear down
+	// a WebView that had just proved itself healthy.
+	var instance by remember { mutableStateOf(0) }
+	var deaths by remember { mutableStateOf(0) }
 
-	if (generation > MAX_RENDERER_RESTARTS) {
+	if (deaths > MAX_RENDERER_RESTARTS) {
 		Box(modifier, contentAlignment = Alignment.Center) {
 			Text(
 				text = "The table stopped responding. Switch to another screen and back to retry.",
@@ -101,7 +107,7 @@ fun TableWebView(table: RenderedTable, bridge: TableBridge, modifier: Modifier =
 		return
 	}
 
-	key(generation) {
+	key(instance) {
 		val state = remember { TableWebViewState() }
 		AndroidView(
 			modifier = modifier,
@@ -142,7 +148,7 @@ fun TableWebView(table: RenderedTable, bridge: TableBridge, modifier: Modifier =
 						 * reclaim would take the user's game session down with the table.
 						 *
 						 * Returning true keeps the app alive. The View is unusable from
-						 * here on, so a new generation replaces it: Compose disposes this
+						 * here on, so a new instance replaces it: Compose disposes this
 						 * node, onRelease destroys the dead WebView, and the new one loads
 						 * the page again from the payload the caller still holds.
 						 */
@@ -151,7 +157,8 @@ fun TableWebView(table: RenderedTable, bridge: TableBridge, modifier: Modifier =
 							detail: RenderProcessGoneDetail
 						): Boolean {
 							Log.w(LOG_TAG, "render process gone, crash=${detail.didCrash()}")
-							generation++
+							deaths++
+							instance++
 							return true
 						}
 					}
@@ -168,6 +175,9 @@ fun TableWebView(table: RenderedTable, bridge: TableBridge, modifier: Modifier =
 					// content:// unreachable from JavaScript.
 					settings.allowFileAccess = false
 					settings.allowContentAccess = false
+					// A render that got all the way to drawing rows is the proof that
+					// the renderer is healthy, so it retires the deaths that came before.
+					bridge.onHostRenderComplete = { deaths = 0 }
 					addJavascriptInterface(bridge, "Android")
 					loadUrl(PAGE_URL)
 				}

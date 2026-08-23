@@ -143,12 +143,16 @@ fun AnkiScreen(container: AppContainer) {
         ) {
             when (val screen = currentScreen) {
                 // 6) Every table view, including the retired stats and history pages.
-                // A view id with no view left behind it falls back to the first view.
-                is Screen.Table -> TableScreen(
-                    history, deckQuestions,
-                    views.firstOrNull { it.id == screen.viewId } ?: views.first(),
-                    onViewChanged = {}, onRendered = {}
-                )
+                is Screen.Table -> {
+                    // A stored id naming no view falls back to the first, and re-points
+                    // the selection so the drawer highlights what is actually showing.
+                    val view = views.firstOrNull { it.id == screen.viewId } ?: views.firstOrNull()
+                    LaunchedEffect(view?.id) {
+                        if (view != null && view.id != screen.viewId) currentScreen = Screen.Table(view.id)
+                    }
+                    if (view == null) Text("No views to show.")
+                    else TableScreen(history, deckQuestions, view, onViewChanged = {}, onRendered = {})
+                }
                 Screen.FlipCards -> GameView(
                     cards = cards,
                     currentCardIndex = currentCardIndex,

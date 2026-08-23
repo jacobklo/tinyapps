@@ -26,6 +26,16 @@ class TableBridge(
 ) {
 	private val main = Handler(Looper.getMainLooper())
 
+	/**
+	 * Registered by whatever hosts the page - [TableWebView] - rather than by the screen
+	 * that built this bridge.
+	 *
+	 * A completed render is the only proof the renderer came back healthy, and the host
+	 * is what counts renderer deaths, so relaying it up to the screen and back down again
+	 * would be a longer path to the same place. Set and called on the main thread only.
+	 */
+	internal var onHostRenderComplete: (() -> Unit)? = null
+
 	@JavascriptInterface
 	fun sort(columnId: String) {
 		main.post { onSort(columnId) }
@@ -54,6 +64,9 @@ class TableBridge(
 
 	@JavascriptInterface
 	fun renderComplete(rowCount: Int) {
-		main.post { onRenderComplete(rowCount) }
+		main.post {
+			onHostRenderComplete?.invoke()
+			onRenderComplete(rowCount)
+		}
 	}
 }
