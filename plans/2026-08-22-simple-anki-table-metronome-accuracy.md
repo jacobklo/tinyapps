@@ -919,6 +919,14 @@ sealed interface Screen {
 - [ ] The `stats` view carries only its base columns in this task
 - [ ] `TableScreen` accepts an `onRendered` callback and this task passes an empty lambda
 
+**Three things inherited from Task 5.** `HardcodedViews.kt` holds the three views plus a `HardcodedHistoryTable` composable that is the seed of `TableScreen`. Lifting it is mechanical, but note three deltas:
+
+- **Its sort toggle rule differs from this task's spec.** `HardcodedViews` does "same column and DESC then ASC, else DESC". This task specifies "same column toggles direction, a different column resets to ascending". Do NOT copy the existing rule across blindly.
+- **`onResize` and `onReorder` are `Log.d` stubs** that become `onViewChanged` calls here.
+- **Move `toPayloadJson` out of `TableWebView.kt`** into its own `table/TablePayload.kt` while adding files to this package anyway. `TablePayloadTest` currently only loads on a JVM classpath because every other top-level declaration in `TableWebView.kt` is a `const val` the compiler inlines; one new top-level non-const val touching Android breaks twelve tests with `NoClassDefFoundError`. `RenderedTable.kt` states the package rule this is quietly violating.
+
+Also consider adding `onRenderProcessGone` to the WebView here, now that a real screen surrounds it - without it, a renderer killed under memory pressure with a 5000-row grid takes the app process down with it.
+
 **Two things inherited from Task 3.** `MainActivity.kt` lands at exactly 199 lines against its 200-line limit, with no headroom, and this task adds a `ModalNavigationDrawer` on top. Plan to extract the `ON_RESUME` observer into a `rememberAppState`-style helper rather than discovering the ceiling mid-task. Separately, `recentTimes` in `GameView.kt` is `internal` only so the deleted `StatsScreen` could reach it; narrow it to `private` once this task removes its last outside caller.
 
 **Note on null sort order.** The interim `StatsScreen` sorted null figures FIRST ascending, where the retired `9999f` sentinel sorted them last. That file dies here, and Section 8.3's rule is the correct one: nulls and timed-out rows sort LAST in both directions. Do not carry the interim behaviour forward.
