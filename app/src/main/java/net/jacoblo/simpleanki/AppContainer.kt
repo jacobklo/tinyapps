@@ -20,6 +20,14 @@ import net.jacoblo.simpleanki.data.SettingsRepository
 class AppContainer(
 	private val context: Context,
 	val paths: AnkiPaths,
+	/**
+	 * True when the app was launched under TestMode, which only a debug build can be.
+	 *
+	 * Carried here rather than re-derived because the intent is not reachable from a
+	 * composable, and because [paths] alone must never be what test-mode behaviour keys
+	 * off - reading the directory name to decide how to behave is how a production path
+	 * eventually gets treated as a test one.
+	 */
 	val testMode: Boolean
 ) {
 	val deckRepository = DeckRepository(paths)

@@ -50,6 +50,9 @@ android {
     }
     buildFeatures {
         compose true
+        // AGP 8 defaults this off. TestMode.isActive reads BuildConfig.DEBUG, which is what
+        // keeps test mode out of a release build.
+        buildConfig true
     }
 }
 

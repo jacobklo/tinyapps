@@ -24,6 +24,7 @@ import net.jacoblo.simpleanki.data.DefaultViews
 import net.jacoblo.simpleanki.data.HistoryEntry
 import net.jacoblo.simpleanki.data.recordAnswer
 import net.jacoblo.simpleanki.table.TableScreen
+import net.jacoblo.simpleanki.testmode.TestMode
 import net.jacoblo.simpleanki.ui.theme.SimpleAnkiTheme
 import java.io.IOException
 
@@ -35,8 +36,11 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         // 8) Keep screen always on
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        // Task 7 wires test mode activation; production paths until then.
-        container = AppContainer(this, AnkiPaths.production(), testMode = false)
+        // Debug-only; seeded before the container so its repositories open the fixtures.
+        val testMode = TestMode.isActive(this)
+        val paths = if (testMode) AnkiPaths.testMode() else AnkiPaths.production()
+        if (testMode) TestMode.seed(paths)
+        container = AppContainer(this, paths, testMode)
         setContent {
             SimpleAnkiTheme {
                 AnkiScreen(container)
@@ -151,7 +155,8 @@ fun AnkiScreen(container: AppContainer) {
                         if (view != null && view.id != screen.viewId) currentScreen = Screen.Table(view.id)
                     }
                     if (view == null) Text("No views to show.")
-                    else TableScreen(history, deckQuestions, view, onViewChanged = {}, onRendered = {})
+                    else TableScreen(history, deckQuestions, view, onViewChanged = {},
+                        onRendered = { if (container.testMode) TestMode.writeDump(container.paths, it) })
                 }
                 Screen.FlipCards -> GameView(
                     cards = cards,
