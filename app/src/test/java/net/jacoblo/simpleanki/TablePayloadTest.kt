@@ -92,6 +92,53 @@ class TablePayloadTest {
 		assertTrue(column.isNull("error"))
 	}
 
+	/**
+	 * Both flags in both polarities, in one payload.
+	 *
+	 * Asserting either flag in only one polarity would be satisfied by an implementation
+	 * that wrote that value unconditionally, so both columns are checked for all four.
+	 */
+	@Test
+	fun booleanColumnFlagsAreReadPerColumn() {
+		val payload = JSONObject(
+			table(
+				listOf(
+					column("Question", frozen = true, sortable = false),
+					column("Seconds", frozen = false, sortable = true)
+				),
+				emptyList()
+			).toPayloadJson(false)
+		)
+		val first = payload.getJSONArray("columns").getJSONObject(0)
+		val second = payload.getJSONArray("columns").getJSONObject(1)
+
+		assertTrue(first.getBoolean("frozen"))
+		assertFalse(first.getBoolean("sortable"))
+		assertFalse(second.getBoolean("frozen"))
+		assertTrue(second.getBoolean("sortable"))
+	}
+
+	/**
+	 * Rows are positional, so a reordered columns array would silently mislabel every
+	 * cell. Asserted directly rather than left implicit in the row-ordering test.
+	 */
+	@Test
+	fun columnsKeepTheirInputOrder() {
+		val payload = JSONObject(
+			table(
+				listOf(column("#"), column("When"), column("Question"), column("Seconds")),
+				emptyList()
+			).toPayloadJson(false)
+		)
+		val columns = payload.getJSONArray("columns")
+
+		assertEquals(4, columns.length())
+		assertEquals(
+			listOf("#", "When", "Question", "Seconds"),
+			(0 until columns.length()).map { columns.getJSONObject(it).getString("id") }
+		)
+	}
+
 	/** A dropped key would leave the page unable to tell an errored column from a good one. */
 	@Test
 	fun columnErrorSurvivesAsAString() {

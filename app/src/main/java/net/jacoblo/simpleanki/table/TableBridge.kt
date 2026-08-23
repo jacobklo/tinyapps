@@ -9,6 +9,7 @@ package net.jacoblo.simpleanki.table
 import android.os.Handler
 import android.os.Looper
 import android.webkit.JavascriptInterface
+import org.json.JSONArray
 
 /**
  * Every callback is dispatched to the main thread before it reaches [onSort] and friends.
@@ -36,14 +37,18 @@ class TableBridge(
 	}
 
 	/**
-	 * @param columnIdsCsv every visible column id in the new display order.
+	 * @param columnIdsJson every visible column id in the new display order, as a JSON
+	 *   array of strings.
 	 *
-	 * Column ids are the base column names, none of which contains a comma, so a plain
-	 * split is enough and no escaping scheme is needed.
+	 * JSON rather than a delimited string because the only shape this boundary accepts is
+	 * a String, and no delimiter is safe: the base column ids happen to be comma-free, but
+	 * Task 9 lets the user name a computed column and nothing stops them using a comma.
+	 * JSON escapes that away instead of assuming it never happens.
 	 */
 	@JavascriptInterface
-	fun reorder(columnIdsCsv: String) {
-		val ids = columnIdsCsv.split(",").filter { it.isNotEmpty() }
+	fun reorder(columnIdsJson: String) {
+		val array = JSONArray(columnIdsJson)
+		val ids = (0 until array.length()).map { array.getString(it) }
 		main.post { onReorder(ids) }
 	}
 

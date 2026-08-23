@@ -146,9 +146,33 @@
       console.log("[table] " + message);
     }
 
-    function arrow(dir) {
-      // Escaped rather than literal so this file stays ASCII.
-      return dir === "asc" ? " \u25B2" : " \u25BC";
+    /*
+     * Builds a header title as a DOM node rather than as a string.
+     *
+     * This is a security boundary, not a style choice. Tabulator writes a string title
+     * straight into the header element - Column._formatColumnHeaderTitle ends in
+     * `default: e.innerHTML = i` - so a title is parsed as markup. Cell values are safe,
+     * because the plaintext formatter sanitizes them, but titles are not.
+     *
+     * Every title is hardcoded today. Task 9 lets the user name a computed column and
+     * Task 13 renders it, and this page holds the Android bridge object, so a title of
+     * `<img src=x onerror="Android.reorder(...)">` would be script injection with a path
+     * to native code. Returning a Node takes Tabulator's other branch,
+     * `i instanceof Node ? e.appendChild(i)`, where the text can never become markup.
+     *
+     * Do NOT collapse this back into a template string.
+     */
+    function titleNode(title, dir) {
+      var wrapper = document.createElement("span");
+      wrapper.appendChild(document.createTextNode(title));
+      if (dir) {
+        // The arrow lives in its own element so the title stays pure text.
+        var mark = document.createElement("span");
+        // Escaped rather than literal so this file stays ASCII.
+        mark.textContent = dir === "asc" ? " \u25B2" : " \u25BC";
+        wrapper.appendChild(mark);
+      }
+      return wrapper;
     }
 
     // Every cell of an errored column reads "#ERR"; the payload's own cells already say
@@ -165,15 +189,20 @@
       return data.columns.map(function (col, index) {
         var field = "c" + index;
         fieldToId[field] = col.id;
+        var sorted = col.id === sortColumn;
         var definition = {
-          title: col.title + (col.id === sortColumn ? arrow(sortDir) : ""),
+          title: col.title,
+          // Never a plain string; see titleNode.
+          titleFormatter: function () {
+            return titleNode(col.title, sorted ? sortDir : null);
+          },
           field: field,
           width: col.width,
           frozen: col.frozen === true,
           // Kotlin owns sorting. Tabulator must never reorder a row.
           headerSort: false,
           resizable: true,
-          cssClass: col.id === sortColumn ? "is-sorted" : "",
+          cssClass: sorted ? "is-sorted" : "",
           headerClick: function () {
             // A header tap reports the intent and nothing else; Kotlin decides.
             if (col.sortable && !col.error) {
@@ -255,7 +284,9 @@
         }).filter(function (id) {
           return id !== undefined;
         });
-        Android.reorder(ids.join(","));
+        // JSON rather than CSV: the bridge can only carry a String, and a column id is
+        // not guaranteed to be comma-free once Task 9 lets the user name one.
+        Android.reorder(JSON.stringify(ids));
       });
     }
 

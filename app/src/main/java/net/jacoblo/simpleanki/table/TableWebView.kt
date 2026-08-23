@@ -29,7 +29,6 @@ import androidx.webkit.WebViewAssetLoader
 import net.jacoblo.simpleanki.data.SortDir
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.Locale
 
 private const val LOG_TAG = "SimpleAnkiTable"
 
