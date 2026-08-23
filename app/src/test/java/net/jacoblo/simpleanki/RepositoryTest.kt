@@ -454,9 +454,10 @@ class RepositoryTest {
 			ColumnSpec(
 				"best10", "Best", 70, visible = false, frozen = false, format = CellFormat.TWO_DP,
 				computed = ComputedSpec(Aggregate.MIN, "Seconds", Partition.Group("Question"), 10),
-				formula = "=MIN(Seconds, group:Question, last:10)",
-				// A struct that parses leaves this field alone; only a parse writes it.
-				formulaError = "kept as stored beside a struct that needed no parse"
+				formula = "=MIN(Seconds, group:Question, last:10)"
+				// No formulaError, and it cannot be given one: a struct means no parse
+				// failed, so a load clears the field. See FormulaTest for that rule; the
+				// "pending" column below is what exercises a message surviving a round trip.
 			),
 			// The formula on these two is the mirror the writer regenerates, spelled here
 			// exactly as it lands on disk. A column carrying a struct and no formula is not

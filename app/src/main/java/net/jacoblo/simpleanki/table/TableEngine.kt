@@ -63,6 +63,16 @@ object TableEngine {
 		BaseColumn(ID_TIMED_OUT, ColumnType.BOOL,   CellFormat.TEXT,   sortable = true)
 	)
 
+	/**
+	 * The eight base column ids, and the only ids a formula may name.
+	 *
+	 * Derived here rather than rebuilt at each call site so that the parser's gate and
+	 * anything asserting on it cannot drift apart. Widening this set is what would let a
+	 * computed column reference another computed column, which MemberSelectors cannot
+	 * read - it takes a group key straight off a HistoryEntry.
+	 */
+	val BASE_COLUMN_IDS: Set<String> = BASE_COLUMNS.map { it.id }.toSet()
+
 	private val BASE_BY_ID: Map<String, BaseColumn> = BASE_COLUMNS.associateBy { it.id }
 
 	private val WHEN_FORMATTER = DateTimeFormatter.ofPattern("MM-dd HH:mm:ss", Locale.ROOT)

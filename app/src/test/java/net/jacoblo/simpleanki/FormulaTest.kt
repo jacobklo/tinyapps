@@ -40,8 +40,8 @@ class FormulaTest {
 
 	private val tableSettings = TableSettings()
 
-	/** What ViewsRepository passes: the eight base columns and nothing else. */
-	private val known: Set<String> = TableEngine.BASE_COLUMNS.map { it.id }.toSet()
+	/** The very set ViewsRepository hands the parser, not a copy built the same way. */
+	private val known: Set<String> = TableEngine.BASE_COLUMN_IDS
 
 	// -- round trip -------------------------------------------------------------------------
 
@@ -236,9 +236,11 @@ class FormulaTest {
 
 	@Test
 	fun theKnownColumnSetViewsRepositoryUsesHoldsTheEightBaseIdsOnly() {
+		// Asserted on the shared constant itself. A copy derived the same way could not fail
+		// when the repository's gate widened, which is the change this is here to catch.
 		assertEquals(
 			setOf("#", "When", "Date", "Time", "Question", "Answer", "Seconds", "TimedOut"),
-			known
+			TableEngine.BASE_COLUMN_IDS
 		)
 	}
 
@@ -272,19 +274,89 @@ class FormulaTest {
 	@Test
 	fun structuredFieldsWinOverTheFormulaAndTheFormulaIsRewrittenToMatch() {
 		val paths = AnkiPaths.at(tempFolder.root)
-		// A hand-edit that changed the mirror and left the aggregate keys alone. The struct
-		// is canonical, so the edit is discarded rather than obeyed.
-		paths.views.writeText(
-			"{\"activeViewId\":\"v\",\"views\":[{\"id\":\"v\",\"columns\":[" +
-				"{\"id\":\"best\",\"aggregate\":\"MIN\",\"source\":\"Seconds\",\"limit\":10," +
+		// A hand-edit that changed the mirror and left the aggregate keys alone. The rival
+		// formula PARSES CLEANLY on purpose: one that failed would be discarded by the
+		// parser whichever representation won, so the test would pass either way.
+		writeOneColumn(
+			paths,
+			"\"id\":\"best\",\"aggregate\":\"MIN\",\"source\":\"Seconds\",\"limit\":10," +
 				"\"partition\":{\"mode\":\"group\",\"by\":\"Question\"}," +
-				"\"formula\":\"=MAX(Answer, bucket:3)\"}]}]}"
+				"\"formula\":\"=MAX(Seconds, bucket:3)\""
 		)
 
 		val column = ViewsRepository(paths).load(tableSettings).views.single().columns.single()
 
 		assertEquals(spec(Aggregate.MIN, "Seconds", Partition.Group("Question"), 10), column.computed)
 		assertEquals("=MIN(Seconds, group:Question, last:10)", column.formula)
+	}
+
+	@Test
+	fun aStructClearsAStaleFormulaErrorRatherThanCarryingItForever() {
+		val paths = AnkiPaths.at(tempFolder.root)
+		// How a user actually escapes a bad formula: the failure is already on disk and they
+		// add the aggregate keys instead of correcting the string. TableEngine keys "#ERR"
+		// and unsortability off formulaError alone, so a message left behind here would blank
+		// a working aggregate for good.
+		writeOneColumn(
+			paths,
+			"\"id\":\"best\",\"aggregate\":\"MIN\",\"source\":\"Seconds\",\"limit\":10," +
+				"\"partition\":{\"mode\":\"group\",\"by\":\"Question\"}," +
+				"\"formula\":\"=MIN(Secnods, group:Question)\"," +
+				"\"formulaError\":\"unknown column \\\"Secnods\\\"\""
+		)
+
+		val column = ViewsRepository(paths).load(tableSettings).views.single().columns.single()
+
+		assertNull(column.formulaError)
+		assertEquals(spec(Aggregate.MIN, "Seconds", Partition.Group("Question"), 10), column.computed)
+		assertEquals("=MIN(Seconds, group:Question, last:10)", column.formula)
+	}
+
+	@Test
+	fun aSuccessfulParseClearsAStaleFormulaError() {
+		val paths = AnkiPaths.at(tempFolder.root)
+		// The other half of the same rule: the user corrected the string instead. Nothing
+		// but a parse writes this field, so a parse that succeeds must also be able to
+		// unwrite it.
+		writeOneColumn(
+			paths,
+			"\"id\":\"acc\",\"formula\":\"=ACCURACY(Seconds, rolling:100)\"," +
+				"\"formulaError\":\"rolling size must be a positive integer\""
+		)
+
+		val column = ViewsRepository(paths).load(tableSettings).views.single().columns.single()
+
+		assertNull(column.formulaError)
+		assertEquals(spec(Aggregate.ACCURACY, "Seconds", Partition.Rolling(100), 0), column.computed)
+	}
+
+	@Test
+	fun theRepositoryGateAcceptsBaseColumnsOnly() {
+		val paths = AnkiPaths.at(tempFolder.root)
+		// The invariant asserted through the repository rather than through a set literal:
+		// widening the ids it hands the parser is what would let one computed column read
+		// another, and only a test that goes through load() can see that happen.
+		writeOneColumn(paths, "\"id\":\"x\",\"formula\":\"=AVG(best10, group:Question)\"")
+
+		val column = ViewsRepository(paths).load(tableSettings).views.single().columns.single()
+
+		assertEquals("unknown column \"best10\"", column.formulaError)
+		assertNull(column.computed)
+	}
+
+	@Test
+	fun aStrayFormulaOnABaseColumnIsInert() {
+		val paths = AnkiPaths.at(tempFolder.root)
+		// Seconds reads its values off the record, so a formula key on it can only be
+		// leftover text. Parsing it would earn the column a formulaError and blank a real
+		// data column to "#ERR" - a regression this build would otherwise have introduced.
+		writeOneColumn(paths, "\"id\":\"Seconds\",\"formula\":\"=AVG(Question)\"")
+
+		val column = ViewsRepository(paths).load(tableSettings).views.single().columns.single()
+
+		assertNull(column.formulaError)
+		assertNull(column.computed)
+		assertEquals("=AVG(Question)", column.formula)
 	}
 
 	@Test
@@ -396,6 +468,13 @@ class FormulaTest {
 	}
 
 	// -- helpers ------------------------------------------------------------------------------
+
+	/** Writes a views.json holding one view whose single column is [keys] verbatim. */
+	private fun writeOneColumn(paths: AnkiPaths, keys: String) {
+		paths.views.writeText(
+			"{\"activeViewId\":\"v\",\"views\":[{\"id\":\"v\",\"columns\":[{$keys}]}]}"
+		)
+	}
 
 	/** Every partition shape, with the limits that are meaningful for each. */
 	private val partitionsUnderTest: List<Pair<Partition, Int>> = listOf(

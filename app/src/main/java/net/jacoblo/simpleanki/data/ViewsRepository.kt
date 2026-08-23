@@ -167,12 +167,21 @@ class ViewsRepository(private val paths: AnkiPaths) {
 			// out of step with the aggregate keys beside it is therefore discarded rather
 			// than obeyed, which is what stops the two representations drifting apart.
 			formula = FormulaWriter.write(structured)
-		} else if (stored != null) {
+			// A struct means no parse failed, so any stored message is stale. Leaving it
+			// would be permanent: TableEngine keys "#ERR" and unsortability off this field
+			// alone, so a working aggregate would render as a dead column with no way back
+			// short of hand-editing the very file this design exists to keep out of.
+			error = null
+		} else if (stored != null && TableEngine.baseColumn(id) == null) {
 			// Formula and no aggregate: the shape a hand-written column arrives in, and
 			// the only case where the string is the authority. A failure is reported in
 			// the column rather than thrown, so one typo costs one "#ERR" column; the text
 			// itself is kept verbatim so the next autosave cannot swallow it.
-			when (val parsed = FormulaParser.parse(stored, BASE_COLUMN_IDS)) {
+			//
+			// A BASE column is skipped outright. A stray formula key on one was inert
+			// before this parser existed, and parsing it could only blank a real data
+			// column to "#ERR" - its values come from the record, never from a formula.
+			when (val parsed = FormulaParser.parse(stored, TableEngine.BASE_COLUMN_IDS)) {
 				is ParseResult.Ok -> {
 					computed = parsed.spec
 					formula = FormulaWriter.write(parsed.spec)
@@ -403,15 +412,6 @@ class ViewsRepository(private val paths: AnkiPaths) {
 			SortDir.ASC -> "asc"
 			SortDir.DESC -> "desc"
 		}
-
-		/**
-		 * The only column ids a formula may name, source or group key alike.
-		 *
-		 * Base columns and nothing else, which is what stops a computed column referencing
-		 * another one: MemberSelectors reads a group key straight off a HistoryEntry, so a
-		 * group on a computed column would key off a column that does not exist there.
-		 */
-		private val BASE_COLUMN_IDS: Set<String> = TableEngine.BASE_COLUMNS.map { it.id }.toSet()
 
 		/** Width for a hand-written column that gives none. */
 		private const val DEFAULT_WIDTH = 120
