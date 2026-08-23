@@ -154,10 +154,8 @@ fun AnkiScreen(container: AppContainer) {
         lifetimeReviews = container.settings.counters.lifetimeReviews,
         views = viewsFile.views,
         current = currentScreen,
-        metronomeEnabled = container.settings.metronome.enabled,
         onOpenColumns = if (currentScreen is Screen.Table) ({ sheetOpen = true }) else null,
-        onSelect = { currentScreen = it; sheetOpen = false },
-        onMetronomeChange = { container.setMetronomeEnabled(it) }
+        onSelect = { currentScreen = it; sheetOpen = false }
     ) { innerPadding ->
         Box(
             modifier = Modifier
@@ -177,6 +175,7 @@ fun AnkiScreen(container: AppContainer) {
                     onSelect = { currentScreen = Screen.Table(it) },
                     onDismissSheet = { sheetOpen = false }
                 )
+                Screen.Settings -> SettingsScreen(container.settings, container::updateSettings)
                 Screen.FlipCards -> GameView(
                     cards = cards,
                     currentCardIndex = currentCardIndex,

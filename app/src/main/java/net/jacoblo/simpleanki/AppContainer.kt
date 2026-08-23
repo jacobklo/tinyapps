@@ -57,24 +57,26 @@ class AppContainer(
 	var settings by mutableStateOf(Settings())
 
 	/**
-	 * Turns the metronome on or off, in memory first and then on disk.
+	 * Applies [updated], in memory first and then on disk.
 	 *
-	 * In memory first because the user asked for it now: a failed write leaves the
-	 * metronome doing what the switch says until the next resume, which reloads [settings]
-	 * from disk and so quietly puts the stored value back. Before that the next answer may
-	 * bank the flag anyway, alongside the review count, since recordAnswer copies the
-	 * settings it was handed. Reverting the switch instead would trade a preference that
-	 * works for one that is merely truthful.
+	 * In memory first because the user asked for it now: a failed write leaves the app
+	 * doing what the screen says until the next resume, which reloads [settings] from disk
+	 * and so quietly puts the stored value back. Before that the next answer may bank the
+	 * change anyway, alongside the review count, since recordAnswer copies the settings it
+	 * was handed. Reverting the screen instead would trade a preference that works for one
+	 * that is merely truthful, and would undo a half-typed field under the user's hands.
+	 *
+	 * The settings screen calls this on every accepted keystroke, so this is the whole of
+	 * "persists immediately" - there is no save button and nothing is pending.
 	 *
 	 * Never throws; a write that fails is reported and the run carries on.
 	 */
-	fun setMetronomeEnabled(enabled: Boolean) {
-		val updated = settings.copy(metronome = settings.metronome.copy(enabled = enabled))
+	fun updateSettings(updated: Settings) {
 		settings = updated
 		try {
 			settingsRepository.save(updated)
 		} catch (e: IOException) {
-			Toast.makeText(context, "Could not save the metronome setting: ${e.message}", Toast.LENGTH_SHORT).show()
+			Toast.makeText(context, "Could not save settings.json: ${e.message}", Toast.LENGTH_SHORT).show()
 		}
 	}
 

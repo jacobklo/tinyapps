@@ -35,8 +35,14 @@ fun SortDir.toWireToken(): String = when (this) {
  * Rows are arrays aligned with [RenderedTable.columns] rather than objects, which at five
  * thousand rows saves a few hundred kilobytes of repeated keys and sidesteps any question
  * about key order.
+ *
+ * @param highlightColor the row tint, already resolved for [darkTheme]. Passed in rather
+ *   than picked here from a TableSettings, because the page needs ONE colour and the
+ *   caller is the only party that knows which theme is showing. The page sets it as a CSS
+ *   value, so it has to be a colour a browser will accept - see
+ *   [net.jacoblo.simpleanki.data.highlightColor], which is what guarantees that.
  */
-fun RenderedTable.toPayloadJson(darkTheme: Boolean): String {
+fun RenderedTable.toPayloadJson(darkTheme: Boolean, highlightColor: String): String {
 	val columnsJson = JSONArray()
 	for (column in columns) {
 		columnsJson.put(
@@ -64,6 +70,7 @@ fun RenderedTable.toPayloadJson(darkTheme: Boolean): String {
 				.put("dir", sort.dir.toWireToken())
 		)
 		.put("highlightEvery", highlightEvery)
+		.put("highlightColor", highlightColor)
 		.put("dark", darkTheme)
 		.put("columns", columnsJson)
 		.put("rows", rowsJson)

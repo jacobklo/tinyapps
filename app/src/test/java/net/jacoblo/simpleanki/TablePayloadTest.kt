@@ -47,7 +47,7 @@ class TablePayloadTest {
 	@Test
 	fun serializesEveryTopLevelField() {
 		val payload = JSONObject(
-			table(listOf(column("When")), listOf(listOf("08-22 10:05"))).toPayloadJson(false)
+			table(listOf(column("When")), listOf(listOf("08-22 10:05"))).toPayloadJson(false, HIGHLIGHT)
 		)
 
 		assertEquals("history", payload.getString("viewId"))
@@ -59,7 +59,7 @@ class TablePayloadTest {
 
 	@Test
 	fun darkFlagFollowsTheArgument() {
-		val payload = JSONObject(table(listOf(column("When")), emptyList()).toPayloadJson(true))
+		val payload = JSONObject(table(listOf(column("When")), emptyList()).toPayloadJson(true, HIGHLIGHT))
 
 		assertTrue(payload.getBoolean("dark"))
 	}
@@ -68,7 +68,7 @@ class TablePayloadTest {
 	fun ascendingSortSerializesLowercase() {
 		val payload = JSONObject(
 			table(listOf(column("Question")), emptyList(), SortSpec("Question", SortDir.ASC))
-				.toPayloadJson(false)
+				.toPayloadJson(false, HIGHLIGHT)
 		)
 
 		assertEquals("asc", payload.getJSONObject("sort").getString("dir"))
@@ -80,7 +80,7 @@ class TablePayloadTest {
 			table(
 				listOf(column("Question", title = "Card", width = 220, frozen = true, sortable = false)),
 				emptyList()
-			).toPayloadJson(false)
+			).toPayloadJson(false, HIGHLIGHT)
 		)
 		val column = payload.getJSONArray("columns").getJSONObject(0)
 
@@ -107,7 +107,7 @@ class TablePayloadTest {
 					column("Seconds", frozen = false, sortable = true)
 				),
 				emptyList()
-			).toPayloadJson(false)
+			).toPayloadJson(false, HIGHLIGHT)
 		)
 		val first = payload.getJSONArray("columns").getJSONObject(0)
 		val second = payload.getJSONArray("columns").getJSONObject(1)
@@ -128,7 +128,7 @@ class TablePayloadTest {
 			table(
 				listOf(column("#"), column("When"), column("Question"), column("Seconds")),
 				emptyList()
-			).toPayloadJson(false)
+			).toPayloadJson(false, HIGHLIGHT)
 		)
 		val columns = payload.getJSONArray("columns")
 
@@ -143,7 +143,7 @@ class TablePayloadTest {
 	@Test
 	fun columnErrorSurvivesAsAString() {
 		val payload = JSONObject(
-			table(listOf(column("Ratio", error = "unknown token")), emptyList()).toPayloadJson(false)
+			table(listOf(column("Ratio", error = "unknown token")), emptyList()).toPayloadJson(false, HIGHLIGHT)
 		)
 		val column = payload.getJSONArray("columns").getJSONObject(0)
 
@@ -158,7 +158,7 @@ class TablePayloadTest {
 			table(
 				listOf(column("#"), column("When"), column("Seconds")),
 				listOf(listOf("1", "08-22 10:05", "2.40"), listOf("2", "08-22 10:04", "3.10"))
-			).toPayloadJson(false)
+			).toPayloadJson(false, HIGHLIGHT)
 		)
 		val rows = payload.getJSONArray("rows")
 
@@ -174,7 +174,7 @@ class TablePayloadTest {
 	@Test
 	fun noRowsStillCarriesTheColumns() {
 		val payload = JSONObject(
-			table(listOf(column("#"), column("Question")), emptyList()).toPayloadJson(false)
+			table(listOf(column("#"), column("Question")), emptyList()).toPayloadJson(false, HIGHLIGHT)
 		)
 
 		assertEquals(2, payload.getJSONArray("columns").length())
@@ -185,7 +185,7 @@ class TablePayloadTest {
 	@Test
 	fun cellsWithQuotesAndNewlinesRoundTrip() {
 		val cell = "say \"hi\"\n\\ end"
-		val payload = JSONObject(table(listOf(column("Answer")), listOf(listOf(cell))).toPayloadJson(false))
+		val payload = JSONObject(table(listOf(column("Answer")), listOf(listOf(cell))).toPayloadJson(false, HIGHLIGHT))
 
 		assertEquals(cell, payload.getJSONArray("rows").getJSONArray(0).getString(0))
 	}
@@ -193,9 +193,34 @@ class TablePayloadTest {
 	@Test
 	fun highlightEveryZeroSerializesAsZero() {
 		val payload = JSONObject(
-			table(listOf(column("#")), emptyList(), highlightEvery = 0).toPayloadJson(false)
+			table(listOf(column("#")), emptyList(), highlightEvery = 0).toPayloadJson(false, HIGHLIGHT)
 		)
 
 		assertEquals(0, payload.getInt("highlightEvery"))
+	}
+
+	/**
+	 * The tint is carried verbatim and is NOT derived from the dark flag here.
+	 *
+	 * Both halves matter. The page sets `--highlight` from this key, so a payload that
+	 * dropped it would band every row in the stylesheet's default and quietly ignore the
+	 * user's setting; and resolving the theme is the caller's job, so a "#3B3546" asked
+	 * for on a light payload has to arrive as "#3B3546".
+	 */
+	@Test
+	fun theHighlightColourIsCarriedExactlyAsGiven() {
+		val light = JSONObject(
+			table(listOf(column("#")), emptyList()).toPayloadJson(false, "#DAD5E4")
+		)
+		assertEquals("#DAD5E4", light.getString("highlightColor"))
+
+		val crossed = JSONObject(
+			table(listOf(column("#")), emptyList()).toPayloadJson(false, "#3B3546")
+		)
+		assertEquals("#3B3546", crossed.getString("highlightColor"))
+	}
+
+	private companion object {
+		const val HIGHLIGHT = "#DAD5E4"
 	}
 }

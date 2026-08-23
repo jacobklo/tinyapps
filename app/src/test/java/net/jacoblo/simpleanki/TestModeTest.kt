@@ -287,7 +287,7 @@ class TestModeTest {
 			TestMode.writeDump(paths, table)
 
 			val dumped = JSONObject(paths.dump.readText()).getJSONObject("sort").getString("dir")
-			val sent = JSONObject(table.toPayloadJson(darkTheme = false))
+			val sent = JSONObject(table.toPayloadJson(darkTheme = false, highlightColor = "#DAD5E4"))
 				.getJSONObject("sort").getString("dir")
 			assertEquals("dump and payload disagree on $dir", sent, dumped)
 		}

@@ -68,10 +68,24 @@ data class MetronomeSettings(
 	val soundPath: String? = null
 )
 
+/**
+ * The two row tints are stored as "#RRGGBB" text rather than as packed ints because
+ * settings.json exists to be hand-edited and a hex string is what a hand-edit types.
+ *
+ * No alpha channel, deliberately. The tint sits UNDER the row's own text, so a
+ * translucent value would blend against whatever is behind it and make the text contrast
+ * depend on the theme's surface rather than on the colour the user chose.
+ *
+ * A malformed value here is not an error - the file is hand-editable, so it must be
+ * possible to store one and see it in the settings screen. [highlightColor] is what
+ * refuses to hand it to the page.
+ */
 data class TableSettings(
 	val defaultLimit: Int = 10,
 	val highlightEvery: Int = 5,
-	val defaultWindowSize: Int = 100
+	val defaultWindowSize: Int = 100,
+	val highlightColorLight: String = DEFAULT_HIGHLIGHT_LIGHT,
+	val highlightColorDark: String = DEFAULT_HIGHLIGHT_DARK
 )
 
 data class HistorySettings(val maxEntries: Int = 5000)

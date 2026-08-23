@@ -15,6 +15,11 @@
       Tabulator ships its own greys. Every colour it paints is re-pointed at one of these
       custom properties so the whole grid follows the `dark` flag in the payload, roughly
       matching Material3 surface/onSurface/outline.
+
+      `--highlight` is the exception: it is a user setting, so render() overwrites it from
+      the payload's `highlightColor` as an inline property on the same element, which
+      beats both rules below. The two values here are the same defaults Kotlin holds, kept
+      only so a payload without the key still bands rather than silently losing the tint.
     */
     :root {
       --surface: #fffbfe;
@@ -22,7 +27,7 @@
       --on-surface: #1c1b1f;
       --on-surface-dim: #49454f;
       --outline: #cac4d0;
-      --highlight: rgba(103, 80, 164, 0.10);
+      --highlight: #DAD5E4;
       --error: #b3261e;
       --sorted: rgba(103, 80, 164, 0.16);
     }
@@ -33,7 +38,7 @@
       --on-surface: #e6e1e5;
       --on-surface-dim: #cac4d0;
       --outline: #49454f;
-      --highlight: rgba(208, 188, 255, 0.10);
+      --highlight: #3B3546;
       --error: #f2b8b5;
       --sorted: rgba(208, 188, 255, 0.16);
     }
@@ -251,6 +256,20 @@
 
     function render(data) {
       document.documentElement.setAttribute("data-theme", data.dark ? "dark" : "light");
+
+      /*
+       * The user's row tint, already resolved for the theme Kotlin side. Set inline on the
+       * same element the :root rules target, so it wins over both of them.
+       *
+       * Only when it is a non-empty string. An absent or empty value would clear the
+       * property back to the stylesheet default, which is a better outcome than banding
+       * with no tint at all. Kotlin guarantees the format, so nothing is validated here -
+       * a value a browser rejects would leave the previous one standing, and that is
+       * still a visible band.
+       */
+      if (typeof data.highlightColor === "string" && data.highlightColor) {
+        document.documentElement.style.setProperty("--highlight", data.highlightColor);
+      }
 
       var highlightEvery = data.highlightEvery || 0;
       var rows = buildRows(data);

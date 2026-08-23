@@ -107,7 +107,7 @@ fun TableScreen(
 		)
 	}
 
-	TableWebView(table, bridge, modifier.fillMaxSize())
+	TableWebView(table, bridge, tableSettings, modifier.fillMaxSize())
 
 	if (sheetOpen) {
 		ColumnSheet(

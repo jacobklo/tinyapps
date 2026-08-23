@@ -40,6 +40,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.WebViewAssetLoader
+import net.jacoblo.simpleanki.data.TableSettings
+import net.jacoblo.simpleanki.data.highlightColor
 
 private const val LOG_TAG = "SimpleAnkiTable"
 
@@ -83,10 +85,22 @@ private class TableWebViewState {
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun TableWebView(table: RenderedTable, bridge: TableBridge, modifier: Modifier = Modifier) {
+fun TableWebView(
+	table: RenderedTable,
+	bridge: TableBridge,
+	tableSettings: TableSettings,
+	modifier: Modifier = Modifier
+) {
 	val darkTheme = isSystemInDarkTheme()
 	val surface = MaterialTheme.colorScheme.surface.toArgb()
-	val payload = remember(table, darkTheme) { table.toPayloadJson(darkTheme) }
+	// Resolved here rather than in the payload builder, because this is where the theme
+	// in force is known. It joins the remember key: a colour changed in the settings
+	// screen has to rebuild the payload, or the page keeps banding in the old tint until
+	// something else about the table happens to change.
+	val highlightColor = tableSettings.highlightColor(darkTheme)
+	val payload = remember(table, darkTheme, highlightColor) {
+		table.toPayloadJson(darkTheme, highlightColor)
+	}
 	// Two counters, because they answer different questions and must not share one.
 	// [instance] identifies the live WebView and only ever increases, so keying on it
 	// replaces a dead one wholesale; [deaths] counts renderer deaths since the last

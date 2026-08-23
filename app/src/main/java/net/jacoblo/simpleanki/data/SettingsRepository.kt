@@ -97,6 +97,8 @@ class SettingsRepository(private val paths: AnkiPaths) {
 			put(KEY_DEFAULT_LIMIT, settings.table.defaultLimit)
 			put(KEY_HIGHLIGHT_EVERY, settings.table.highlightEvery)
 			put(KEY_DEFAULT_WINDOW_SIZE, settings.table.defaultWindowSize)
+			put(KEY_HIGHLIGHT_COLOR_LIGHT, settings.table.highlightColorLight)
+			put(KEY_HIGHLIGHT_COLOR_DARK, settings.table.highlightColorDark)
 		}
 		child(root, KEY_HISTORY).put(KEY_MAX_ENTRIES, settings.history.maxEntries)
 		child(root, KEY_COUNTERS).put(KEY_LIFETIME_REVIEWS, settings.counters.lifetimeReviews)
@@ -132,6 +134,17 @@ class SettingsRepository(private val paths: AnkiPaths) {
 				defaultWindowSize = table.optInt(
 					KEY_DEFAULT_WINDOW_SIZE,
 					fallback.table.defaultWindowSize
+				),
+				// Read verbatim, malformed values included. What is stored has to be
+				// visible in the settings screen for a hand-edited typo to be fixable
+				// there; TableSettings.highlightColor is what keeps it off the page.
+				highlightColorLight = table.optString(
+					KEY_HIGHLIGHT_COLOR_LIGHT,
+					fallback.table.highlightColorLight
+				),
+				highlightColorDark = table.optString(
+					KEY_HIGHLIGHT_COLOR_DARK,
+					fallback.table.highlightColorDark
 				)
 			),
 			history = HistorySettings(
@@ -205,6 +218,8 @@ class SettingsRepository(private val paths: AnkiPaths) {
 		private const val KEY_DEFAULT_LIMIT = "defaultLimit"
 		private const val KEY_HIGHLIGHT_EVERY = "highlightEvery"
 		private const val KEY_DEFAULT_WINDOW_SIZE = "defaultWindowSize"
+		private const val KEY_HIGHLIGHT_COLOR_LIGHT = "highlightColorLight"
+		private const val KEY_HIGHLIGHT_COLOR_DARK = "highlightColorDark"
 		private const val KEY_HISTORY = "history"
 		private const val KEY_MAX_ENTRIES = "maxEntries"
 		private const val KEY_COUNTERS = "counters"
