@@ -1184,6 +1184,8 @@ Sheet contents, top to bottom:
 3. Any `warnings` from the last render, one line each, which is where a `#ERR` column's explanation appears
 4. "Add computed column", opening the builder described below
 
+**Security note inherited from Task 5.** This task is where a user first names a column. Tabulator injects column titles as raw HTML via `innerHTML`, so Task 5 renders titles through a Node-returning `titleFormatter` rather than a string. Do NOT undo that, and do not introduce any other path that puts user text into markup - the page holds the `Android` bridge, so injected script reaches native code. Cell values are separately safe via Tabulator's default `plaintext` formatter, which sanitizes.
+
 Requirement 2.1, "add and remove columns", splits along the base/computed line and the sheet must reflect that. A base column is never truly added or removed - all eight always exist in the view and the checkbox toggles `visible`. A computed column is genuinely created by the builder and genuinely deleted by `onRemoveColumn`, which drops it from `view.columns` entirely. Only computed columns show a delete affordance; base columns show only their checkbox.
 5. "Save as new view", "Delete view", "Reset to defaults"
 
@@ -1200,6 +1202,7 @@ View lifecycle semantics:
 - [ ] The sheet opens from a top-bar action while a table view is showing
 - [ ] Toggling visibility re-renders the table and autosaves immediately
 - [ ] Resize and reorder arriving from the bridge also autosave immediately
+- [ ] Autosaving a resize or reorder must not snap the table back to row 1. Task 5's `reload()` destroys and rebuilds the grid, which resets scroll position - right for a sort, wrong for a column drag. Either preserve and restore scroll across a reload, or take a `setData`-only path when the columns are unchanged
 - [ ] Computed columns display their generated formula string beneath the title
 - [ ] Render warnings appear in the sheet, one line each
 - [ ] "Save as new view" produces a unique `id` and switches to the new view
