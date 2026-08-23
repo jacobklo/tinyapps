@@ -6,6 +6,8 @@ import net.jacoblo.simpleanki.data.CellFormat
 import net.jacoblo.simpleanki.data.ColumnSpec
 import net.jacoblo.simpleanki.data.ComputedSpec
 import net.jacoblo.simpleanki.data.DefaultViews
+import net.jacoblo.simpleanki.data.HistoryEntry
+import net.jacoblo.simpleanki.data.HistoryRepository
 import net.jacoblo.simpleanki.data.JsonStore
 import net.jacoblo.simpleanki.data.Partition
 import net.jacoblo.simpleanki.data.ReadResult
@@ -154,6 +156,9 @@ class RepositoryTest {
 			ViewsRepository(paths).save(ViewsRepository.defaults(tableSettings))
 			fail("save must refuse a file it cannot read")
 		} catch (e: IOException) {
+			// The refusal specifically, not just any write failure: renameTo over a
+			// directory throws too, so the file name alone would pass either way.
+			assertTrue(e.message, e.message!!.startsWith("refusing to overwrite"))
 			assertTrue(e.message!!.contains("views.json"))
 		}
 	}
@@ -260,6 +265,131 @@ class RepositoryTest {
 		assertNotEquals(mangled, reset.views[1])
 	}
 
+	@Test
+	fun duplicateIdsAreTreatedAsCorruptRatherThanSilentlyAliased() {
+		val paths = AnkiPaths.at(tempFolder.root)
+		// Two columns answering to one id. A rewrite matches by id, so without this rule
+		// one save turns both into copies of the second - title, width and unknown keys.
+		val duplicate = "{\"activeViewId\":\"v\",\"views\":[{\"id\":\"v\",\"columns\":[" +
+			"{\"id\":\"c\",\"title\":\"A\",\"width\":10,\"x\":1}," +
+			"{\"id\":\"c\",\"title\":\"B\",\"width\":20,\"y\":2}]}]}"
+		paths.views.writeText(duplicate)
+
+		assertEquals(DefaultViews.all(tableSettings), ViewsRepository(paths).load(tableSettings).views)
+		assertEquals(duplicate, File(paths.views.path + ".corrupt").readText())
+	}
+
+	@Test
+	fun duplicateViewIdsAreTreatedAsCorruptToo() {
+		val paths = AnkiPaths.at(tempFolder.root)
+		val duplicate = "{\"activeViewId\":\"v\",\"views\":[" +
+			"{\"id\":\"v\",\"name\":\"First\",\"columns\":[{\"id\":\"c\"}]}," +
+			"{\"id\":\"v\",\"name\":\"Second\",\"columns\":[{\"id\":\"c\"}]}]}"
+		paths.views.writeText(duplicate)
+
+		assertEquals(DefaultViews.all(tableSettings), ViewsRepository(paths).load(tableSettings).views)
+		assertEquals(duplicate, File(paths.views.path + ".corrupt").readText())
+	}
+
+	@Test
+	fun aDuplicateIdBuiltInMemoryStillWritesTwoDistinctColumns() {
+		val paths = AnkiPaths.at(tempFolder.root)
+		// A stored column for the merge to find, so the save below has something it could
+		// alias. Without one on disk both columns get a fresh object and the bug hides.
+		paths.views.writeText(
+			"{\"activeViewId\":\"v\",\"views\":[{\"id\":\"v\",\"columns\":[" +
+				"{\"id\":\"c\",\"title\":\"stored\",\"width\":99,\"future\":1}]}]}"
+		)
+		val twins = TableView(
+			"v", "V", true, null, 5, SortSpec("c", SortDir.ASC),
+			listOf(ColumnSpec("c", "A", 10), ColumnSpec("c", "B", 20))
+		)
+
+		// The file rejects duplicates, but nothing stops a caller holding a pair, and the
+		// merge must not hand one stored object to both.
+		ViewsRepository(paths).save(ViewsFile("v", listOf(twins)))
+
+		val columns = JSONObject(paths.views.readText())
+			.getJSONArray("views").getJSONObject(0).getJSONArray("columns")
+		assertEquals("A", columns.getJSONObject(0).getString("title"))
+		assertEquals(10, columns.getJSONObject(0).getInt("width"))
+		assertEquals("B", columns.getJSONObject(1).getString("title"))
+		assertEquals(20, columns.getJSONObject(1).getInt("width"))
+	}
+
+	@Test
+	fun anAggregateWithNoPartitionIsCorruptRatherThanQuietlyErased() {
+		val paths = AnkiPaths.at(tempFolder.root)
+		// Reading this back as a plain column would let the next autosave delete all four
+		// keys, so a typo in a hand-edited file would cost the user the text itself.
+		val partial = "{\"activeViewId\":\"v\",\"views\":[{\"id\":\"v\",\"columns\":[" +
+			"{\"id\":\"best\",\"aggregate\":\"MIN\",\"source\":\"Seconds\",\"limit\":10}]}]}"
+		paths.views.writeText(partial)
+
+		assertEquals(DefaultViews.all(tableSettings), ViewsRepository(paths).load(tableSettings).views)
+		assertEquals(partial, File(paths.views.path + ".corrupt").readText())
+	}
+
+	@Test
+	fun anUnknownPartitionModeIsCorruptToo() {
+		val paths = AnkiPaths.at(tempFolder.root)
+		val unknown = "{\"activeViewId\":\"v\",\"views\":[{\"id\":\"v\",\"columns\":[" +
+			"{\"id\":\"best\",\"aggregate\":\"MIN\",\"source\":\"Seconds\",\"limit\":10," +
+			"\"partition\":{\"mode\":\"typo\",\"by\":\"Question\"}}]}]}"
+		paths.views.writeText(unknown)
+
+		assertEquals(DefaultViews.all(tableSettings), ViewsRepository(paths).load(tableSettings).views)
+		assertEquals(unknown, File(paths.views.path + ".corrupt").readText())
+	}
+
+	// -- HistoryRepository ----------------------------------------------------------------
+
+	@Test
+	fun savingOverAnUnreadableHistoryFileIsRefused() {
+		val paths = AnkiPaths.at(tempFolder.root)
+		assertTrue(paths.history.mkdirs())
+
+		try {
+			// load() answers an unreadable file with an exception, the caller toasts and
+			// carries on with an empty list, and without this the next card flip would
+			// write that empty list over every stored record.
+			HistoryRepository(paths).save(listOf(HistoryEntry("q", "a", 1.0f, 1L, false)), 5000)
+			fail("save must refuse a file it cannot read")
+		} catch (e: IOException) {
+			// The refusal specifically, not just any write failure: renameTo over a
+			// directory throws too, so the file name alone would pass either way.
+			assertTrue(e.message, e.message!!.startsWith("refusing to overwrite"))
+			assertTrue(e.message!!.contains("history.json"))
+		}
+	}
+
+	@Test
+	fun anUnparseableHistoryFileIsQuarantinedBeforeItReadsAsEmpty() {
+		val paths = AnkiPaths.at(tempFolder.root)
+		val truncated = "[{\"question\":\"q\",\"answer\":\"a\",\"timeTaken\":1.0"
+		paths.history.writeText(truncated)
+
+		// The largest file the app owns and the only one that cannot be reconstructed from
+		// anywhere else, so it is the last one that should vanish under the next write.
+		assertEquals(emptyList<HistoryEntry>(), HistoryRepository(paths).load())
+		assertEquals(truncated, File(paths.history.path + ".corrupt").readText())
+	}
+
+	@Test
+	fun oneBadRecordStillDoesNotQuarantineTheWholeFile() {
+		val paths = AnkiPaths.at(tempFolder.root)
+		paths.history.writeText(
+			"[{\"question\":\"q1\",\"answer\":\"a\",\"timeTaken\":1.0,\"timestamp\":1,\"timedOut\":false}," +
+				"{\"nonsense\":true}," +
+				"{\"question\":\"q2\",\"answer\":\"a\",\"timeTaken\":2.0,\"timestamp\":2,\"timedOut\":false}]"
+		)
+
+		// Per-record tolerance is the older rule and outranks the new one: one bad row must
+		// not cost the user thousands of good ones.
+		assertEquals(listOf("q1", "q2"), HistoryRepository(paths).load().map { it.question })
+		assertFalse(File(paths.history.path + ".corrupt").exists())
+	}
+
 	// -- SettingsRepository ---------------------------------------------------------------
 
 	@Test
@@ -287,6 +417,9 @@ class RepositoryTest {
 			SettingsRepository(paths).save(Settings())
 			fail("save must refuse a file it cannot read")
 		} catch (e: IOException) {
+			// The refusal specifically, not just any write failure: renameTo over a
+			// directory throws too, so the file name alone would pass either way.
+			assertTrue(e.message, e.message!!.startsWith("refusing to overwrite"))
 			assertTrue(e.message!!.contains("settings.json"))
 		}
 	}
@@ -332,6 +465,9 @@ class RepositoryTest {
 				"avg", "Avg", 90, format = CellFormat.ONE_DP,
 				computed = ComputedSpec(Aggregate.AVG, "Seconds", Partition.Rolling(5), 3)
 			),
+			// A formula and no aggregate: the shape Task 12 produces before it can resolve
+			// one, and the reason the two are written and read independently.
+			ColumnSpec("pending", "Pending", 95, formula = "=AVG(Seconds, rolling:20)"),
 			ColumnSpec("n", "N", 100, format = CellFormat.INT),
 			ColumnSpec("when", "When", 110, format = CellFormat.TIME),
 			// No format, no aggregate, no formula: every optional key absent.

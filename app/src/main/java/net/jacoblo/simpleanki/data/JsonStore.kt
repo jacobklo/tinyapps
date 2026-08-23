@@ -77,4 +77,20 @@ class JsonStore(private val file: File) {
 	}
 
 	fun exists(): Boolean = file.exists()
+
+	/**
+	 * True when something is at this path that [read] would not be able to read.
+	 *
+	 * The cheap half of [read] - an access check rather than a load - for a caller that
+	 * only needs to know whether writing here would destroy something it cannot see. It
+	 * exists because history.json is checked on every card flip and parsing five thousand
+	 * records on the UI thread to answer "is it readable" is the exact cost [read] was
+	 * moved out of that path to avoid.
+	 *
+	 * Approximate in one direction on purpose: it catches the reproducible cases - the
+	 * file is gone-but-present as a directory, or the permission has not been granted -
+	 * and not a transient failure part way through a read. A caller that can afford the
+	 * full read should use [read], which cannot be fooled either way.
+	 */
+	fun isUnreadable(): Boolean = file.exists() && !(file.isFile && file.canRead())
 }

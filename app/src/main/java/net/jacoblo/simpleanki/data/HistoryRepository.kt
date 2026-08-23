@@ -17,14 +17,20 @@ class HistoryRepository(private val paths: AnkiPaths) {
 	 * Loads all records oldest-first, running the timeout migration on first
 	 * encounter with a pre-migration file.
 	 *
-	 * A missing or malformed file yields an empty list rather than an exception. When a
-	 * migration runs, the original text is copied to [AnkiPaths.historyBackup] before
-	 * history.json is replaced, overwriting any previous backup.
+	 * A missing file yields an empty list. A document that will not parse as an array at
+	 * all is QUARANTINED to "history.json.corrupt" before the empty list is returned:
+	 * this is the largest file the app owns and the only one whose contents cannot be
+	 * reconstructed from anywhere else, so it is the last one that should be allowed to
+	 * disappear quietly under the next write. Per-record tolerance is unchanged; see
+	 * [parse].
 	 *
 	 * A file that exists but cannot be read throws instead of yielding an empty list.
 	 * The caller holds the list this returns and writes it back on the next answer, so
 	 * "no history" and "could not read the history" have to be told apart here or a
 	 * transient read failure would replace thousands of records with one.
+	 *
+	 * When a migration runs, the original text is copied to [AnkiPaths.historyBackup]
+	 * before history.json is replaced, overwriting any previous backup.
 	 *
 	 * @throws IOException when history.json cannot be read, or when a migration cannot be
 	 *   written back.
@@ -36,11 +42,19 @@ class HistoryRepository(private val paths: AnkiPaths) {
 			is ReadResult.Unreadable -> throw IOException("could not read ${paths.history.path}")
 			is ReadResult.Present -> read.text
 		}
-		val migrated = migrate(raw) ?: return parse(raw)
+		// migrate returns null both for an already-migrated file and for one that does not
+		// parse, so the two are told apart below rather than here.
+		val migrated = migrate(raw)
+		if (migrated == null) {
+			return parse(raw) ?: run {
+				store.quarantine()
+				emptyList()
+			}
+		}
 		paths.ensureRoot()
 		JsonStore(paths.historyBackup).write(raw)
 		store.write(migrated)
-		return parse(migrated)
+		return parse(migrated) ?: emptyList()
 	}
 
 	/**
@@ -49,9 +63,21 @@ class HistoryRepository(private val paths: AnkiPaths) {
 	 * There is deliberately no append. One that re-read the file would parse up to five
 	 * thousand records twice on the UI thread on every card flip, and the caller already
 	 * holds the authoritative list; see [net.jacoblo.simpleanki.data.recordAnswer].
+	 *
+	 * @throws IOException when history.json cannot be written, or when something is at
+	 *   that path that cannot be read - see the refusal below.
 	 */
 	fun save(entries: List<HistoryEntry>, maxEntries: Int) {
 		paths.ensureRoot()
+		val store = JsonStore(paths.history)
+		// The same refusal SettingsRepository.save and ViewsRepository.save make, and the
+		// one that matters most: load() answers an unreadable file with an exception, the
+		// caller shows a toast and carries on with an empty list, and without this the
+		// next flip would write that empty list over every stored record. isUnreadable
+		// rather than read() because this runs on every card flip.
+		if (store.isUnreadable()) {
+			throw IOException("refusing to overwrite unreadable ${paths.history.path}")
+		}
 		val array = JSONArray()
 		entries.takeLast(maxEntries).forEach { entry ->
 			val obj = JSONObject()
@@ -62,17 +88,20 @@ class HistoryRepository(private val paths: AnkiPaths) {
 			obj.put(KEY_TIMED_OUT, entry.timedOut)
 			array.put(obj)
 		}
-		JsonStore(paths.history).write(array.toString())
+		store.write(array.toString())
 	}
 
 	/**
 	 * Parses the stored array, skipping any record that is not a well formed entry.
 	 *
 	 * Tolerance is per record, matching [migrate]: history.json is the only source of
-	 * every per-card figure, so one bad row must not discard thousands of good ones. A
-	 * document that is not a parseable array still yields an empty list.
+	 * every per-card figure, so one bad row must not discard thousands of good ones.
+	 *
+	 * Returns NULL when the document is not a parseable array at all, which is a different
+	 * thing from an array of unusable records and is what lets [load] quarantine the one
+	 * case and not the other.
 	 */
-	private fun parse(rawJson: String): List<HistoryEntry> = try {
+	private fun parse(rawJson: String): List<HistoryEntry>? = try {
 		val array = JSONArray(rawJson)
 		val list = ArrayList<HistoryEntry>(array.length())
 		for (i in 0 until array.length()) {
@@ -92,7 +121,7 @@ class HistoryRepository(private val paths: AnkiPaths) {
 		}
 		list
 	} catch (_: Exception) {
-		emptyList()
+		null
 	}
 
 	companion object {

@@ -83,7 +83,7 @@ class ViewsRepository(private val paths: AnkiPaths) {
 		root.put(KEY_SCHEMA_VERSION, SCHEMA_VERSION)
 		root.put(KEY_ACTIVE_VIEW_ID, file.activeViewId)
 		val views = JSONArray()
-		file.views.forEach { views.put(viewToJson(it, stored[it.id])) }
+		file.views.forEach { views.put(viewToJson(it, stored.remove(it.id))) }
 		root.put(KEY_VIEWS, views)
 		store.write(root.toString())
 	}
@@ -115,6 +115,11 @@ class ViewsRepository(private val paths: AnkiPaths) {
 		// An empty list is corrupt rather than a user who deleted every view: it leaves the
 		// drawer with no table entries at all, and so with no way back to a working state.
 		if (views.isEmpty()) return null
+		// Duplicate ids are corrupt too. Ids are how a view is selected, how a rewrite
+		// finds the object to merge onto, and how an autosave finds the view that changed;
+		// two views answering to one id makes all three ambiguous, and the arbitrary
+		// winner would quietly overwrite the loser on the next save.
+		if (views.distinctBy { it.id }.size != views.size) return null
 		return ViewsFile(activeIdOf(root.stringOrNull(KEY_ACTIVE_VIEW_ID), views), views)
 	}
 
@@ -125,6 +130,8 @@ class ViewsRepository(private val paths: AnkiPaths) {
 		for (i in 0 until array.length()) {
 			columns.add(columnFromJson(array.optJSONObject(i) ?: return null) ?: return null)
 		}
+		// As above, and for the same reason: a rewrite matches columns by id.
+		if (columns.distinctBy { it.id }.size != columns.size) return null
 		return TableView(
 			id = id,
 			name = o.stringOrNull(KEY_NAME) ?: id,
@@ -138,6 +145,13 @@ class ViewsRepository(private val paths: AnkiPaths) {
 
 	private fun columnFromJson(o: JSONObject): ColumnSpec? {
 		val id = o.stringOrNull(KEY_ID)?.takeIf { it.isNotEmpty() } ?: return null
+		val computed = computedFromJson(o)
+		// An aggregate this build cannot make sense of is structurally invalid rather than
+		// something to quietly drop. Dropping it would read the column back as a plain one
+		// and the next autosave would then DELETE the aggregate keys, so a single typo in
+		// a file that exists to be hand-edited would cost the user the text itself.
+		// Quarantining costs them one trip to views.json.corrupt, with the text intact.
+		if (computed == null && !o.isNull(KEY_AGGREGATE)) return null
 		return ColumnSpec(
 			id = id,
 			title = o.stringOrNull(KEY_TITLE) ?: id,
@@ -145,7 +159,7 @@ class ViewsRepository(private val paths: AnkiPaths) {
 			visible = o.optBoolean(KEY_VISIBLE, true),
 			frozen = o.optBoolean(KEY_FROZEN, false),
 			format = CellFormat.entries.firstOrNull { formatToken(it) == o.stringOrNull(KEY_FORMAT) },
-			computed = computedFromJson(o),
+			computed = computed,
 			// A plain string until Task 12 parses it. Round-tripping it verbatim is what
 			// lets a user hand-write a formula this build cannot yet read without losing it
 			// on the next autosave.
@@ -213,7 +227,7 @@ class ViewsRepository(private val paths: AnkiPaths) {
 			put(KEY_DIR, dirToken(view.defaultSort.dir))
 		}
 		val columns = JSONArray()
-		view.columns.forEach { columns.put(columnToJson(it, stored[it.id])) }
+		view.columns.forEach { columns.put(columnToJson(it, stored.remove(it.id))) }
 		o.put(KEY_COLUMNS, columns)
 		return o
 	}
@@ -250,13 +264,21 @@ class ViewsRepository(private val paths: AnkiPaths) {
 
 	// -- shared helpers -------------------------------------------------------------------
 
-	/** [stored] keyed by its elements' "id", so a rewrite can merge onto the right object. */
-	private fun indexById(stored: JSONArray?): Map<String, JSONObject> {
-		if (stored == null) return emptyMap()
-		val map = HashMap<String, JSONObject>(stored.length())
+	/**
+	 * [stored] keyed by its elements' "id", so a rewrite can merge onto the right object.
+	 *
+	 * The FIRST entry wins and callers REMOVE what they consume, so one stored object can
+	 * never be handed out twice. [fromJson] already rejects a file with duplicate ids, but
+	 * a caller can hold a duplicate it built in memory, and aliasing here would write that
+	 * one object into the array twice - collapsing two columns into two identical copies
+	 * of the second, unknown keys and all.
+	 */
+	private fun indexById(stored: JSONArray?): MutableMap<String, JSONObject> {
+		val map = HashMap<String, JSONObject>()
+		if (stored == null) return map
 		for (i in 0 until stored.length()) {
 			val o = stored.optJSONObject(i) ?: continue
-			map[o.stringOrNull(KEY_ID) ?: continue] = o
+			map.putIfAbsent(o.stringOrNull(KEY_ID) ?: continue, o)
 		}
 		return map
 	}

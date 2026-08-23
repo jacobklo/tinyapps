@@ -171,17 +171,22 @@ fun AnkiScreen(container: AppContainer) {
                         val card = cards[currentCardIndex]
                         // Task 14 sets timedOut when the metronome interval elapses.
                         val entry = HistoryEntry(card.question, card.answer, timeTaken, now, false)
+                        val cap = container.settings.history.maxEntries
                         // Both writes happen on every answer, so either can throw here.
                         try {
                             val recorded = recordAnswer(
                                 container.historyRepository, container.settingsRepository,
-                                container.settings, history, entry,
-                                container.settings.history.maxEntries
+                                container.settings, history, entry, cap
                             )
                             history = recorded.history
                             container.settings = recorded.settings
                         } catch (e: IOException) {
-                            Toast.makeText(context, "Could not save history.json or settings.json - check file permission or free space", Toast.LENGTH_SHORT).show()
+                            // Appended even on failure. The history write runs first and
+                            // may well have succeeded; a list left BEHIND disk gets written
+                            // back on the next flip and silently drops what it is missing,
+                            // while a list ahead of disk is caught up by the next write.
+                            history = (history + entry).takeLast(cap)
+                            Toast.makeText(context, "Could not save your progress: ${e.message}", Toast.LENGTH_SHORT).show()
                         }
                         isShowingAnswer = true
                     }

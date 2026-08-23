@@ -244,9 +244,10 @@
       return document.querySelector("#grid .tabulator-tableholder");
     }
 
-    // The sort the live grid was built with, so render() can tell a re-sort from a
-    // rebuild that only moved a column. Null until the first render.
-    var builtSort = null;
+    // What the live grid was built from - which view, sorted how - so render() can tell a
+    // re-sort or a view switch from a rebuild that only moved a column. Null until the
+    // first render.
+    var builtKey = null;
 
     function render(data) {
       document.documentElement.setAttribute("data-theme", data.dark ? "dark" : "light");
@@ -255,19 +256,23 @@
       var rows = buildRows(data);
 
       /*
-       * Preserve the scrolled position unless the sort changed.
+       * Preserve the scrolled position unless the view or the sort changed.
        *
        * Kotlin autosaves a column resize or reorder, which round-trips a new view back
        * here and rebuilds the grid. Landing on row 1 after every drag would make a wide
        * table unusable: the user drags a column while scrolled right and is thrown back
        * to the top-left. A new sort is the one case where row 1 IS right, because the row
        * order changed and the old offset points at nothing in particular.
+       *
+       * viewId belongs in the key as much as the sort does. History and List Rows both
+       * default to When descending, so on the sort alone a switch between them looks
+       * identical and would restore one view's offsets into the other's grid.
        */
-      var sortKey = data.sort ? data.sort.column + " " + data.sort.dir : "";
-      var previous = builtSort === sortKey ? holder() : null;
+      var key = data.viewId + "\n" + (data.sort ? data.sort.column + " " + data.sort.dir : "");
+      var previous = builtKey === key ? holder() : null;
       var left = previous ? previous.scrollLeft : 0;
       var top = previous ? previous.scrollTop : 0;
-      builtSort = sortKey;
+      builtKey = key;
 
       // Rebuilding wholesale rather than calling setData, because a reload may also
       // change the columns, their widths, their order, and the sort indicator.
