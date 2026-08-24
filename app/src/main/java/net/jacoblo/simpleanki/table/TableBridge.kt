@@ -25,6 +25,7 @@ class TableBridge(
 	private val onHide: (columnId: String) -> Unit,
 	private val onFreeze: (columnId: String) -> Unit,
 	private val onMove: (columnId: String, delta: Int) -> Unit,
+	private val onRowTap: (index: Int) -> Unit,
 	private val onRenderComplete: (rowCount: Int) -> Unit
 ) {
 	private val main = Handler(Looper.getMainLooper())
@@ -95,6 +96,23 @@ class TableBridge(
 	@JavascriptInterface
 	fun move(columnId: String, delta: Int) {
 		main.post { onMove(columnId, delta) }
+	}
+
+	/**
+	 * A tap anywhere on a row.
+	 *
+	 * The page wires this for every table it draws rather than asking which one it is, so a
+	 * view with nothing to open passes a handler that does nothing - see TableScreen.
+	 *
+	 * @param index the row's position in the payload, which is its DISPLAY position: Kotlin
+	 *   sends the rows already in display order and the page never re-sorts them. The page
+	 *   reads it off the row's own `_i` rather than asking Tabulator where the row sits,
+	 *   because the two agree only while that holds and `_i` is the one that stays correct.
+	 *   The same fact the page's row banding already relies on.
+	 */
+	@JavascriptInterface
+	fun rowTap(index: Int) {
+		main.post { onRowTap(index) }
 	}
 
 	@JavascriptInterface

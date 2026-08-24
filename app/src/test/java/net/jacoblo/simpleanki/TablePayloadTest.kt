@@ -220,6 +220,40 @@ class TablePayloadTest {
 		assertEquals("#3B3546", crossed.getString("highlightColor"))
 	}
 
+	/**
+	 * The flag every table that predates drills gets, and gets without asking.
+	 *
+	 * [table] deliberately does NOT pass `viewEditable`, so this exercises the default on
+	 * RenderedTable rather than a value the helper supplied. That default is the whole point
+	 * of the field: it is what keeps the three view-backed tables, and every existing
+	 * construction site, on the full header menu with no edit of their own.
+	 */
+	@Test
+	fun viewEditableDefaultsToTrue() {
+		val payload = JSONObject(
+			table(listOf(column("When")), emptyList()).toPayloadJson(false, HIGHLIGHT)
+		)
+
+		assertTrue(payload.getBoolean("viewEditable"))
+	}
+
+	/**
+	 * A false has to survive the trip, and be the table's own value rather than a constant.
+	 *
+	 * The page reads this key to decide whether the header menu offers Hide, Freeze and the
+	 * two moves. Serialising a hard-coded true would put Unfreeze back on a fixed-column
+	 * table, where it does real damage - see RenderedTable.viewEditable.
+	 */
+	@Test
+	fun viewEditableFalseIsCarried() {
+		val payload = JSONObject(
+			table(listOf(column("When")), emptyList()).copy(viewEditable = false)
+				.toPayloadJson(false, HIGHLIGHT)
+		)
+
+		assertFalse(payload.getBoolean("viewEditable"))
+	}
+
 	private companion object {
 		const val HIGHLIGHT = "#DAD5E4"
 	}

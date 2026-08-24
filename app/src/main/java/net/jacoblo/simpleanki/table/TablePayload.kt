@@ -72,6 +72,7 @@ fun RenderedTable.toPayloadJson(darkTheme: Boolean, highlightColor: String): Str
 		.put("highlightEvery", highlightEvery)
 		.put("highlightColor", highlightColor)
 		.put("dark", darkTheme)
+		.put("viewEditable", viewEditable)
 		.put("columns", columnsJson)
 		.put("rows", rowsJson)
 		.toString()

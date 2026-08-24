@@ -252,25 +252,35 @@
      * looking item that quietly does nothing is worse than an absent one. [index] and
      * [count] are over the VISIBLE columns, the only ones this page was told about, which
      * is also the list Kotlin measures the move in.
+     *
+     * [viewEditable] false drops all four of those and leaves Copy alone, for a table whose
+     * columns Kotlin fixed rather than read from a view file. There is nowhere to save such
+     * an edit, so each of the four would change the grid and then revert on the next render
+     * - and Unfreeze would do damage on the way: Tabulator's FrozenColumnsModule scans
+     * columns from the left and flips permanently to the RIGHT edge at the first unfrozen
+     * one, so unfreezing the leading column sends its frozen neighbour to the far side of
+     * the table rather than merely unfreezing it. Copy survives for the reason it always
+     * does - it stores nothing, so there is nothing to revert.
      */
-    function headerMenu(col, field, index, count) {
-      var items = [
-        menuItem("Hide " + col.title, function () {
+    function headerMenu(col, field, index, count, viewEditable) {
+      var items = [];
+      if (viewEditable) {
+        items.push(menuItem("Hide " + col.title, function () {
           Android.hide(col.id);
-        }),
-        menuItem((col.frozen ? "Unfreeze " : "Freeze ") + col.title, function () {
+        }));
+        items.push(menuItem((col.frozen ? "Unfreeze " : "Freeze ") + col.title, function () {
           Android.freeze(col.id);
-        })
-      ];
-      if (index > 0) {
-        items.push(menuItem("Move " + col.title + " left", function () {
-          Android.move(col.id, -1);
         }));
-      }
-      if (index < count - 1) {
-        items.push(menuItem("Move " + col.title + " right", function () {
-          Android.move(col.id, 1);
-        }));
+        if (index > 0) {
+          items.push(menuItem("Move " + col.title + " left", function () {
+            Android.move(col.id, -1);
+          }));
+        }
+        if (index < count - 1) {
+          items.push(menuItem("Move " + col.title + " right", function () {
+            Android.move(col.id, 1);
+          }));
+        }
       }
       items.push(menuItem("Copy " + col.title + " values", function () {
         copyColumn(field, col.title);
@@ -380,6 +390,9 @@
     function buildColumns(data) {
       var sortColumn = data.sort ? data.sort.column : null;
       var sortDir = data.sort ? data.sort.dir : "desc";
+      // `!== false` rather than a truthiness test: a payload with no such key gets the
+      // view-backed menu, which is every menu this page drew before the flag existed.
+      var viewEditable = data.viewEditable !== false;
       fieldToId = {};
       return data.columns.map(function (col, index) {
         var field = "c" + index;
@@ -403,7 +416,7 @@
           cssClass: sorted ? "is-sorted" : "",
           // A long press. Tabulator wires this to its own headerTapHold as well as to the
           // contextmenu event, so it needs no mouse and no gesture code of ours.
-          headerContextMenu: headerMenu(col, field, index, data.columns.length),
+          headerContextMenu: headerMenu(col, field, index, data.columns.length, viewEditable),
           headerClick: function () {
             // A header tap reports the intent and nothing else; Kotlin decides.
             if (col.sortable && !col.error) {
@@ -574,6 +587,29 @@
         // JSON rather than CSV: the bridge can only carry a String, and a column id is
         // not guaranteed to be comma-free, since the user names their own columns.
         Android.reorder(JSON.stringify(ids));
+      });
+
+      /*
+       * A tap on a row, reported by its payload index.
+       *
+       * `rowClick`, NOT Tabulator's own `rowTap`, which is the touch-only variant of the
+       * same gesture: subscribing to both would fire twice per tap on a device. rowClick
+       * covers touch and pointer alike, which is why headerClick above needs no tap event
+       * of its own either. The bridge method is named for the GESTURE rather than for the
+       * Tabulator event, which is the only reason the two names collide here.
+       *
+       * `_i`, never row.getPosition(). The two agree today only because Kotlin sends the
+       * rows already in display order and nothing here re-sorts them, and `_i` is the one
+       * that stays right if that ever stops holding - it is what the row WAS sent as, which
+       * is the only thing Kotlin can look a row up by. Same fact rowFormatter bands on.
+       *
+       * Raised for every table this page draws, including the ones with nothing to open:
+       * which tap means something is Kotlin's to decide, and TableScreen decides it means
+       * nothing. A row click and a header click are different elements, so this takes
+       * neither the header tap that sorts nor the long press that opens the header menu.
+       */
+      table.on("rowClick", function (e, row) {
+        Android.rowTap(row.getData()._i);
       });
     }
 

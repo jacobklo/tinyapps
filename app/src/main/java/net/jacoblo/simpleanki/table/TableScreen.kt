@@ -130,6 +130,10 @@ fun TableScreen(
 			onMove = { columnId, delta ->
 				currentOnViewChanged(currentView.moveVisibleColumn(columnId, delta))
 			},
+			// Deliberately empty, not unfinished. A row in Stats, History or List Rows is a
+			// history record and this app has no screen that shows one, so a tap here has
+			// nothing to open.
+			onRowTap = {},
 			onRenderComplete = { rowCount -> Log.d(LOG_TAG, "rendered $rowCount rows") }
 		)
 	}
