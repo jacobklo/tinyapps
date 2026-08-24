@@ -30,6 +30,23 @@ enum class DrillKind { NUMBERS, POKER }
 data class DrillGeometry(val columns: Int, val cellWidthDp: Int, val cellHeightDp: Int)
 
 /**
+ * The most items a drill screen will generate, and the ceiling the settings screen's item-count
+ * field enforces.
+ *
+ * ONE constant over both, so the agreement between them is the compiler's business rather than a
+ * comment's. [itemCount] below reports whatever settings.json says, unvalidated and on purpose -
+ * but DrillGrid is a plain Column and not a lazy one, so a hand-edited "count": 100000 would ask
+ * Compose for a hundred thousand cells inside a single frame. That is not a grid that merely
+ * looks wrong, which is the outcome the unvalidated pass-through is defending; it is an ANR, and
+ * an ANR on the way to the settings screen the typo would have been fixed from.
+ *
+ * The cap is applied where the count is CONSUMED - see DrillScreen.freshItems - for the reason
+ * DrillGrid gives about its own column count: there it is a question about this frame, and the
+ * stored value goes on saying exactly what the user typed.
+ */
+const val MAX_DRILL_ITEMS = 1000
+
+/**
  * How many items a fresh set holds.
  *
  * Poker ignores settings entirely: it is one full deck, always [DrillOps.DECK_SIZE], and a
@@ -39,6 +56,10 @@ data class DrillGeometry(val columns: Int, val cellWidthDp: Int, val cellHeightD
  * That includes a zero or a negative left by a hand-edit. Refusing one is the settings
  * field's job, not this function's; clamping it here instead would leave the file saying one
  * thing and the grid showing another, which is a typo the user has no way to find.
+ *
+ * The single exception is the top end, and it is not made here either: a count above
+ * [MAX_DRILL_ITEMS] is capped by the screen that draws the set, because that one cannot be left
+ * to show the user their typo - it hangs before it can.
  */
 fun DrillKind.itemCount(settings: Settings): Int = when (this) {
 	DrillKind.NUMBERS -> settings.numbers.count

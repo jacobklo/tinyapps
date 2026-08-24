@@ -31,13 +31,11 @@ import kotlinx.coroutines.withContext
 import net.jacoblo.simpleanki.data.DrillRun
 import net.jacoblo.simpleanki.data.DrillRunsRepository
 import net.jacoblo.simpleanki.data.JsonStore
-import net.jacoblo.simpleanki.data.Settings
 import net.jacoblo.simpleanki.drill.DrillKind
 import net.jacoblo.simpleanki.drill.DrillScreen
 import net.jacoblo.simpleanki.drill.DrillStatsScreen
 import net.jacoblo.simpleanki.drill.RunPicker
 import net.jacoblo.simpleanki.drill.runsFile
-import java.io.IOException
 
 /**
  * One drill, with its stored runs behind it.
@@ -59,41 +57,57 @@ fun DrillRoute(
 	// Keyed on [kind] for the reason the loader is: both drills arrive through ONE call site, so
 	// an unkeyed slot would hand Poker the coalescer holding Numbers' pending write.
 	val autosave = remember(kind) { DrillAutosave(container.drillRunsRepository(kind)) }
-	// Bumped on every scoring tap, and read by nothing but the debounce below, whose key it is.
-	var pendingTaps by remember(kind) { mutableStateOf(0) }
+	// Bumped on every scoring tap and never reset. It counts nothing anybody reads - it is the
+	// debounce's key, and all that is asked of it is that a tap changes it.
+	var tapCount by remember(kind) { mutableStateOf(0) }
 	var pickerOpen by remember(kind) { mutableStateOf(false) }
+
+	/**
+	 * Raises the toast for a write that failed, if one is waiting.
+	 *
+	 * Asked of the coalescer rather than read off a return value, because the flush that fails is
+	 * often not the call that can report it - see DrillAutosave.takeFailure.
+	 */
+	fun reportFailure() {
+		if (autosave.takeFailure() != null) reportSaveFailure(context, container, kind)
+	}
 
 	/**
 	 * Writes whatever is pending, here and now, on the calling thread.
 	 *
-	 * Synchronous on purpose at every one of its call sites. ON_PAUSE and onDispose are moments
-	 * where a coroutine is about to be cancelled or about to lose its process, so handing the
-	 * write to one is precisely how the last marks get lost; Done, New and a pick from the picker
-	 * all want the file settled before the next thing reads it, or before the run they belong to
-	 * stops being the one on screen.
+	 * Synchronous on purpose at every one of its five call sites. ON_PAUSE and onDispose are
+	 * moments where a coroutine is about to be cancelled or about to lose its process, so handing
+	 * the write to one is precisely how the last marks get lost; Done, New and a pick from the
+	 * picker all want the file settled before the next thing reads it, or before the run they
+	 * belong to stops being the one on screen.
+	 *
+	 * New raises onCloseRun in every state, so that call site is the ordinary "start another set"
+	 * path as much as it is a run closing. It costs nothing when nothing is pending.
 	 *
 	 * A whole-file write on the main thread is what this app already does on every card flip and
 	 * every column resize. The debounce exists to keep it off the per-TAP path, which is the one
 	 * that runs fifty times a minute, and not to ban it outright.
 	 */
 	fun flushNow() {
-		if (autosave.flush() != null) reportSaveFailure(context, container, kind)
+		autosave.flush()
+		reportFailure()
 	}
 
 	// The debounce. Keyed on the tap counter, so every tap cancels the delay the tap before it
 	// started and only a gap in the tapping reaches the write. Keyed on [kind] as well, so
 	// switching drills cannot leave a delay running against the coalescer it was started for.
-	LaunchedEffect(kind, pendingTaps) {
+	LaunchedEffect(kind, tapCount) {
 		// Nothing has been tapped yet, so there is nothing to wait out. Entering a drill would
 		// otherwise dispatch a pointless quarter-second and an IO hop on the way in.
-		if (pendingTaps == 0) return@LaunchedEffect
+		if (tapCount == 0) return@LaunchedEffect
 		delay(AUTOSAVE_QUIET_MILLIS)
-		// OFF the main thread, which is the whole point: this is a whole-file rewrite, and at
-		// the retention cap that is megabytes of JSON. withContext resumes on the dispatcher it
-		// was called from, so the toast below is raised back on main, where a Toast may be
-		// raised at all.
-		val failure = withContext(Dispatchers.IO) { autosave.flush() }
-		if (failure != null) reportSaveFailure(context, container, kind)
+		// OFF the main thread, which is the whole point: this is a whole-file rewrite, and at the
+		// retention cap that is megabytes of JSON. withContext resumes on the dispatcher it was
+		// called from, so the report below happens back on main, where a Toast may be raised at
+		// all - and when the screen leaves mid-write there is no resume at all, which is exactly
+		// why a failure is HELD for the flush on the way out rather than returned to here.
+		withContext(Dispatchers.IO) { autosave.flush() }
+		reportFailure()
 	}
 
 	// The two moments a pending write must not wait out its quiet period: the app going away,
@@ -131,7 +145,7 @@ fun DrillRoute(
 
 	DrillScreen(
 		kind = kind,
-		settings = remember(container.settings) { clampItemCount(container.settings) },
+		settings = container.settings,
 		openRun = openRun,
 		onDone = { run ->
 			// Stored the moment the clock stops and before a single cell is scored, so a run the
@@ -153,12 +167,12 @@ fun DrillRoute(
 			val updated = DrillRunsRepository.upsert(runs, run)
 			runs = updated
 			autosave.schedule(updated)
-			pendingTaps++
+			tapCount++
 		},
 		onOpenPicker = { pickerOpen = true },
 		onCloseRun = {
 			// New pressed. Raised whether or not a run was open, so this is also the ordinary
-			// "start another set" path - flushNow no-ops when nothing is pending.
+			// "start another set" path - flushNow costs nothing when nothing is pending.
 			flushNow()
 			onSelect(Screen.Drill(kind))
 		}
@@ -206,10 +220,17 @@ fun DrillStatsRoute(container: AppContainer, kind: DrillKind, onSelect: (Screen)
 /**
  * [kind]'s stored runs, reloaded on entering the screen and on every resume.
  *
- * The reload matters as much as the first read. These files exist to be hand-edited, so a drill
- * screen left open while the user rewrites numbers-runs.json over adb has to come back to what
- * the file now says - and a run scored, flushed and then reopened has to come back to the marks
- * that were written, not to the ones this state happened to be holding.
+ * The reload matters as much as the first read. These files exist to be hand-edited, so a run
+ * scored, flushed and then reopened has to come back to the marks that were written rather than
+ * to whatever this state was holding, and a stats table or a run picker looked at after an adb
+ * edit has to show what the file now says.
+ *
+ * ONE case is deliberately outside that promise, because it is not this state's to keep: a run
+ * already OPEN on the drill screen. DrillScreen adopts through LaunchedEffect(openRun?.id), which
+ * does not re-key when the id has not changed, so the grid keeps the items it is holding and the
+ * next scoring tap upserts them back over the hand-edit - resurrecting the run outright if the
+ * edit had deleted it. Editing the run you are standing in is the one edit that does not take;
+ * every other route to a run - the picker, a stats row - re-enters the screen and so re-reads.
  *
  * Read from the lifecycle observer ALONE, with no separate first load. Adding an observer to an
  * owner that is already resumed dispatches ON_RESUME to it there and then, so entering the
@@ -244,14 +265,16 @@ private fun rememberStoredRuns(
  * DrillRunsRepository.load never throws: an unreadable file reads as no runs, deliberately, and
  * the argument for that is made there. What it costs is exactly this - a caller cannot tell "the
  * user has not drilled yet" from "the runs could not be read" - so without this check a stats
- * screen over a file behind a revoked permission would sit silently empty until the save at the
- * end of the next drill finally threw, several minutes of drilling later.
+ * screen over a file the app cannot open would sit silently empty until the save at the end of
+ * the next drill finally threw, several minutes of drilling later.
  *
  * The readability is therefore asked separately, through the same cheap access check that
  * repository's own save() refuses on. It is approximate in one direction - see
- * [JsonStore.isUnreadable] - so this catches the reproducible cases, a directory in the file's
- * place or a permission that was never granted, and not a read that fails part way through. That
- * residue is the one the repository already accepts and is not made worse here.
+ * [JsonStore.isUnreadable] - so what it catches is something at the path that is not a readable
+ * file, a directory left there by a botched sync being the case that actually happens. It does
+ * not catch a read that fails part way through, and it does not catch a denied stat either: that
+ * reads as absence rather than as a file, and so passes silently. Both are the residue the
+ * repository already accepts, and neither is made worse here.
  *
  * An ABSENT file is not an unreadable one and raises nothing, which is what keeps a fresh install
  * from toasting at a user who has simply never drilled.
@@ -282,113 +305,9 @@ private fun reportSaveFailure(context: Context, container: AppContainer, kind: D
 }
 
 /**
- * [settings] with the Numbers item count clamped to [MAX_DRILL_ITEMS], and everything else left
- * exactly as it was.
- *
- * DrillKind.itemCount passes the stored count through unvalidated on purpose, and the settings
- * screen's validators guard that screen's own input rather than the file. So a hand-edited
- * `"count": 100000` reaches DrillGrid, which is a plain Column and not a lazy one, and asks
- * Compose for a hundred thousand cells inside one frame. That is an ANR, and it is an ANR on the
- * way to the settings screen the user would have fixed the typo from.
- *
- * Clamped HERE rather than in DrillKind.itemCount, for the reason DrillGrid gives about its own
- * column count: here it is a question about this frame, and the stored value keeps saying exactly
- * what the user typed. The ceiling is the settings screen's own upper bound, so a count this
- * changes is one that screen would have refused outright.
- *
- * The low end is deliberately untouched. A zero or a negative generates no items and the grid
- * comes up empty, which is the honest picture of what the file says and is not a crash -
- * DrillOps.generateNumbers builds from a range precisely so that it is not.
- *
- * A hand-edited RUN carrying an absurd items list is a different vector and is NOT clamped here:
- * those items are written straight back by the next scoring tap, so truncating them for the grid
- * would turn a display problem into deleted data.
- */
-private fun clampItemCount(settings: Settings): Settings {
-	if (settings.numbers.count <= MAX_DRILL_ITEMS) return settings
-	return settings.copy(numbers = settings.numbers.copy(count = MAX_DRILL_ITEMS))
-}
-
-/**
- * The pending write for one drill's runs file, coalesced so that no scoring tap ever waits on
- * one.
- *
- * The spec has every scoring tap autosave, and taken literally that is a rewrite of the entire
- * runs file per tap - at the [MAX_RUNS] retention cap, roughly ten megabytes of JSON on the main
- * thread for each of the fifty-odd taps it takes to score a set. Coalescing is what makes that
- * promise affordable: the list is held here, the caller re-arms a short delay, and only a gap in
- * the tapping reaches [flush].
- *
- * Nothing stays pending longer than that gap. The caller flushes at the three moments a delay
- * cannot be waited out - the app pausing, the screen leaving, and the open run closing - and this
- * is a class rather than one more piece of Compose state precisely so those flushes can be made
- * safe against the debounced one:
- *
- * 1. [schedule] and [flush] are synchronized, so a background write and a main-thread flush
- *    arriving together cannot both write the file; whichever gets there second finds nothing left
- *    to write.
- * 2. The pending list is held HERE and not inside a coroutine, so a debounce cancelled mid-delay
- *    by the screen going away leaves the work behind for the flush that follows instead of taking
- *    it with it. That is the failure this shape exists against, and it is the nastiest one here:
- *    a flush that misses the last taps is invisible until the next load, by which point the marks
- *    are simply gone.
- *
- * A failed write is REPORTED and dropped rather than kept for a retry, which is the same "screen
- * ahead of disk" bargain TableRoute makes. The next load reconciles it, and a retry over a file
- * that keeps refusing would raise the same toast again at every flush for the rest of the session.
- */
-class DrillAutosave(private val repository: DrillRunsRepository) {
-
-	private var pending: List<DrillRun>? = null
-
-	/** Holds [runs] as what the file should say, replacing anything already pending. */
-	@Synchronized
-	fun schedule(runs: List<DrillRun>) {
-		pending = runs
-	}
-
-	/**
-	 * Writes what is pending, if anything, and RETURNS the failure instead of throwing it.
-	 *
-	 * Returned and not thrown because every caller has to carry on regardless - one of them is an
-	 * onDispose, and one is a lifecycle callback - and because the toast it becomes has to be
-	 * raised on the main thread, which is not where the debounced call runs.
-	 */
-	@Synchronized
-	fun flush(): IOException? {
-		val runs = pending ?: return null
-		pending = null
-		return try {
-			repository.save(runs, MAX_RUNS)
-			null
-		} catch (e: IOException) {
-			e
-		}
-	}
-}
-
-/**
- * Runs kept per file, newest first out of the trim, matching history.json's own default.
- *
- * A constant and not a setting: the spec gives the drills the same retention the history log has
- * and adds no field for it. Reading HistorySettings.maxEntries here instead would let a user
- * trimming their card history silently discard drill runs out of two entirely different files.
- */
-private const val MAX_RUNS = 5000
-
-/**
  * How quiet a drill has to go before a pending write is sent.
  *
  * Long enough that a burst of scoring taps coalesces into one write, and short enough that the
  * window in which a process kill costs a mark is not one a user would ever be sitting inside.
  */
 private const val AUTOSAVE_QUIET_MILLIS = 400L
-
-/**
- * The most items a drill screen will be asked to compose - see [clampItemCount].
- *
- * The same ceiling the settings screen's item-count validator enforces. The two must agree: a
- * count this clamps but that screen accepts would leave the field showing a number the grid is
- * not drawing.
- */
-private const val MAX_DRILL_ITEMS = 1000
