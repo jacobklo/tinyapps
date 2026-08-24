@@ -10,6 +10,8 @@
  */
 package net.jacoblo.simpleanki.data
 
+import net.jacoblo.simpleanki.drill.MAX_DRILL_ITEMS
+
 /**
  * The row tint on a light theme.
  *
@@ -93,6 +95,66 @@ fun parseDefaultLimit(text: String): FieldResult<Int> = parseAtLeast(text, 0)
 private fun parseAtLeast(text: String, minimum: Int): FieldResult<Int> {
 	val value = text.trim().toIntOrNull()
 	if (value == null || value < minimum) return FieldResult.Err("Must be a whole number, $minimum or more")
+	return FieldResult.Ok(value)
+}
+
+/**
+ * How many numbers a fresh Numbers set holds.
+ *
+ * The ceiling is [MAX_DRILL_ITEMS], imported rather than spelled out, because it is the same
+ * figure DrillScreen caps a generated set at and the two drifting apart is exactly the bug the
+ * shared constant exists to make impossible: a field that accepted 2000 while the screen quietly
+ * drew 1000 would be a limit the user cannot see, cannot reach, and cannot reason about.
+ *
+ * The two are not redundant. This refuses the value being TYPED and says why; the cap is what
+ * still holds when settings.json is edited by hand, where nothing is there to say anything.
+ *
+ * Zero is refused rather than passed through as an empty grid, unlike the drill's own tolerance
+ * for one: a drill that opens with no cells at all is indistinguishable from a broken generator.
+ */
+fun parseItemCount(text: String): FieldResult<Int> =
+	parseInRange(text, 1..MAX_DRILL_ITEMS, "more cells than that would freeze the screen")
+
+/**
+ * How many cells a drill grid puts in a row, for either drill.
+ *
+ * The floor is the bound that matters. DrillGrid clamps a stored zero to one column before it
+ * chunks, because items.chunked(0) throws and a hand-edited file must not crash the drill on the
+ * way to the settings screen that would fix it - but a clamp can only show a one-cell-wide grid
+ * nobody asked for. Refusing zero at the field is what says why instead.
+ *
+ * The ceiling is legibility, not arithmetic: the grid scrolls sideways, so a row of 20 cells
+ * already runs off a phone, and anything past it is a typed digit too many far more often than a
+ * choice.
+ */
+fun parseColumnCount(text: String): FieldResult<Int> =
+	parseInRange(text, 1..20, "a wider row cannot be read on a phone")
+
+/**
+ * How tall or wide one drill cell is, in dp.
+ *
+ * The floor sits well above the zero DrillGrid tolerates. A cell of a few dp is a grid of
+ * invisible tap targets, so a user who typed 6 for 60 would be looking at a blank screen with no
+ * hint that the size was what went wrong. The ceiling is legibility as well: one cell filling the
+ * display leaves the rest of the set behind both scrollbars, a set to be hunted for rather than
+ * read.
+ */
+fun parseCellSizeDp(text: String): FieldResult<Int> =
+	parseInRange(text, 16..200, "smaller is unreadable and larger fills the screen")
+
+/**
+ * [text] as an Int inside [range], refused with [because] - the REASON for the bound, since a
+ * number repeated back at the user explains nothing about why it was not allowed.
+ *
+ * One message for a non-number and for an out-of-range one on purpose. Both are answered by
+ * naming the range, and this parses on every keystroke, so two messages would only flicker
+ * against each other while a number is being retyped.
+ */
+private fun parseInRange(text: String, range: IntRange, because: String): FieldResult<Int> {
+	val value = text.trim().toIntOrNull()
+	if (value == null || value !in range) {
+		return FieldResult.Err("Must be a whole number from ${range.first} to ${range.last}, $because")
+	}
 	return FieldResult.Ok(value)
 }
 

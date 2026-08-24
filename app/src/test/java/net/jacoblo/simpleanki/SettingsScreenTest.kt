@@ -4,16 +4,22 @@ import net.jacoblo.simpleanki.data.AnkiPaths
 import net.jacoblo.simpleanki.data.DEFAULT_HIGHLIGHT_DARK
 import net.jacoblo.simpleanki.data.DEFAULT_HIGHLIGHT_LIGHT
 import net.jacoblo.simpleanki.data.FieldResult
+import net.jacoblo.simpleanki.data.NumbersSettings
+import net.jacoblo.simpleanki.data.PokerSettings
 import net.jacoblo.simpleanki.data.Settings
 import net.jacoblo.simpleanki.data.SettingsRepository
 import net.jacoblo.simpleanki.data.TableSettings
 import net.jacoblo.simpleanki.data.highlightColor
+import net.jacoblo.simpleanki.data.parseCellSizeDp
+import net.jacoblo.simpleanki.data.parseColumnCount
 import net.jacoblo.simpleanki.data.parseDefaultLimit
 import net.jacoblo.simpleanki.data.parseHexColor
 import net.jacoblo.simpleanki.data.parseHighlightEvery
 import net.jacoblo.simpleanki.data.parseIntervalSeconds
+import net.jacoblo.simpleanki.data.parseItemCount
 import net.jacoblo.simpleanki.data.parseWindowSize
 import net.jacoblo.simpleanki.data.soundPathOrNull
+import net.jacoblo.simpleanki.drill.MAX_DRILL_ITEMS
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -118,6 +124,105 @@ class SettingsScreenTest {
 	@Test
 	fun aWholeNumberFieldTrimsSurroundingSpace() {
 		assertEquals(5, ok(parseHighlightEvery(" 5 ")))
+	}
+
+	// -- the drill grid fields -----------------------------------------------------------
+
+	/**
+	 * Both ends, because a bound tested from one side only is half a rule: a ceiling nobody
+	 * pushes against is indistinguishable from no ceiling at all.
+	 *
+	 * The ceiling is spelled [MAX_DRILL_ITEMS] on both sides of the test rather than as the
+	 * number it currently is. That is not a tautology - it is the only assertion that fails if
+	 * the validator ever stops sharing DrillScreen's cap and starts enforcing a figure of its
+	 * own, which is the exact drift the shared constant exists to prevent.
+	 */
+	@Test
+	fun anItemCountAcceptsOneToTheDrillCapAndRefusesEitherSideOfIt() {
+		assertEquals(1, ok(parseItemCount("1")))
+		assertEquals(50, ok(parseItemCount("50")))
+		assertEquals(MAX_DRILL_ITEMS, ok(parseItemCount(MAX_DRILL_ITEMS.toString())))
+
+		// Zero generates nothing, so the drill would open on an empty grid saying nothing.
+		assertTrue(parseItemCount("0") is FieldResult.Err)
+		assertTrue(parseItemCount("-1") is FieldResult.Err)
+		// One past the cap: were it accepted, DrillScreen would quietly draw a smaller set.
+		assertTrue(parseItemCount((MAX_DRILL_ITEMS + 1).toString()) is FieldResult.Err)
+	}
+
+	/**
+	 * Zero is the end that matters. DrillGrid clamps it to one column because chunked(0)
+	 * throws, so accepting it here would store a number the grid openly disagrees with.
+	 */
+	@Test
+	fun aColumnCountAcceptsOneToTwentyAndRefusesEitherSideOfIt() {
+		assertEquals(1, ok(parseColumnCount("1")))
+		assertEquals(20, ok(parseColumnCount("20")))
+
+		assertTrue(parseColumnCount("0") is FieldResult.Err)
+		assertTrue(parseColumnCount("-1") is FieldResult.Err)
+		assertTrue(parseColumnCount("21") is FieldResult.Err)
+	}
+
+	/** A cell too small to see and one that fills the screen are both grids nobody can use. */
+	@Test
+	fun aCellSizeAcceptsSixteenToTwoHundredAndRefusesEitherSideOfIt() {
+		assertEquals(16, ok(parseCellSizeDp("16")))
+		assertEquals(200, ok(parseCellSizeDp("200")))
+
+		assertTrue(parseCellSizeDp("15") is FieldResult.Err)
+		assertTrue(parseCellSizeDp("0") is FieldResult.Err)
+		assertTrue(parseCellSizeDp("201") is FieldResult.Err)
+	}
+
+	/**
+	 * Empty is what every one of these fields passes through while it is being retyped, and a
+	 * bound test alone would not notice a parser that let text past: "" and "five" are neither
+	 * below a floor nor above a ceiling.
+	 */
+	@Test
+	fun aDrillGridFieldRefusesTextThatIsNotAWholeNumber() {
+		assertTrue(parseItemCount("") is FieldResult.Err)
+		assertTrue(parseItemCount("fifty") is FieldResult.Err)
+		assertTrue(parseColumnCount("five") is FieldResult.Err)
+		assertTrue(parseCellSizeDp("64.5") is FieldResult.Err)
+		// Trimmed like the other whole-number fields: toIntOrNull refuses a stray space.
+		assertEquals(64, ok(parseCellSizeDp(" 64 ")))
+	}
+
+	/**
+	 * The refusal names the bound AND the reason for it. There is no save button on this screen,
+	 * so the inline message is the only place either can be stated at all - and a value silently
+	 * clamped instead would leave the file disagreeing with the field the user is looking at.
+	 *
+	 * Both halves are asserted because the second is the one nothing else pins: the range is
+	 * built from the range object and would survive most edits, where the reason clause is a
+	 * string that can be dropped from parseInRange without a single other test noticing.
+	 */
+	@Test
+	fun aRefusedDrillFieldSaysTheBoundAndWhyItIsThere() {
+		val message = (parseColumnCount("40") as FieldResult.Err).message
+
+		assertTrue(message, message.contains("from 1 to 20"))
+		assertTrue(message, message.contains("phone"))
+	}
+
+	/**
+	 * The shipped geometry has to survive its own validators, or the settings screen opens with
+	 * drill fields already red on values the user never typed.
+	 */
+	@Test
+	fun theShippedDrillGeometryIsItselfValid() {
+		val numbers = NumbersSettings()
+		assertEquals(numbers.count, ok(parseItemCount(numbers.count.toString())))
+		assertEquals(numbers.columns, ok(parseColumnCount(numbers.columns.toString())))
+		assertEquals(numbers.cellWidthDp, ok(parseCellSizeDp(numbers.cellWidthDp.toString())))
+		assertEquals(numbers.cellHeightDp, ok(parseCellSizeDp(numbers.cellHeightDp.toString())))
+
+		val poker = PokerSettings()
+		assertEquals(poker.columns, ok(parseColumnCount(poker.columns.toString())))
+		assertEquals(poker.cellWidthDp, ok(parseCellSizeDp(poker.cellWidthDp.toString())))
+		assertEquals(poker.cellHeightDp, ok(parseCellSizeDp(poker.cellHeightDp.toString())))
 	}
 
 	// -- parseHexColor --------------------------------------------------------------------

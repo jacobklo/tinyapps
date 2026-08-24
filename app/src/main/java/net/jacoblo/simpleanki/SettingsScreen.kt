@@ -42,10 +42,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import net.jacoblo.simpleanki.data.FieldResult
 import net.jacoblo.simpleanki.data.Settings
+import net.jacoblo.simpleanki.data.parseCellSizeDp
+import net.jacoblo.simpleanki.data.parseColumnCount
 import net.jacoblo.simpleanki.data.parseDefaultLimit
 import net.jacoblo.simpleanki.data.parseHexColor
 import net.jacoblo.simpleanki.data.parseHighlightEvery
 import net.jacoblo.simpleanki.data.parseIntervalSeconds
+import net.jacoblo.simpleanki.data.parseItemCount
 import net.jacoblo.simpleanki.data.parseWindowSize
 import net.jacoblo.simpleanki.data.soundPathOrNull
 
@@ -149,6 +152,73 @@ fun SettingsScreen(
 			onSettings(settings.copy(table = settings.table.copy(defaultLimit = limit)))
 		}
 
+		SectionHeader("Numbers")
+		ValidatedField(
+			label = "Items",
+			initial = settings.numbers.count.toString(),
+			keyboardType = KeyboardType.Number,
+			supporting = "How many numbers a fresh set holds",
+			parse = ::parseItemCount
+		) { count ->
+			onSettings(settings.copy(numbers = settings.numbers.copy(count = count)))
+		}
+		ValidatedField(
+			label = "Columns",
+			initial = settings.numbers.columns.toString(),
+			keyboardType = KeyboardType.Number,
+			supporting = COLUMNS_HINT,
+			parse = ::parseColumnCount
+		) { columns ->
+			onSettings(settings.copy(numbers = settings.numbers.copy(columns = columns)))
+		}
+		ValidatedField(
+			label = "Cell width (dp)",
+			initial = settings.numbers.cellWidthDp.toString(),
+			keyboardType = KeyboardType.Number,
+			parse = ::parseCellSizeDp
+		) { width ->
+			onSettings(settings.copy(numbers = settings.numbers.copy(cellWidthDp = width)))
+		}
+		ValidatedField(
+			label = "Cell height (dp)",
+			initial = settings.numbers.cellHeightDp.toString(),
+			keyboardType = KeyboardType.Number,
+			parse = ::parseCellSizeDp
+		) { height ->
+			onSettings(settings.copy(numbers = settings.numbers.copy(cellHeightDp = height)))
+		}
+
+		SectionHeader("Poker")
+		// Geometry only, and no item count anywhere below. A Poker set is one full deck and
+		// DrillKind.itemCount answers DECK_SIZE for it without reading settings at all, so a
+		// count field here would be a control that writes a key nothing ever reads - a setting
+		// the user can change and then watch do nothing.
+		ValidatedField(
+			label = "Columns",
+			initial = settings.poker.columns.toString(),
+			keyboardType = KeyboardType.Number,
+			supporting = COLUMNS_HINT,
+			parse = ::parseColumnCount
+		) { columns ->
+			onSettings(settings.copy(poker = settings.poker.copy(columns = columns)))
+		}
+		ValidatedField(
+			label = "Cell width (dp)",
+			initial = settings.poker.cellWidthDp.toString(),
+			keyboardType = KeyboardType.Number,
+			parse = ::parseCellSizeDp
+		) { width ->
+			onSettings(settings.copy(poker = settings.poker.copy(cellWidthDp = width)))
+		}
+		ValidatedField(
+			label = "Cell height (dp)",
+			initial = settings.poker.cellHeightDp.toString(),
+			keyboardType = KeyboardType.Number,
+			parse = ::parseCellSizeDp
+		) { height ->
+			onSettings(settings.copy(poker = settings.poker.copy(cellHeightDp = height)))
+		}
+
 		SectionHeader("History")
 		// Read-only on purpose, and disabled rather than merely uneditable so there is no
 		// field to focus and no cursor to put in it. Lowering this truncates history.json
@@ -173,6 +243,12 @@ fun SettingsScreen(
 		)
 	}
 }
+
+/**
+ * Said under both column fields, because the grid scrolling is what makes a number that does not
+ * fit look like a bug rather than like the size that was asked for.
+ */
+private const val COLUMNS_HINT = "Cells per row. The grid scrolls when a row is wider than the screen"
 
 @Composable
 private fun SectionHeader(title: String) {
