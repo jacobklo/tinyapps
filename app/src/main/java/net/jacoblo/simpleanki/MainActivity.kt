@@ -175,6 +175,18 @@ fun AnkiScreen(container: AppContainer) {
                     onSelect = { currentScreen = Screen.Table(it) },
                     onDismissSheet = { sheetOpen = false }
                 )
+                // The two memory drills, and the stored runs of each.
+                is Screen.Drill -> DrillRoute(
+                    container = container,
+                    kind = screen.kind,
+                    openRunId = screen.openRunId,
+                    onSelect = { currentScreen = it }
+                )
+                is Screen.DrillStats -> DrillStatsRoute(
+                    container = container,
+                    kind = screen.kind,
+                    onSelect = { currentScreen = it }
+                )
                 Screen.Settings -> SettingsScreen(container.settings, container::updateSettings)
                 Screen.FlipCards -> GameView(
                     cards = cards,

@@ -8,10 +8,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import net.jacoblo.simpleanki.data.AnkiPaths
 import net.jacoblo.simpleanki.data.DeckRepository
+import net.jacoblo.simpleanki.data.DrillRunsRepository
 import net.jacoblo.simpleanki.data.HistoryRepository
 import net.jacoblo.simpleanki.data.Settings
 import net.jacoblo.simpleanki.data.SettingsRepository
 import net.jacoblo.simpleanki.data.ViewsRepository
+import net.jacoblo.simpleanki.drill.DrillKind
+import net.jacoblo.simpleanki.drill.runsFile
 import net.jacoblo.simpleanki.metronome.ClickPlayer
 import net.jacoblo.simpleanki.metronome.NoOpClickPlayer
 import net.jacoblo.simpleanki.metronome.SoundPoolClickPlayer
@@ -42,6 +45,26 @@ class AppContainer(
 	val historyRepository = HistoryRepository(paths)
 	val settingsRepository = SettingsRepository(paths)
 	val viewsRepository = ViewsRepository(paths)
+
+	// One repository per drill, each built from the file that drill owns. Private, and reached
+	// only through [drillRunsRepository], because a DrillRunsRepository IS its file: a caller
+	// holding both fields is one mistaken reference away from filing a Poker run in
+	// numbers-runs.json, and nothing downstream could tell that it had happened.
+	private val numbersRunsRepository = DrillRunsRepository(DrillKind.NUMBERS.runsFile(paths))
+	private val pokerRunsRepository = DrillRunsRepository(DrillKind.POKER.runsFile(paths))
+
+	/**
+	 * The repository owning [kind]'s runs file.
+	 *
+	 * A `when` over the enum rather than a map, matching how every other per-drill answer in this
+	 * app is written: a third drill has to answer here and fails to compile until it does, where a
+	 * map would hand the new drill's screen a null and a lookup built on the spot would quietly
+	 * work against a file nothing else knows about.
+	 */
+	fun drillRunsRepository(kind: DrillKind): DrillRunsRepository = when (kind) {
+		DrillKind.NUMBERS -> numbersRunsRepository
+		DrillKind.POKER -> pokerRunsRepository
+	}
 
 	/**
 	 * The settings in force: reloaded from disk on every resume, and rewritten whenever

@@ -11,6 +11,7 @@ import net.jacoblo.simpleanki.drill.runsFile
 import org.json.JSONArray
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Rule
@@ -22,7 +23,12 @@ import kotlin.random.Random
 
 /**
  * Covers the runs file end to end: what an absent, corrupt or hand-edited one reads as, what
- * a saved one contains, and what upsert does to a run that is already in the list.
+ * a saved one contains, what upsert does to a run that is already in the list, and what
+ * [DrillAutosave] does with the write it is holding.
+ *
+ * DrillAutosave is tested here rather than beside its own file because it has no Compose and no
+ * Android in it at all - it is the runs file plus a pending list - and because what it can get
+ * wrong is a question about what ends up in that file.
  *
  * Stored JSON is always re-parsed and asserted on structurally, never compared as text. The
  * test classpath's org.json is HashMap-backed while Android's is LinkedHashMap-backed, so key
@@ -253,6 +259,68 @@ class DrillRunsRepositoryTest {
 		assertEquals(rescored, replaced[1])
 
 		assertEquals(listOf("1", "2", "3", "4"), DrillRunsRepository.upsert(replaced, runOf(4L)).map { it.id })
+	}
+
+	// ---------------------------------------------------------------------------
+	// DrillAutosave
+	// ---------------------------------------------------------------------------
+
+	@Test
+	fun aFlushWritesWhatTheLastScheduleLeftPending() {
+		val autosave = DrillAutosave(repository())
+
+		autosave.schedule(listOf(runOf(1L)))
+		// The coalescing this class exists for: a burst of scoring taps schedules once per tap,
+		// and only the last of them decides what the file ends up saying.
+		autosave.schedule(listOf(runOf(1L), runOf(2L)))
+
+		assertNull(autosave.flush())
+		assertEquals(listOf("1", "2"), storedIds())
+	}
+
+	@Test
+	fun aFlushWithNothingPendingWritesNothingAtAll() {
+		val autosave = DrillAutosave(repository())
+
+		assertNull(autosave.flush())
+
+		// Not merely "wrote the same thing twice": the drill screen flushes on every New and on
+		// every pause, so a flush that wrote unconditionally would rewrite the whole file at a
+		// user who is only looking at a fresh grid, and would leave a runs file behind for a
+		// drill that was never run.
+		assertFalse(numbersFile().exists())
+	}
+
+	@Test
+	fun aRunAlreadyFlushedIsNotWrittenAgain() {
+		val autosave = DrillAutosave(repository())
+		autosave.schedule(listOf(runOf(1L)))
+		assertNull(autosave.flush())
+
+		// The debounced write and the flushes on pause, on leaving the screen and on New all
+		// race for the same pending list, and every one of them is allowed to lose. Losing has
+		// to be a no-op: this second flush stands for the main-thread one arriving after the
+		// background write has already been and gone.
+		assertTrue(numbersFile().delete())
+		assertNull(autosave.flush())
+		assertFalse(numbersFile().exists())
+	}
+
+	@Test
+	fun aFailedWriteComesBackAsAFailureAndIsNotRetried() {
+		assertTrue(numbersFile().mkdirs())
+		val autosave = DrillAutosave(repository())
+		autosave.schedule(listOf(runOf(1L)))
+
+		// Returned rather than thrown: one caller is an onDispose and another is a lifecycle
+		// callback, and neither is anywhere an exception can be carried out of.
+		val failure = autosave.flush()
+		assertTrue(failure!!.message, failure.message!!.startsWith("refusing to overwrite"))
+
+		// Dropped rather than kept for a retry, matching TableRoute's "screen ahead of disk":
+		// the next load reconciles it, where a retry against a file that keeps refusing would
+		// raise the same toast at every flush for the rest of the session.
+		assertNull(autosave.flush())
 	}
 
 	// ---------------------------------------------------------------------------

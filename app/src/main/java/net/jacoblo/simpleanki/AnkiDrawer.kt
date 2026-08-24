@@ -28,6 +28,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import net.jacoblo.simpleanki.data.TableView
+import net.jacoblo.simpleanki.drill.DrillKind
+import net.jacoblo.simpleanki.drill.displayName
+import net.jacoblo.simpleanki.drill.statsName
 
 /**
  * Where the app can be.
@@ -39,6 +42,23 @@ import net.jacoblo.simpleanki.data.TableView
 sealed interface Screen {
 	data object FlipCards : Screen
 	data class Table(val viewId: String) : Screen
+
+	/**
+	 * A drill: live when [openRunId] is null, re-scoring a stored run when it is not.
+	 *
+	 * [openRunId] is navigation state rather than DrillRoute's own because BOTH ways into a
+	 * stored run are screen changes, and one of them starts on a different screen: the Runs
+	 * picker on the drill screen, and a row tap on the stats table. An id naming no stored run
+	 * is a live drill too; see DrillRoute.
+	 *
+	 * The drawer selects on [kind] alone, so opening a stored run does not un-highlight the
+	 * drill that run belongs to.
+	 */
+	data class Drill(val kind: DrillKind, val openRunId: String? = null) : Screen
+
+	/** One drill's stored runs as a table. Fixed columns, so no column sheet and no view. */
+	data class DrillStats(val kind: DrillKind) : Screen
+
 	data object Settings : Screen
 }
 
@@ -93,7 +113,7 @@ fun AnkiNavShell(
 }
 
 /**
- * The drawer body: the game, then one entry per view, then settings.
+ * The drawer body: the game, then the drills, then one entry per view, then settings.
  *
  * Entries are written out names rather than icons because the view list is open ended -
  * a user defined view has no icon to give it, and nothing sensible could be guessed.
@@ -114,6 +134,19 @@ private fun AnkiDrawer(views: List<TableView>, current: Screen, onSelect: (Scree
 			)
 			HorizontalDivider()
 			DrawerEntry("Flip Cards", current == Screen.FlipCards) { onSelect(Screen.FlipCards) }
+			HorizontalDivider()
+			// Each drill immediately beside its own stats, so the pair reads as one thing rather
+			// than as two drills followed by two tables. Looped over the enum rather than spelled
+			// out four times: the labels come from DrillKind, which is what keeps the two entries
+			// for one drill from drifting into disagreeing about what that drill is called.
+			for (kind in DrillKind.entries) {
+				DrawerEntry(kind.displayName(), current is Screen.Drill && current.kind == kind) {
+					onSelect(Screen.Drill(kind))
+				}
+				DrawerEntry(kind.statsName(), current is Screen.DrillStats && current.kind == kind) {
+					onSelect(Screen.DrillStats(kind))
+				}
+			}
 			HorizontalDivider()
 			for (view in views) {
 				DrawerEntry(view.name, current is Screen.Table && current.viewId == view.id) {
