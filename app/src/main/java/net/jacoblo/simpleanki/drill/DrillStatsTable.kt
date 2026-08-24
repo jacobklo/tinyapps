@@ -63,11 +63,18 @@ object DrillStatsTable {
 	 * A sort naming an unorderable column - [ID_INDEX], or an id from nowhere - falls back to
 	 * [DEFAULT_SORT], matching what [render] reports as the applied sort.
 	 *
-	 * sortedWith is stable, so runs tied on the sorted column keep the order the runs file
-	 * gave them, which is oldest first.
+	 * Sorted twice, the way TableEngine.render does it, and the pre-sort is not decoration.
+	 * sortedWith is stable, so runs tied on the sorted column keep the order they arrive in -
+	 * and the runs file is held OLDEST first, so sorting the caller's list directly would
+	 * leave every tie ascending by date. The most common tie is the whole table: a Poker run
+	 * is always a full deck, so tapping Count on the Poker stats screen ties all 52-item rows
+	 * at once and would flip the entire table to oldest-first, which reads to the user as
+	 * "it sorted by date ascending" rather than as a tie. Numbers ties the same way whenever
+	 * the count has not been changed, and Right and Wrong tie constantly. Ties keep the base
+	 * order instead, which is newest first, matching what [DEFAULT_SORT] promises.
 	 */
 	fun order(runs: List<DrillRun>, sort: SortSpec): List<DrillRun> =
-		runs.sortedWith(comparatorFor(sort))
+		runs.sortedByDescending { it.startedAt }.sortedWith(comparatorFor(sort))
 
 	/**
 	 * Every stored run of [kind] as one finished table.
@@ -114,9 +121,11 @@ object DrillStatsTable {
 	 *
 	 * Tapping a column sorts it DESCENDING; tapping the one already sorted reverses it. That
 	 * is the opposite of the history table's rule in TableGestures.nextSort, and deliberately
-	 * so: every sortable column here is a quantity whose interesting end is its top. The first
-	 * tap on When means newest run, on Accuracy means best run, on Count means longest set.
-	 * Ascending-first would make the first tap on When show the user's very first drill.
+	 * so: every sortable column here is a quantity whose interesting end is its LARGEST, which
+	 * is not always its best. The first tap on When means newest run, on Accuracy means best
+	 * run, on Count means longest set - and on Sec/Item it means the run that dragged the most
+	 * per item, which is the worst one and exactly the one worth looking at. Ascending-first
+	 * would make the first tap on When show the user's very first drill.
 	 *
 	 * A column that cannot be ordered - [ID_INDEX], or an id the page reported that this table
 	 * does not have - falls back to [DEFAULT_SORT] rather than to SortSpec(columnId, ...),
@@ -203,7 +212,7 @@ object DrillStatsTable {
 			width = 80,
 			frozen = false,
 			type = ColumnType.TEXT,
-			comparator = comparator { it.seconds },
+			comparator = sortsBy { it.seconds },
 			cell = { run, _, _ -> minutesSeconds(run.seconds) }
 		),
 		StatsColumn(
@@ -211,7 +220,7 @@ object DrillStatsTable {
 			width = 80,
 			frozen = false,
 			type = ColumnType.NUMBER,
-			comparator = comparator { it.count },
+			comparator = sortsBy { it.count },
 			cell = { run, _, _ -> run.count.toString() }
 		),
 		StatsColumn(
@@ -219,7 +228,7 @@ object DrillStatsTable {
 			width = 80,
 			frozen = false,
 			type = ColumnType.NUMBER,
-			comparator = comparator { it.right },
+			comparator = sortsBy { it.right },
 			cell = { run, _, _ -> run.right.toString() }
 		),
 		StatsColumn(
@@ -227,7 +236,7 @@ object DrillStatsTable {
 			width = 80,
 			frozen = false,
 			type = ColumnType.NUMBER,
-			comparator = comparator { it.wrong },
+			comparator = sortsBy { it.wrong },
 			cell = { run, _, _ -> run.wrong.toString() }
 		),
 		StatsColumn(
@@ -235,7 +244,7 @@ object DrillStatsTable {
 			width = 100,
 			frozen = false,
 			type = ColumnType.NUMBER,
-			comparator = comparator { it.accuracy },
+			comparator = sortsBy { it.accuracy },
 			// A fraction on the way in, a percentage on the way out. Rendering the stored
 			// 0.8 would read as eight tenths of one percent under a header saying Accuracy.
 			cell = { run, _, _ -> percent(run.accuracy) }
@@ -245,7 +254,7 @@ object DrillStatsTable {
 			width = 90,
 			frozen = false,
 			type = ColumnType.NUMBER,
-			comparator = comparator { it.secondsPerItem },
+			comparator = sortsBy { it.secondsPerItem },
 			cell = { run, _, _ -> twoDecimals(run.secondsPerItem) }
 		)
 	)
@@ -276,14 +285,21 @@ object DrillStatsTable {
 		return factory(sort.dir)
 	}
 
-	/** Named rather than inlined into [COLUMNS] so [comparatorFor]'s fallback can reach it. */
+	/**
+	 * Named rather than inlined into [COLUMNS] so [comparatorFor]'s fallback can reach it too.
+	 *
+	 * A fun and not a val, which is the half worth saying: an object's properties initialise in
+	 * declaration order, so a val declared below [COLUMNS] would still be null while COLUMNS
+	 * was building itself and the When column would be handed a null comparator - reported
+	 * unsortable, silently, for the one column the default sort names.
+	 */
 	private fun whenComparator(dir: SortDir): Comparator<DrillRun> = nullsLast(dir) { it.startedAt }
 
 	/**
 	 * Defers [nullsLast] until a direction is known, so a column can be defined by the value
 	 * it sorts on alone and [nullsLast] stays the only place a null's position is decided.
 	 */
-	private fun <T : Comparable<T>> comparator(
+	private fun <T : Comparable<T>> sortsBy(
 		key: (DrillRun) -> T?
 	): (SortDir) -> Comparator<DrillRun> = { dir -> nullsLast(dir, key) }
 
@@ -318,7 +334,12 @@ object DrillStatsTable {
 	// Formatting
 	// ---------------------------------------------------------------------------
 
-	/** The pattern TableEngine's When column uses, so the two tables date a row alike. */
+	/**
+	 * A COPY of the pattern TableEngine's When column uses, so the two tables date a row alike.
+	 *
+	 * A copy and not a reference: TableEngine's formatter is private to it. Nothing makes these
+	 * two drift together, so changing either means changing both by hand.
+	 */
 	private val WHEN_FORMATTER = DateTimeFormatter.ofPattern("MM-dd HH:mm:ss", Locale.ROOT)
 
 	/**
@@ -328,6 +349,11 @@ object DrillStatsTable {
 	 * that a modulo would give it. A drill this long is a user who walked away mid-set rather
 	 * than a real session, and "05:00" would hide that behind a figure that looks like a
 	 * respectable time.
+	 *
+	 * A negative [seconds] - only a hand-edited file has one, since the drill's own clock
+	 * cannot produce it - renders as "00:-5" and is deliberately not clamped, for the reason
+	 * DrillKind.itemCount gives: clamping would leave the file saying one thing and the screen
+	 * showing another, and a typo the user can see is one they can go and fix.
 	 */
 	private fun minutesSeconds(seconds: Float): String {
 		val whole = seconds.toInt()

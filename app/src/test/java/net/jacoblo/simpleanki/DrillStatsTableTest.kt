@@ -197,6 +197,11 @@ class DrillStatsTableTest {
 
 		assertEquals(listOf("b", "c", "a", "d"), ordered.map { it.id })
 		assertNotEquals(runs.map { it.id }, ordered.map { it.id })
+		// The APPLIED sort is the requested one whenever it can be honoured. The fallback
+		// cases below only ever see DEFAULT_SORT, so nothing else here pins the pass-through
+		// - and a resolveSort stuck on DEFAULT_SORT would leave the arrow on When while these
+		// rows sat in Accuracy order.
+		assertEquals(sort, table.sort)
 		// The invariant a row tap depends on: the run at display position i is the run whose
 		// figures fill row i. A render that sorted its own rows would satisfy every other
 		// assertion in this file and still open the wrong run when a row was tapped. Count,
@@ -224,9 +229,11 @@ class DrillStatsTableTest {
 	fun everySortableColumnOrdersByItsOwnValue() {
 		val runs = fourRuns()
 
-		// Six DIFFERENT orders over six columns, no two alike and none of them the storage
-		// order, so no column can pass here by leaving the list alone or by sorting on some
-		// other column's value. See [fourRuns] for why three runs cannot manage that.
+		// Six DIFFERENT orders over the six sortable columns OTHER than When, no two alike and
+		// none of them the storage order, so no column can pass here by leaving the list alone
+		// or by sorting on some other column's value. When is the seventh and is asserted
+		// alongside them, its ascending order being the storage order by construction. See
+		// [fourRuns] for why three runs cannot manage this.
 		assertEquals(listOf("a", "b", "c", "d"), ids(runs, "When", SortDir.ASC))
 		assertEquals(listOf("b", "a", "d", "c"), ids(runs, "Time", SortDir.ASC))
 		assertEquals(listOf("a", "d", "b", "c"), ids(runs, "Count", SortDir.ASC))
@@ -240,9 +247,16 @@ class DrillStatsTableTest {
 	fun descendingIsTheExactReverseOfAscending() {
 		val runs = fourRuns()
 
+		// All seven, spelled out rather than compared against ids(..., ASC).reversed(), which
+		// would be the code under test standing in for its own expectation. No fixture run
+		// ties any column, so the reversal is exact.
+		assertEquals(listOf("d", "c", "b", "a"), ids(runs, "When", SortDir.DESC))
+		assertEquals(listOf("c", "d", "a", "b"), ids(runs, "Time", SortDir.DESC))
+		assertEquals(listOf("c", "b", "d", "a"), ids(runs, "Count", SortDir.DESC))
+		assertEquals(listOf("c", "d", "b", "a"), ids(runs, "Right", SortDir.DESC))
+		assertEquals(listOf("b", "c", "d", "a"), ids(runs, "Wrong", SortDir.DESC))
 		assertEquals(listOf("d", "a", "c", "b"), ids(runs, "Accuracy", SortDir.DESC))
 		assertEquals(listOf("a", "d", "c", "b"), ids(runs, "Sec/Item", SortDir.DESC))
-		assertEquals(listOf("d", "c", "b", "a"), ids(runs, "When", SortDir.DESC))
 	}
 
 	@Test
@@ -259,17 +273,22 @@ class DrillStatsTableTest {
 	}
 
 	@Test
-	fun runsTiedOnTheSortedColumnKeepTheOrderTheFileGaveThem() {
+	fun runsTiedOnTheSortedColumnKeepNewestFirst() {
 		val runs = listOf(
 			run("first", fixedMillis + 1000L, seconds = 10f, right = 1, wrong = 1),
 			run("second", fixedMillis + 2000L, seconds = 20f, right = 2, wrong = 2),
 			run("third", fixedMillis + 3000L, seconds = 30f, right = 3, wrong = 3)
 		)
 
-		// All three score exactly 50%, so nothing but stability decides the order. An unstable
-		// sort would reshuffle rows on a tap the user expects to change nothing about them.
-		assertEquals(listOf("first", "second", "third"), ids(runs, "Accuracy", SortDir.ASC))
-		assertEquals(listOf("first", "second", "third"), ids(runs, "Accuracy", SortDir.DESC))
+		// All three score exactly 50%, so nothing but the base order decides this. Newest
+		// first, NOT the order the runs file holds them in - it holds them oldest first, so
+		// sorting that list directly would answer "first, second, third" here and flip a
+		// tied table to ascending by date. That is not a corner case: a Poker run is always a
+		// full deck, so a tap on Count ties every row at 52 at once.
+		assertEquals(listOf("third", "second", "first"), ids(runs, "Accuracy", SortDir.ASC))
+		assertEquals(listOf("third", "second", "first"), ids(runs, "Accuracy", SortDir.DESC))
+		// An unstable sort would reshuffle rows on a tap the user expects to change nothing.
+		assertEquals(ids(runs, "Accuracy", SortDir.ASC), ids(runs, "Accuracy", SortDir.DESC))
 	}
 
 	@Test
@@ -380,16 +399,21 @@ class DrillStatsTableTest {
 	/**
 	 * Four runs, in storage order - oldest first, as the runs file holds them.
 	 *
-	 * Built so that each of the six sortable columns puts them in a DIFFERENT order, and none
-	 * of those six is the storage order. That is what lets a sort assertion tell "ordered by
-	 * this column" apart from "left exactly as it arrived" and from "ordered by some other
-	 * column's value", and it is why there are four runs here rather than three.
+	 * Built so that each of the six sortable columns OTHER than When puts them in a DIFFERENT
+	 * order, and none of those six is the storage order. That is what lets a sort assertion
+	 * tell "ordered by this column" apart from "left exactly as it arrived" and from "ordered
+	 * by some other column's value", and it is why there are four runs here rather than three.
+	 * When is the seventh sortable column and needs no slot of its own: its ascending order IS
+	 * the storage order, by construction.
 	 *
-	 * Three is one too few, and not by a little: three runs have six orderings, one of which
-	 * is the storage order, leaving five for six columns. Two columns must then collide, and
-	 * a collision is a hole - with Time and Wrong sharing an order, a Wrong column that sorted
-	 * by the run's SECONDS passed the whole suite. That mutation is what this fourth run
-	 * closes, so do not trim it back.
+	 * Three runs is one too few, and not by a little: three runs have six orderings, one of
+	 * which is the storage order, leaving five for those six columns. Two must then collide,
+	 * and a collision is a hole - with Time and Wrong sharing an order, a Wrong column that
+	 * sorted by the run's SECONDS passed the whole suite. That mutation is what this fourth
+	 * run closes, so do not trim it back.
+	 *
+	 * No two runs tie on any column either, which is what lets the reversal case assert that
+	 * descending is ascending backwards. Ties are covered on their own fixture below.
 	 *
 	 *     id  when      Time   Count  Right  Wrong  Accuracy  Sec/Item
 	 *     a   14:07:10  00:24  2      1      1      50%       12.00

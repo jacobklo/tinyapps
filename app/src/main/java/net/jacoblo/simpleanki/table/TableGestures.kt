@@ -19,6 +19,9 @@ import net.jacoblo.simpleanki.data.TableView
  * Tapping a column sorts it ascending; tapping the one already sorted reverses it. Note
  * that a tap on a different column RESETS to ascending rather than keeping the direction
  * in force, so the first tap on any column always means "smallest first".
+ *
+ * This is the history table's rule, not the app's. DrillStatsTable.nextSort is deliberately
+ * the opposite; see the reason there.
  */
 internal fun nextSort(current: SortSpec, columnId: String): SortSpec =
 	if (current.column == columnId) {
