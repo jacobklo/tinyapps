@@ -81,22 +81,35 @@ fun DrillScreen(
 	onCloseRun: () -> Unit,
 	modifier: Modifier = Modifier
 ) {
-	// Generated once, on the way in, so the shape and scale of what is coming is on screen
-	// before the clock starts. No keys, for the reason given on the settings parameter.
-	var items by remember { mutableStateOf(DrillOps.generate(kind, kind.itemCount(settings), Random.Default)) }
-	var state by remember { mutableStateOf(DrillState.FRESH) }
+	// Every slot below is keyed on [kind], and the key is load-bearing rather than tidy.
+	// remember is positional, and both drills are headed for ONE call site: a single screen
+	// carrying the kind, so picking the other drill out of the drawer changes this argument
+	// and REUSES these slots. Unkeyed, the Poker set would stay on screen while the grid
+	// switched to the Numbers shape, and an opened Poker run would survive into a Numbers
+	// screen intact - the adoption effect below cannot undo it, since it no-ops on a null id.
+	// Keyed, changing drill is what it looks like: a fresh set of the new drill, in FRESH,
+	// with the clock at zero.
+	//
+	// Deliberately NOT keyed on [settings] as well - see that parameter's note.
+	var items by remember(kind) { mutableStateOf(DrillOps.generate(kind, kind.itemCount(settings), Random.Default)) }
+	var state by remember(kind) { mutableStateOf(DrillState.FRESH) }
 	// The wall clock at Start, which is also the run's identity. Zero until the first Start.
-	var startedAt by remember { mutableStateOf(0L) }
+	var startedAt by remember(kind) { mutableStateOf(0L) }
 	// Elapsed time as the timer shows it: ticking while RUNNING, frozen everywhere else.
-	var seconds by remember { mutableStateOf(0f) }
+	var seconds by remember(kind) { mutableStateOf(0f) }
 	// The id of the opened run, or null for a live one. Kept rather than re-derived because a
 	// hand-edited file may carry an id that is not its startedAt, and rewriting that run under
 	// the id this screen would have minted appends a second record instead of updating the one
 	// being scored.
-	var openId by remember { mutableStateOf<String?>(null) }
+	var openId by remember(kind) { mutableStateOf<String?>(null) }
 
 	// Cells are tappable, and the tally is shown, in exactly these two states.
 	val scoring = state == DrillState.EDITING || state == DrillState.PAST_RUN
+	// Marks drawn, unmarked cells hidden. True in FRESH as well, which is how a fresh set is
+	// covered - see the note at the DrillGrid call. A DIFFERENT question from [scoring] above,
+	// and named apart from it deliberately: the two are equal in every state but FRESH, so one
+	// name over both would read as a tidy-up waiting to happen and reveal the set before Start.
+	val hideUnmarked = state != DrillState.RUNNING && state != DrillState.FINISHED
 
 	/**
 	 * The run on screen, carrying [marked] as its items.
@@ -134,13 +147,20 @@ fun DrillScreen(
 
 	// The clock. Recomputed from the wall clock on every tick rather than accumulated, so a
 	// recomposition, a slow frame, or a delay that overshoots cannot drift the recorded time.
-	// Keyed on the state, which is what stops it: Done, New, and backgrounding all leave
-	// RUNNING, and leaving RUNNING cancels this coroutine mid-delay.
-	LaunchedEffect(state, startedAt) {
+	// Keyed on the state and on nothing else. Leaving RUNNING is what stops it - Done, New,
+	// and backgrounding all leave - and cancels this coroutine mid-delay. startedAt is no key
+	// of its own: it is read live off the delegate, and Start is its only writer that a tick
+	// could race, which the guard on FRESH keeps out of RUNNING entirely.
+	LaunchedEffect(state) {
 		if (state != DrillState.RUNNING) return@LaunchedEffect
 		while (true) {
 			seconds = (System.currentTimeMillis() - startedAt) / MILLIS_PER_SECOND
 			delay(TICK_MILLIS)
+			// Tested again AFTER the delay as well as before the loop. Cancellation arrives
+			// with the recomposition Done triggers, so a tick coming due in the frame Done was
+			// pressed in still gets its turn - and would write one more elapsed time over the
+			// frozen one, leaving the timer a second ahead of the run that was just stored.
+			if (state != DrillState.RUNNING) return@LaunchedEffect
 		}
 	}
 
@@ -170,7 +190,7 @@ fun DrillScreen(
 			.padding(16.dp),
 		horizontalAlignment = Alignment.CenterHorizontally
 	) {
-		Text(text = minutesSeconds(seconds), style = MaterialTheme.typography.headlineMedium)
+		Text(text = DrillOps.minutesSeconds(seconds), style = MaterialTheme.typography.headlineMedium)
 		// The tally is a scoring instrument: outside scoring every cell reads unscored, so
 		// showing it in Fresh or Running would report 0% at a set nobody has marked yet.
 		if (scoring) {
@@ -184,7 +204,7 @@ fun DrillScreen(
 			// unmarked, and covering it is the whole of what Fresh means. Passing false there
 			// would reveal the set before Start, which is the one thing that must not happen:
 			// Start revealing it is what makes the recorded time mean anything.
-			scoring = state != DrillState.RUNNING && state != DrillState.FINISHED,
+			scoring = hideUnmarked,
 			redValue = DrillOps::isRedSuit,
 			onTap = if (!scoring) null else ({ index ->
 				val marked = DrillOps.cycle(items, index)
@@ -280,18 +300,6 @@ private fun tally(run: DrillRun): String {
 	return "%d/%d = %.0f%%".format(Locale.ROOT, run.right, run.count, accuracy * 100)
 }
 
-/**
- * [seconds] as mm:ss, truncated the way a running stopwatch reads.
- *
- * A deliberate COPY of DrillStatsTable's formatter of the same name, which is private to it,
- * and not wrapped at 60 for the same reason: a run past the hour reads "65:00" rather than
- * the "05:00" a modulo would give it, so the stats table and the screen the run was timed on
- * never disagree about how long it took. Nothing makes the two drift together.
- */
-private fun minutesSeconds(seconds: Float): String {
-	val whole = seconds.toInt()
-	return "%02d:%02d".format(Locale.ROOT, whole / 60, whole % 60)
-}
 
 private const val MILLIS_PER_SECOND = 1000f
 

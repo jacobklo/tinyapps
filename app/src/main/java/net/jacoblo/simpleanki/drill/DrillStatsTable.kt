@@ -213,7 +213,7 @@ object DrillStatsTable {
 			frozen = false,
 			type = ColumnType.TEXT,
 			comparator = sortsBy { it.seconds },
-			cell = { run, _, _ -> minutesSeconds(run.seconds) }
+			cell = { run, _, _ -> DrillOps.minutesSeconds(run.seconds) }
 		),
 		StatsColumn(
 			id = ID_COUNT,
@@ -341,24 +341,6 @@ object DrillStatsTable {
 	 * two drift together, so changing either means changing both by hand.
 	 */
 	private val WHEN_FORMATTER = DateTimeFormatter.ofPattern("MM-dd HH:mm:ss", Locale.ROOT)
-
-	/**
-	 * [seconds] as mm:ss, truncated to whole seconds the way a running stopwatch reads.
-	 *
-	 * The minutes are NOT wrapped at 60: a 3900 second run renders "65:00", not the "05:00"
-	 * that a modulo would give it. A drill this long is a user who walked away mid-set rather
-	 * than a real session, and "05:00" would hide that behind a figure that looks like a
-	 * respectable time.
-	 *
-	 * A negative [seconds] - only a hand-edited file has one, since the drill's own clock
-	 * cannot produce it - renders as "00:-5" and is deliberately not clamped, for the reason
-	 * DrillKind.itemCount gives: clamping would leave the file saying one thing and the screen
-	 * showing another, and a typo the user can see is one they can go and fix.
-	 */
-	private fun minutesSeconds(seconds: Float): String {
-		val whole = seconds.toInt()
-		return "%02d:%02d".format(Locale.ROOT, whole / 60, whole % 60)
-	}
 
 	/**
 	 * A fraction as a whole percentage, or the dash for a run that has none.

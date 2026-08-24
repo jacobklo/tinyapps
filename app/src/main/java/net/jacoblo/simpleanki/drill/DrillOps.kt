@@ -11,6 +11,7 @@ package net.jacoblo.simpleanki.drill
 
 import net.jacoblo.simpleanki.data.DrillItem
 import net.jacoblo.simpleanki.data.ItemStatus
+import java.util.Locale
 import kotlin.random.Random
 
 object DrillOps {
@@ -159,4 +160,27 @@ object DrillOps {
 	 */
 	fun isRevealed(status: ItemStatus, scoring: Boolean): Boolean =
 		!scoring || status != ItemStatus.UNSCORED
+
+	/**
+	 * [seconds] as mm:ss, truncated to whole seconds the way a running stopwatch reads.
+	 *
+	 * Here rather than in either caller because both need it: the drill screen's live timer,
+	 * and the stats table's Time column. Two copies would be two chances for the screen a run
+	 * was timed on and the table that lists it to disagree about how long it took - and only
+	 * one of the two would be the copy the tests happen to reach.
+	 *
+	 * The minutes are NOT wrapped at 60: a 3900 second run renders "65:00", not the "05:00"
+	 * that a modulo would give it. A drill this long is a user who walked away mid-set rather
+	 * than a real session, and "05:00" would hide that behind a figure that looks like a
+	 * respectable time.
+	 *
+	 * A negative [seconds] - only a hand-edited file has one, since the drill's own clock
+	 * cannot produce it - renders as "00:-5" and is deliberately not clamped, for the reason
+	 * [DrillKind.itemCount] gives: clamping would leave the file saying one thing and the
+	 * screen showing another, and a typo the user can see is one they can go and fix.
+	 */
+	fun minutesSeconds(seconds: Float): String {
+		val whole = seconds.toInt()
+		return "%02d:%02d".format(Locale.ROOT, whole / 60, whole % 60)
+	}
 }

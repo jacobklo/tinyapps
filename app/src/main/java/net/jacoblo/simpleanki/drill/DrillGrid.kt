@@ -42,7 +42,7 @@ import net.jacoblo.simpleanki.data.ItemStatus
  * Scrolls in both directions rather than shrinking cells: the user chose the cell size in
  * settings, so a grid too wide for the viewport scrolls sideways instead of overriding it.
  * Both scroll offsets are remembered, so a scroll to the far corner of a large grid survives
- * the recomposition that every clock tick causes.
+ * any recomposition.
  *
  * Not lazy, and not a LazyVerticalGrid. A drill set is a screenful or a few - 52 cells at the
  * top of what the app ships with - and the lazy grids cannot be made to scroll on both axes
