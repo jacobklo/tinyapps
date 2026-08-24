@@ -18,6 +18,10 @@ class AnkiPaths(val root: File) {
 	val views: File get() = File(root, "views.json")
 	val dump: File get() = File(root, "dump.json")
 
+	/** One runs file per drill, each a bare JSON array like history.json. */
+	val numbersRuns: File get() = File(root, "numbers-runs.json")
+	val pokerRuns: File get() = File(root, "poker-runs.json")
+
 	/**
 	 * The retired stats.json - READ ONLY, and read at most once per install.
 	 *

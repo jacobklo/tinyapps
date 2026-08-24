@@ -1,5 +1,5 @@
 /*
- * Shared data types for decks, history, settings, and table views.
+ * Shared data types for decks, history, settings, table views, and drills.
  *
  * Free of Android imports on purpose so JVM tests can build and assert on these
  * types with no emulator.
@@ -62,6 +62,63 @@ data class TableView(
 	val columns: List<ColumnSpec>
 )
 
+/**
+ * How the user marked one drill cell after the fact.
+ *
+ * UNSCORED means "not checked" and WRONG means "checked and missed". The two stay
+ * distinct on disk so a half-scored run is still recognisable as one, but they weigh
+ * exactly the same in [DrillRun.accuracy] - see the note there.
+ */
+enum class ItemStatus { UNSCORED, RIGHT, WRONG }
+
+/**
+ * One cell of a drill. [status] is the ONLY state a cell has - whether its value is
+ * revealed while scoring is derived from it (UNSCORED hides, the other two reveal),
+ * so there is no second flag that could disagree with the mark.
+ */
+data class DrillItem(val value: String, val status: ItemStatus = ItemStatus.UNSCORED)
+
+/**
+ * One completed drill: the values that were shown, how long they were studied, and how
+ * each of them was marked afterwards.
+ *
+ * Every figure below is derived from [items] on read rather than stored beside them.
+ * Scoring rewrites the run on every tap and the file is hand-editable, so a persisted
+ * right/wrong total would be a second copy free to drift out of step with the marks it
+ * claims to count.
+ *
+ * [id] is [startedAt] rendered as a decimal string. A collision needs two runs to start
+ * within the same millisecond, which a drill spanning seconds cannot reach.
+ */
+data class DrillRun(
+	val id: String,
+	val startedAt: Long,
+	val seconds: Float,
+	val items: List<DrillItem>
+) {
+	val count: Int get() = items.size
+	val right: Int get() = items.count { it.status == ItemStatus.RIGHT }
+	val wrong: Int get() = items.count { it.status == ItemStatus.WRONG }
+
+	/**
+	 * right / count. Null for an empty run, which only a hand-edited file can produce.
+	 *
+	 * The denominator is [count] and not right + wrong on purpose: an item the user
+	 * never checked counts against them exactly as a missed one does. Dividing by the
+	 * checked items instead would score a run where one cell was marked right and the
+	 * rest left alone as 100%.
+	 *
+	 * Null rather than 0f because 0f is a legitimate accuracy - every item marked
+	 * wrong - so returning it for an empty run makes "no data" indistinguishable from
+	 * a disastrous session, and it would sort, average and render as a real 0% in the
+	 * stats table. Null leaves the caller no option but to print a dash.
+	 */
+	val accuracy: Float? get() = if (count == 0) null else right.toFloat() / count
+
+	/** seconds / count, null for an empty run for the same reason as [accuracy]. */
+	val secondsPerItem: Float? get() = if (count == 0) null else seconds / count
+}
+
 data class MetronomeSettings(
 	val enabled: Boolean = false,
 	val intervalSeconds: Float = 10.0f,
@@ -99,9 +156,37 @@ data class HistorySettings(val maxEntries: Int = 5000)
  */
 data class CounterSettings(val lifetimeReviews: Int = 0)
 
+/**
+ * Size and shape of the Numbers grid.
+ *
+ * The defaults put the whole grid inside a 360dp phone with no horizontal scrolling -
+ * 5 columns at 64dp is 320dp. Raising a column count or a cell size is meant to be what
+ * makes a grid scroll, so recompute that product before changing any default here.
+ */
+data class NumbersSettings(
+	val count: Int = 50,
+	val columns: Int = 5,
+	val cellWidthDp: Int = 64,
+	val cellHeightDp: Int = 56
+)
+
+/**
+ * Size and shape of the Poker grid. 6 columns at 56dp is 336dp, inside 360dp for the
+ * same reason as [NumbersSettings].
+ *
+ * No count: Poker is one full deck, always 52, so there is nothing here to configure.
+ */
+data class PokerSettings(
+	val columns: Int = 6,
+	val cellWidthDp: Int = 56,
+	val cellHeightDp: Int = 56
+)
+
 data class Settings(
 	val metronome: MetronomeSettings = MetronomeSettings(),
 	val table: TableSettings = TableSettings(),
 	val history: HistorySettings = HistorySettings(),
-	val counters: CounterSettings = CounterSettings()
+	val counters: CounterSettings = CounterSettings(),
+	val numbers: NumbersSettings = NumbersSettings(),
+	val poker: PokerSettings = PokerSettings()
 )

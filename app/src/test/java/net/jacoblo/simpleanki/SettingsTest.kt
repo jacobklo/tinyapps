@@ -4,6 +4,8 @@ import net.jacoblo.simpleanki.data.AnkiPaths
 import net.jacoblo.simpleanki.data.CounterSettings
 import net.jacoblo.simpleanki.data.HistorySettings
 import net.jacoblo.simpleanki.data.MetronomeSettings
+import net.jacoblo.simpleanki.data.NumbersSettings
+import net.jacoblo.simpleanki.data.PokerSettings
 import net.jacoblo.simpleanki.data.Settings
 import net.jacoblo.simpleanki.data.SettingsRepository
 import net.jacoblo.simpleanki.data.TableSettings
@@ -20,7 +22,8 @@ import java.io.File
 /**
  * Covers settings.json: the one-time seed of the lifetime review counter from the
  * retired stats.json, corrupt-file quarantine, unknown-key preservation, and round
- * tripping.
+ * tripping - plus one case that is not about the file at all, pinning the default
+ * drill grid geometry to the phone width it was chosen to fit.
  *
  * Serialized text is never asserted on directly. The test classpath's org.json is
  * HashMap-backed while Android's is LinkedHashMap-backed, so key order is arbitrary
@@ -111,16 +114,68 @@ class SettingsTest {
 	fun saveAndLoadRoundTripEveryField() {
 		val paths = AnkiPaths.at(tempFolder.root)
 		val repository = SettingsRepository(paths)
+		// No two of the drill numbers repeat, across the two sections as well as within
+		// them. That is load-bearing, not decoration: a writer that reads Numbers where it
+		// means Poker round trips undetected the moment the two sections share a value.
 		val settings = Settings(
 			metronome = MetronomeSettings(enabled = true, intervalSeconds = 4.5f, soundPath = "/sdcard/tick.wav"),
 			table = TableSettings(defaultLimit = 3, highlightEvery = 2, defaultWindowSize = 40),
 			history = HistorySettings(maxEntries = 120),
-			counters = CounterSettings(lifetimeReviews = 15701)
+			counters = CounterSettings(lifetimeReviews = 15701),
+			numbers = NumbersSettings(count = 30, columns = 8, cellWidthDp = 72, cellHeightDp = 48),
+			poker = PokerSettings(columns = 4, cellWidthDp = 80, cellHeightDp = 40)
 		)
 
 		repository.save(settings)
 
 		assertEquals(settings, repository.load())
+	}
+
+	@Test
+	fun aPartiallyPopulatedDrillSectionFallsBackPerKey() {
+		val paths = AnkiPaths.at(tempFolder.root)
+		paths.settings.writeText("{\"numbers\":{\"columns\":8},\"poker\":{\"cellHeightDp\":40}}")
+
+		val loaded = SettingsRepository(paths).load()
+
+		// Per key, not per section. A hand-edit that widens one grid must leave the
+		// three keys it did not mention alone, which a section-level fallback would not.
+		assertEquals(NumbersSettings(columns = 8), loaded.numbers)
+		assertEquals(PokerSettings(cellHeightDp = 40), loaded.poker)
+	}
+
+	@Test
+	fun aDrillSectionThatIsNotAnObjectFallsBackToTheDefaults() {
+		val paths = AnkiPaths.at(tempFolder.root)
+		// Both are plausible hand-edits by someone who has not seen the shape. Neither
+		// may take the app down on the way to the screen that would let them fix it.
+		paths.settings.writeText("{\"numbers\":50,\"poker\":[6,56,56]}")
+
+		val loaded = SettingsRepository(paths).load()
+
+		assertEquals(NumbersSettings(), loaded.numbers)
+		assertEquals(PokerSettings(), loaded.poker)
+	}
+
+	/**
+	 * The defaults are picked so both grids fit a 360dp phone without scrolling
+	 * sideways: 5 x 64 is 320, and 6 x 56 is 336. Widening a cell or adding a column is
+	 * meant to be what makes a grid scroll, so a default that already scrolls would hide
+	 * the one control the user has over it.
+	 *
+	 * Cell area only, spacing excluded. Poker's 24dp of slack has to cover five
+	 * inter-column gaps and any content padding, so this passing does not by itself mean
+	 * the rendered grid fits - once DrillGrid has spacing, that belongs to its own test.
+	 */
+	@Test
+	fun theDefaultGridsFitA360DpPhone() {
+		val numbers = NumbersSettings()
+		val poker = PokerSettings()
+		val numbersWidth = numbers.columns * numbers.cellWidthDp
+		val pokerWidth = poker.columns * poker.cellWidthDp
+
+		assertTrue("numbers cells span ${numbersWidth}dp", numbersWidth <= NARROW_PHONE_WIDTH_DP)
+		assertTrue("poker cells span ${pokerWidth}dp", pokerWidth <= NARROW_PHONE_WIDTH_DP)
 	}
 
 	@Test
@@ -154,7 +209,9 @@ class SettingsTest {
 				metronome = MetronomeSettings(enabled = true, intervalSeconds = 4.5f, soundPath = "/sdcard/tick.wav"),
 				table = TableSettings(defaultLimit = 3, highlightEvery = 2, defaultWindowSize = 40),
 				history = HistorySettings(maxEntries = 120),
-				counters = CounterSettings(lifetimeReviews = 15701)
+				counters = CounterSettings(lifetimeReviews = 15701),
+				numbers = NumbersSettings(count = 30, columns = 8, cellWidthDp = 72, cellHeightDp = 48),
+				poker = PokerSettings(columns = 4, cellWidthDp = 80, cellHeightDp = 40)
 			)
 		)
 
@@ -173,6 +230,20 @@ class SettingsTest {
 
 		assertEquals(120, root.getJSONObject("history").getInt("maxEntries"))
 		assertEquals(15701, root.getJSONObject("counters").getInt("lifetimeReviews"))
+
+		val numbers = root.getJSONObject("numbers")
+		assertEquals(30, numbers.getInt("count"))
+		assertEquals(8, numbers.getInt("columns"))
+		assertEquals(72, numbers.getInt("cellWidthDp"))
+		assertEquals(48, numbers.getInt("cellHeightDp"))
+
+		val poker = root.getJSONObject("poker")
+		assertEquals(4, poker.getInt("columns"))
+		assertEquals(80, poker.getInt("cellWidthDp"))
+		assertEquals(40, poker.getInt("cellHeightDp"))
+		// Poker is one full deck. A count on disk would be a knob the drill never reads,
+		// and a hand-edit of it would look like it had been ignored.
+		assertFalse(poker.has("count"))
 	}
 
 	@Test
@@ -273,5 +344,8 @@ class SettingsTest {
 			"\"13\":{\"history\":[1.0570000410079956,2.190000057220459]}}"
 
 		const val TRUNCATED = "{\"counters\":{\"lifetimeReviews\":15700"
+
+		/** The width of the narrowest phone the drill grids are sized to fit. */
+		const val NARROW_PHONE_WIDTH_DP = 360
 	}
 }

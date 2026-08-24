@@ -102,6 +102,19 @@ class SettingsRepository(private val paths: AnkiPaths) {
 		}
 		child(root, KEY_HISTORY).put(KEY_MAX_ENTRIES, settings.history.maxEntries)
 		child(root, KEY_COUNTERS).put(KEY_LIFETIME_REVIEWS, settings.counters.lifetimeReviews)
+		child(root, KEY_NUMBERS).apply {
+			put(KEY_COUNT, settings.numbers.count)
+			put(KEY_COLUMNS, settings.numbers.columns)
+			put(KEY_CELL_WIDTH_DP, settings.numbers.cellWidthDp)
+			put(KEY_CELL_HEIGHT_DP, settings.numbers.cellHeightDp)
+		}
+		// No count key: Poker is one full deck, and writing one would put a number on
+		// disk that a hand-edit could change with nothing honouring it.
+		child(root, KEY_POKER).apply {
+			put(KEY_COLUMNS, settings.poker.columns)
+			put(KEY_CELL_WIDTH_DP, settings.poker.cellWidthDp)
+			put(KEY_CELL_HEIGHT_DP, settings.poker.cellHeightDp)
+		}
 		store.write(root.toString())
 	}
 
@@ -112,10 +125,17 @@ class SettingsRepository(private val paths: AnkiPaths) {
 	 */
 	private fun fromJson(root: JSONObject): Settings {
 		val fallback = Settings()
+		// Every section is read the same way, and the empty object is doing real work in
+		// each: optJSONObject yields null for a section that is absent AND for one that is
+		// present but is not an object, so a hand-edited "numbers": 50 or "table": [] falls
+		// back to defaults per key below rather than throwing on the way to the settings
+		// screen that would let the user repair it.
 		val metronome = root.optJSONObject(KEY_METRONOME) ?: JSONObject()
 		val table = root.optJSONObject(KEY_TABLE) ?: JSONObject()
 		val history = root.optJSONObject(KEY_HISTORY) ?: JSONObject()
 		val counters = root.optJSONObject(KEY_COUNTERS) ?: JSONObject()
+		val numbers = root.optJSONObject(KEY_NUMBERS) ?: JSONObject()
+		val poker = root.optJSONObject(KEY_POKER) ?: JSONObject()
 		return Settings(
 			metronome = MetronomeSettings(
 				enabled = metronome.optBoolean(KEY_ENABLED, fallback.metronome.enabled),
@@ -155,6 +175,17 @@ class SettingsRepository(private val paths: AnkiPaths) {
 					KEY_LIFETIME_REVIEWS,
 					fallback.counters.lifetimeReviews
 				)
+			),
+			numbers = NumbersSettings(
+				count = numbers.optInt(KEY_COUNT, fallback.numbers.count),
+				columns = numbers.optInt(KEY_COLUMNS, fallback.numbers.columns),
+				cellWidthDp = numbers.optInt(KEY_CELL_WIDTH_DP, fallback.numbers.cellWidthDp),
+				cellHeightDp = numbers.optInt(KEY_CELL_HEIGHT_DP, fallback.numbers.cellHeightDp)
+			),
+			poker = PokerSettings(
+				columns = poker.optInt(KEY_COLUMNS, fallback.poker.columns),
+				cellWidthDp = poker.optInt(KEY_CELL_WIDTH_DP, fallback.poker.cellWidthDp),
+				cellHeightDp = poker.optInt(KEY_CELL_HEIGHT_DP, fallback.poker.cellHeightDp)
 			)
 		)
 	}
@@ -224,5 +255,16 @@ class SettingsRepository(private val paths: AnkiPaths) {
 		private const val KEY_MAX_ENTRIES = "maxEntries"
 		private const val KEY_COUNTERS = "counters"
 		private const val KEY_LIFETIME_REVIEWS = "lifetimeReviews"
+		private const val KEY_NUMBERS = "numbers"
+		private const val KEY_POKER = "poker"
+		private const val KEY_COUNT = "count"
+
+		// One constant per JSON key, not per field. The two drill sections are separate
+		// objects, so the same spelling under both cannot collide - and settings.json is
+		// hand-edited, so both grids must use one word for one knob. Six constants would
+		// let "columns" be renamed under numbers and left alone under poker.
+		private const val KEY_COLUMNS = "columns"
+		private const val KEY_CELL_WIDTH_DP = "cellWidthDp"
+		private const val KEY_CELL_HEIGHT_DP = "cellHeightDp"
 	}
 }
