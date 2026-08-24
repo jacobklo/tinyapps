@@ -3,12 +3,19 @@ package net.jacoblo.simpleanki
 import net.jacoblo.simpleanki.data.AnkiPaths
 import net.jacoblo.simpleanki.data.ColumnType
 import net.jacoblo.simpleanki.data.DeckRepository
+import net.jacoblo.simpleanki.data.DrillRun
+import net.jacoblo.simpleanki.data.DrillRunsRepository
 import net.jacoblo.simpleanki.data.HistoryRepository
+import net.jacoblo.simpleanki.data.ItemStatus
 import net.jacoblo.simpleanki.data.SettingsRepository
 import net.jacoblo.simpleanki.data.SortDir
 import net.jacoblo.simpleanki.data.SortSpec
 import net.jacoblo.simpleanki.data.TableSettings
 import net.jacoblo.simpleanki.data.ViewsRepository
+import net.jacoblo.simpleanki.drill.DrillKind
+import net.jacoblo.simpleanki.drill.DrillOps
+import net.jacoblo.simpleanki.drill.DrillStatsTable
+import net.jacoblo.simpleanki.drill.runsFile
 import net.jacoblo.simpleanki.table.RenderedColumn
 import net.jacoblo.simpleanki.table.RenderedTable
 import net.jacoblo.simpleanki.table.toPayloadJson
@@ -23,6 +30,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.time.ZoneId
 
 /**
  * Covers test mode's two file-writing halves: the fixture seed and the render dump.
@@ -42,13 +50,17 @@ class TestModeTest {
 	val tempFolder = TemporaryFolder()
 
 	@Test
-	fun seedWritesTheFourFixtureFiles() {
+	fun seedWritesTheSixFixtureFiles() {
 		val paths = seededRoot("SimpleAnki-test")
 
 		assertTrue(paths.deck.exists())
 		assertTrue(paths.history.exists())
 		assertTrue(paths.settings.exists())
 		assertTrue(paths.views.exists())
+		// One per drill. Both, or a stats screen opens empty for whichever was missed - which
+		// looks exactly like a drill nobody has run, so the gap would be read as normal.
+		assertTrue("numbers-runs.json was not seeded", paths.numbersRuns.exists())
+		assertTrue("poker-runs.json was not seeded", paths.pokerRuns.exists())
 	}
 
 	@Test
@@ -108,6 +120,140 @@ class TestModeTest {
 		assertEquals(5000, settings.history.maxEntries)
 		assertEquals(10, settings.table.defaultLimit)
 		assertEquals(0, settings.counters.lifetimeReviews)
+	}
+
+	/**
+	 * Both runs files have to come back through the repository that will read them on device.
+	 *
+	 * Parsing IS the assertion: DrillRunsRepository skips a malformed record rather than failing
+	 * over it, so a fixture written in a shape it does not understand would reach the stats
+	 * screen as an empty table and read there as a drill nobody had ever run.
+	 */
+	@Test
+	fun seededRunsParseBackForBothDrills() {
+		val paths = seededRoot("runs-test")
+
+		val numbers = seededRuns(paths, DrillKind.NUMBERS)
+		val poker = seededRuns(paths, DrillKind.POKER)
+
+		assertEquals(3, numbers.size)
+		assertEquals(3, poker.size)
+		// Each set is the size the drill itself would generate: the Numbers count off the
+		// seeded settings, and a full deck for Poker whatever settings say.
+		assertTrue(numbers.all { it.count == NUMBERS_COUNT })
+		assertTrue(poker.all { it.count == DrillOps.DECK_SIZE })
+	}
+
+	/**
+	 * The two files hold two different drills, which is the whole reason there are two of them.
+	 *
+	 * Seeding one fixture into both paths would leave every other assertion here passing and
+	 * still put a grid of two-digit numbers behind the Poker stats screen.
+	 */
+	@Test
+	fun theTwoSeededFilesHoldTheirOwnDrill() {
+		val paths = seededRoot("perdrill-test")
+
+		val numbers = seededRuns(paths, DrillKind.NUMBERS).flatMap { it.items }.map { it.value }
+		val poker = seededRuns(paths, DrillKind.POKER)
+
+		assertTrue("Numbers cells must be two padded digits", numbers.all { TWO_DIGITS.matches(it) })
+		// Every card exactly once per run, which is also what shows the deck came out of
+		// DrillOps.generateDeck rather than out of a suit glyph typed into the fixture.
+		val deck = DrillOps.SUITS.flatMap { suit -> DrillOps.RANKS.map { rank -> rank + suit } }
+		poker.forEach { run -> assertEquals(deck.toSet(), run.items.map { it.value }.toSet()) }
+	}
+
+	/**
+	 * id == startedAt.toString(), on every seeded run, in both files.
+	 *
+	 * The invariant Models.kt states and DrillScreen mints. A fixture that broke it would send
+	 * every test-mode reopen down the hand-edited-file path DrillScreen's openId exists for, so
+	 * a scenario driven against these runs would not be exercising what a real run does.
+	 */
+	@Test
+	fun everySeededRunIdIsItsStartedAtRendered() {
+		val paths = seededRoot("runid-test")
+
+		val all = seededRuns(paths, DrillKind.NUMBERS) + seededRuns(paths, DrillKind.POKER)
+
+		all.forEach { assertEquals("id must be startedAt rendered", it.startedAt.toString(), it.id) }
+		// Across both files and not merely within one: DrillRoute reopens a run by id alone, so
+		// a Numbers run and a Poker run sharing one would be two records it cannot tell apart.
+		assertEquals(all.size, all.map { it.id }.distinct().size)
+	}
+
+	/**
+	 * One unscored run, one half scored, one scored through - per drill.
+	 *
+	 * The counts are spelled out rather than derived, because they are exactly what a device
+	 * check reads off the stats table. The unscored run is the one that matters most: right and
+	 * wrong both zero is a real 0% row, and without it that row can only be reached by opening
+	 * a drill and deliberately marking nothing.
+	 */
+	@Test
+	fun seededRunsCoverUnscoredHalfScoredAndFullyScored() {
+		val paths = seededRoot("scored-test")
+
+		val numbers = seededRuns(paths, DrillKind.NUMBERS)
+		val poker = seededRuns(paths, DrillKind.POKER)
+
+		assertRun(numbers[0], right = 0, wrong = 0, unscored = 50)
+		assertRun(numbers[1], right = 20, wrong = 5, unscored = 25)
+		assertRun(numbers[2], right = 40, wrong = 10, unscored = 0)
+		assertRun(poker[0], right = 0, wrong = 0, unscored = 52)
+		assertRun(poker[1], right = 21, wrong = 5, unscored = 26)
+		assertRun(poker[2], right = 42, wrong = 10, unscored = 0)
+	}
+
+	/**
+	 * The 0% row is visible on the stats table itself, not merely implied by the counts.
+	 *
+	 * Rendered through DrillStatsTable rather than read off the run, because 0% and the dash are
+	 * the two readings this fixture exists to keep apart and only the renderer decides which of
+	 * them a row shows. A fixed zone, since a stable dump is the point of the whole fixture.
+	 */
+	@Test
+	fun seededRunsPutAZeroPercentRowOnTheStatsTable() {
+		val runs = seededRuns(seededRoot("zeropercent-test"), DrillKind.NUMBERS)
+
+		val table = DrillStatsTable.render(
+			runs = runs,
+			kind = DrillKind.NUMBERS,
+			sort = DrillStatsTable.DEFAULT_SORT,
+			highlightEvery = 5,
+			zone = ZoneId.of("UTC")
+		)
+
+		val accuracy = table.columns.indexOfFirst { it.id == DrillStatsTable.ID_ACCURACY }
+		// Newest first, which is what DEFAULT_SORT promises: the fully scored run, then the
+		// half scored one, then the untouched one.
+		assertEquals(listOf("80%", "40%", "0%"), table.rows.map { it[accuracy] })
+	}
+
+	/**
+	 * Fixed timestamps and fixed durations, both spelled out, so a dump taken today and one
+	 * taken next year are the same file.
+	 */
+	@Test
+	fun seededRunTimestampsAndDurationsAreFixed() {
+		val paths = seededRoot("runtime-test")
+
+		val numbers = seededRuns(paths, DrillKind.NUMBERS)
+		val poker = seededRuns(paths, DrillKind.POKER)
+
+		assertEquals(NUMBERS_STARTED_AT, numbers.map { it.startedAt })
+		assertEquals(POKER_STARTED_AT, poker.map { it.startedAt })
+		// Held oldest first, the order DrillRunsRepository.save trims from.
+		assertEquals(numbers.map { it.startedAt }.sorted(), numbers.map { it.startedAt })
+		assertEquals(poker.map { it.startedAt }.sorted(), poker.map { it.startedAt })
+		// Exact equality and no tolerance: seconds is a Float stored as a Double, and the point
+		// of 83.4f is that it reads back as itself rather than as a neighbouring float.
+		assertEquals(SECONDS, numbers.map { it.seconds })
+		assertEquals(SECONDS, poker.map { it.seconds })
+		// A clock-derived fixture would land within seconds of now; this one is pinned to 2023.
+		val newestAge = System.currentTimeMillis() - poker.last().startedAt
+		assertTrue("run timestamps look clock-derived", newestAge > 24L * 60 * 60 * 1000)
 	}
 
 	@Test
@@ -174,6 +320,11 @@ class TestModeTest {
 		assertEquals(first.history.readText(), second.history.readText())
 		assertEquals(first.settings.readText(), second.settings.readText())
 		assertEquals(first.views.readText(), second.views.readText())
+		// The runs are the one fixture built by a generator, so they are the only one a stray
+		// Random.Default would break - and it would break it silently, since a reshuffled deck
+		// is still a valid deck.
+		assertEquals(first.numbersRuns.readText(), second.numbersRuns.readText())
+		assertEquals(first.pokerRuns.readText(), second.pokerRuns.readText())
 		// A fixture that read the clock would still pass the above if it were fast enough.
 		assertFalse(first.history.readText().contains(System.currentTimeMillis().toString()))
 	}
@@ -300,7 +451,51 @@ class TestModeTest {
 		return paths
 	}
 
+	/**
+	 * [kind]'s seeded runs, oldest first, read back the way the app reads them.
+	 *
+	 * Through DrillRunsRepository and DrillKind.runsFile rather than off a path spelled here,
+	 * so a test asserting the fixture is asserting what the drill screens will actually load.
+	 */
+	private fun seededRuns(paths: AnkiPaths, kind: DrillKind): List<DrillRun> =
+		DrillRunsRepository(kind.runsFile(paths)).load()
+
+	/**
+	 * [run] holds exactly these marks - and [unscored] is checked as well as the other two,
+	 * because right and wrong alone cannot tell a half-scored run from a shorter finished one.
+	 */
+	private fun assertRun(run: DrillRun, right: Int, wrong: Int, unscored: Int) {
+		assertEquals("right in run ${run.id}", right, run.right)
+		assertEquals("wrong in run ${run.id}", wrong, run.wrong)
+		assertEquals(
+			"unscored in run ${run.id}",
+			unscored,
+			run.items.count { it.status == ItemStatus.UNSCORED }
+		)
+	}
+
 	private companion object {
+		/** What NumbersSettings defaults to, and so what a seeded Numbers run holds. */
+		const val NUMBERS_COUNT = 50
+
+		/** A Numbers cell: two digits, zero padded, never one and never three. */
+		val TWO_DIGITS = Regex("[0-9]{2}")
+
+		/**
+		 * The seeded run timestamps, spelled out rather than computed from the same constants
+		 * the fixture uses - which would agree with any arithmetic, including the wrong sort.
+		 *
+		 * 2023-11-14T23:13:20Z and the two hours after it, then Poker's block an hour later
+		 * again, so no two runs in a seeded root share a start time.
+		 */
+		val NUMBERS_STARTED_AT =
+			listOf(1_700_003_600_000L, 1_700_007_200_000L, 1_700_010_800_000L)
+		val POKER_STARTED_AT =
+			listOf(1_700_014_400_000L, 1_700_018_000_000L, 1_700_021_600_000L)
+
+		/** Each drill's three durations, oldest run first. */
+		val SECONDS = listOf(83.4f, 96.5f, 120.0f)
+
 		val SAMPLE_TABLE = RenderedTable(
 			viewId = "stats",
 			sort = SortSpec("Question", SortDir.ASC),

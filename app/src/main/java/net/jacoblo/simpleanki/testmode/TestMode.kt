@@ -20,20 +20,29 @@ import android.app.Activity
 import net.jacoblo.simpleanki.BuildConfig
 import net.jacoblo.simpleanki.data.AnkiCard
 import net.jacoblo.simpleanki.data.AnkiPaths
+import net.jacoblo.simpleanki.data.DrillItem
+import net.jacoblo.simpleanki.data.DrillRun
+import net.jacoblo.simpleanki.data.DrillRunsRepository
 import net.jacoblo.simpleanki.data.HistoryEntry
 import net.jacoblo.simpleanki.data.HistoryRepository
 import net.jacoblo.simpleanki.data.HistorySettings
+import net.jacoblo.simpleanki.data.ItemStatus
 import net.jacoblo.simpleanki.data.JsonStore
 import net.jacoblo.simpleanki.data.MetronomeSettings
 import net.jacoblo.simpleanki.data.Settings
 import net.jacoblo.simpleanki.data.SettingsRepository
 import net.jacoblo.simpleanki.data.ViewsRepository
+import net.jacoblo.simpleanki.drill.DrillKind
+import net.jacoblo.simpleanki.drill.DrillOps
+import net.jacoblo.simpleanki.drill.itemCount
+import net.jacoblo.simpleanki.drill.runsFile
 import net.jacoblo.simpleanki.table.RenderedTable
 import net.jacoblo.simpleanki.table.toWireToken
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
+import kotlin.random.Random
 
 object TestMode {
 
@@ -50,7 +59,7 @@ object TestMode {
 		BuildConfig.DEBUG && activity.intent?.getBooleanExtra(EXTRA, false) == true
 
 	/**
-	 * Wipes [paths] and writes the deck, history, settings, and views fixtures.
+	 * Wipes [paths] and writes the deck, history, settings, views and drill-run fixtures.
 	 *
 	 * Run once per activity launch, before anything reads those files, so every run starts
 	 * from an identical state no matter what the previous run left behind.
@@ -80,6 +89,7 @@ object TestMode {
 			// rather than left to ViewsRepository.load's auto-create so a seed failure
 			// still surfaces as the IOException below rather than being swallowed.
 			ViewsRepository(paths).save(ViewsRepository.defaults(SETTINGS_FIXTURE.table))
+			writeRuns(paths)
 		} catch (e: IOException) {
 			throw IOException(
 				"could not seed ${paths.root}: test mode needs MANAGE_EXTERNAL_STORAGE. " +
@@ -145,6 +155,26 @@ object TestMode {
 			array.put(JSONObject().put("question", card.question).put("answer", card.answer))
 		}
 		JsonStore(paths.deck).write(array.toString(DECK_INDENT))
+	}
+
+	/**
+	 * Writes one runs file per drill, so both stats screens have rows before anything is drilled.
+	 *
+	 * Iterates DrillKind rather than naming numbers-runs.json and poker-runs.json, and routes
+	 * through [DrillRunsRepository] rather than building the JSON here. Both are the same point:
+	 * a fixture the app cannot read is worse than no fixture, and the only way to be sure it can
+	 * is to write it with the very code that will read it back. A third drill also gets its own
+	 * seeded file for free instead of being silently left out of test mode.
+	 *
+	 * The retention cap is the fixture's own size. The cap exists to trim a file that grows one
+	 * run at a time; here the list IS the file, and passing anything smaller would quietly seed
+	 * fewer runs than [RUN_PLANS] declares.
+	 */
+	private fun writeRuns(paths: AnkiPaths) {
+		DrillKind.entries.forEach { kind ->
+			val runs = runFixture(kind)
+			DrillRunsRepository(kind.runsFile(paths)).save(runs, runs.size)
+		}
 	}
 
 	/** [table] as the documented dump.json object. */
@@ -281,4 +311,141 @@ object TestMode {
 	private val SETTINGS_FIXTURE = Settings(
 		metronome = MetronomeSettings(enabled = false, intervalSeconds = 0.3f)
 	)
+
+	// ---------------------------------------------------------------------------
+	// Drill runs
+	// ---------------------------------------------------------------------------
+
+	/**
+	 * Seed of the generator behind every fixture set.
+	 *
+	 * Fixed, and never Random.Default, for the reason [EPOCH_BASE_MILLIS] gives about the clock:
+	 * two seeds have to produce byte-identical files. A set of numbers that changed on every
+	 * launch would leave an agent's expected dump good for exactly one run, and a Poker grid
+	 * reshuffled behind its stored marks would be a fixture that reads differently from itself.
+	 */
+	private const val RUN_RANDOM_SEED = 20231114
+
+	/** Spacing between fixture runs - one hour. See [runFixture] for why it is this wide. */
+	private const val RUN_STEP_MILLIS = 3_600_000L
+
+	/**
+	 * The first fixture run, one hour past [EPOCH_BASE_MILLIS].
+	 *
+	 * An hour, so the runs start clear of the 30 history records, which end 29 minutes in. The
+	 * two fixtures describe unrelated activity and nothing joins them, but a run timestamped
+	 * inside the history's own span invites the reader to look for a link that is not there.
+	 */
+	private const val RUNS_BASE_MILLIS = EPOCH_BASE_MILLIS + RUN_STEP_MILLIS
+
+	/** Every [WRONG_EVERY]th marked cell is WRONG; the rest are RIGHT. */
+	private const val WRONG_EVERY = 5
+
+	/**
+	 * How much of a fixture run the user is pretended to have marked.
+	 *
+	 * All three exist so that every shape the stats table can draw is on screen before anyone
+	 * has drilled. [NONE] is the one worth spelling out: right and wrong are both zero, so its
+	 * Accuracy cell reads 0% and NOT the dash - the dash belongs to a run with no items at all -
+	 * and that distinction has no other way into a fixture, since scoring a run through the UI
+	 * is what a tester would otherwise have to skip in order to see it.
+	 */
+	private enum class Scored {
+		NONE,
+		HALF,
+		ALL;
+
+		/** How many of a run's [itemCount] cells carry a mark. */
+		fun markedCount(itemCount: Int): Int = when (this) {
+			NONE -> 0
+			HALF -> itemCount / 2
+			ALL -> itemCount
+		}
+	}
+
+	/** One fixture run: how long it took, and how much of it was scored. */
+	private data class RunPlan(val seconds: Float, val scored: Scored)
+
+	/**
+	 * The three runs each drill gets, oldest first - the order a runs file is held in.
+	 *
+	 * Three is the whole set on purpose: the point is one run of each shape in [Scored], and a
+	 * fourth would only be more rows to read past when an agent dumps the stats table.
+	 *
+	 * 83.4f is not a round number by accident. It has no exact binary form, so it reaches the
+	 * file as 83.4000015258789 - DrillRunsRepository stores a Float as a Double, since org.json
+	 * has no float - and reads back as exactly 83.4f again. That makes the fixture carry the one
+	 * case the round trip has to get right, and it is also the number an agent comparing the
+	 * file's TEXT against "83.4" would trip over.
+	 */
+	private val RUN_PLANS = listOf(
+		RunPlan(83.4f, Scored.NONE),
+		RunPlan(96.5f, Scored.HALF),
+		RunPlan(120.0f, Scored.ALL)
+	)
+
+	/**
+	 * [kind]'s three runs, oldest first.
+	 *
+	 * ONE generator per drill, advanced across its runs in order, rather than a fresh
+	 * Random(seed) inside each: seeding per run would hand all three the identical set, which
+	 * for Poker means three identical shuffles and for Numbers a grid the tester learns by
+	 * heart. Determinism comes from the seed, not from re-seeding.
+	 *
+	 * The set itself comes from [DrillOps.generate] - the same call DrillScreen.freshItems
+	 * makes - so a seeded run holds exactly what a live one would. It is also what lets the card
+	 * fixtures carry the real suit glyphs while this file stays pure ASCII, since the glyphs are
+	 * spelled as escapes once, in DrillOps, and never typed again.
+	 *
+	 * The item count is read off [SETTINGS_FIXTURE] rather than written out again here, so a
+	 * seeded Numbers run and a fresh set generated from the seeded settings are always the same
+	 * size. No cap is applied on the way past, unlike DrillScreen.freshItems: that guards a
+	 * hand-edited settings.json, and this count comes from the fixture two lines up.
+	 */
+	private fun runFixture(kind: DrillKind): List<DrillRun> {
+		val random = Random(RUN_RANDOM_SEED)
+		val itemCount = kind.itemCount(SETTINGS_FIXTURE)
+		return RUN_PLANS.mapIndexed { index, plan ->
+			// Keyed on the drill's ordinal, so each drill owns its own block of hours and no
+			// two runs anywhere in the seeded root share a startedAt. An hour apart also means
+			// the When column - MM-dd HH:mm:ss, rendered in the DEVICE's zone - tells them
+			// apart at a glance rather than by their last two digits.
+			val startedAt =
+				RUNS_BASE_MILLIS + (kind.ordinal * RUN_PLANS.size + index) * RUN_STEP_MILLIS
+			DrillRun(
+				// id IS startedAt rendered, which is what DrillScreen mints and what Models.kt
+				// documents as the invariant. DrillScreen carries an openId precisely because a
+				// HAND-EDITED file can break that - so a fixture spelling an id of its own
+				// would quietly point every test-mode reopen at the hand-edit path instead of
+				// at the one a real run takes.
+				id = startedAt.toString(),
+				startedAt = startedAt,
+				seconds = plan.seconds,
+				items = scoredItems(
+					DrillOps.generate(kind, itemCount, random),
+					plan.scored.markedCount(itemCount)
+				)
+			)
+		}
+	}
+
+	/**
+	 * [items] with the first [markedCount] of them marked, every [WRONG_EVERY]th of those WRONG.
+	 *
+	 * Marks the FRONT of the set rather than a scattering of it, because that is the shape
+	 * scoring actually leaves behind: the user works down the grid and stops. A run marked at
+	 * random would be a state the app cannot reach by tapping.
+	 *
+	 * Positional rather than random for a second reason too - the marks stay put no matter what
+	 * the generator did, so the right/wrong counts of every fixture run can be worked out on
+	 * paper and checked against the stats table without opening a single grid.
+	 */
+	private fun scoredItems(items: List<DrillItem>, markedCount: Int): List<DrillItem> =
+		items.mapIndexed { index, item ->
+			when {
+				index >= markedCount -> item
+				index % WRONG_EVERY == WRONG_EVERY - 1 -> item.copy(status = ItemStatus.WRONG)
+				else -> item.copy(status = ItemStatus.RIGHT)
+			}
+		}
 }
