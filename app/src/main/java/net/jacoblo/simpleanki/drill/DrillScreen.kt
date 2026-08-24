@@ -135,12 +135,38 @@ fun DrillScreen(
 		onCloseRun()
 	}
 
-	// Adopting an opened run. Keyed on the id and NOT on the run itself, because the caller
-	// may well hand back the run this screen just autosaved: keyed on the object, every
-	// scoring tap would re-adopt and shove the screen back to PAST_RUN mid-edit. A null id
-	// does nothing at all - the caller reaching null is New's own doing, already handled.
+	// Adopting an opened run, and RELEASING one the caller has dropped. Keyed on the id and
+	// NOT on the run itself, because the caller may well hand back the run this screen just
+	// autosaved: keyed on the object, every scoring tap would re-adopt and shove the screen
+	// back to PAST_RUN mid-edit.
+	//
+	// The release half is what makes the drawer entry for the drill you are ALREADY on do
+	// anything. It hands back Screen.Drill(kind, null), the same null DrillRoute resolves an
+	// unopenable id to - and an effect that could only adopt would leave the past run's grid on
+	// screen with its clock still frozen and Start and Done still dead, New being the one way
+	// out of a drill the user had just asked for by name.
 	LaunchedEffect(openRun?.id) {
-		val run = openRun ?: return@LaunchedEffect
+		val run = openRun
+		if (run == null) {
+			// The caller dropped the open run: the drawer re-selecting this drill, or a
+			// hand-edit that removed the run from the file. A fresh live drill is what
+			// DrillRoute documents that null as meaning, so fall back to one.
+			//
+			// Guarded on [openId], and the guard is the load-bearing half. The caller's run
+			// list starts EMPTY and is filled by the ON_RESUME its observer is added by, so
+			// the first frame of a stats-row tap or a picked run has openRun null with the id
+			// already in the screen argument. Unguarded, that frame would call freshSet and
+			// bounce the caller back to Screen.Drill(kind, null), and the run the user asked
+			// for would never get to adopt at all. Releasing needs a run to release.
+			//
+			// It ends the only path back here as well. freshSet raises onCloseRun, whose reply
+			// is the very Screen.Drill(kind, null) that got here - equal to what the caller
+			// already holds, so the assignment does not even invalidate - and were it to
+			// arrive anyway, null is already this effect's key, so it does not re-key and this
+			// branch is not re-entered. Three separate reasons it cannot loop.
+			if (openId != null) freshSet()
+			return@LaunchedEffect
+		}
 		items = run.items
 		startedAt = run.startedAt
 		seconds = run.seconds

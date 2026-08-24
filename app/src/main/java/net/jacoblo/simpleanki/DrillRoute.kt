@@ -226,11 +226,17 @@ fun DrillStatsRoute(container: AppContainer, kind: DrillKind, onSelect: (Screen)
  * edit has to show what the file now says.
  *
  * ONE case is deliberately outside that promise, because it is not this state's to keep: a run
- * already OPEN on the drill screen. DrillScreen adopts through LaunchedEffect(openRun?.id), which
- * does not re-key when the id has not changed, so the grid keeps the items it is holding and the
- * next scoring tap upserts them back over the hand-edit - resurrecting the run outright if the
- * edit had deleted it. Editing the run you are standing in is the one edit that does not take;
- * every other route to a run - the picker, a stats row - re-enters the screen and so re-reads.
+ * already OPEN on the drill screen, hand-edited in a way that KEEPS its id. DrillScreen adopts
+ * through LaunchedEffect(openRun?.id), which does not re-key when the id has not changed, so the
+ * grid keeps the items it is holding and the next scoring tap upserts them back over the edit.
+ * Rewriting the run you are standing in is the one edit that does not take; every other route to
+ * a run - the picker, a stats row - re-enters the screen and so re-reads.
+ *
+ * DELETING that run is a different case and does take. It resolves [openRun] to null, which DOES
+ * re-key the effect, and DrillScreen answers a null by falling back to a fresh live drill rather
+ * than by holding a run the file no longer has. That is the same null the drawer hands back when
+ * the drill you are already on is re-selected, and it is what the note on openRun above means by
+ * an unresolvable id being a fresh drill - in place, and not only on the way in.
  *
  * Read from the lifecycle observer ALONE, with no separate first load. Adding an observer to an
  * owner that is already resumed dispatches ON_RESUME to it there and then, so entering the
