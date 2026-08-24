@@ -1,11 +1,12 @@
 /*
  * The Runs button's picker: one drill's recent runs, one tappable line each.
  *
- * The ordering is asked of DrillStatsTable.order under that object's own default sort rather
- * than spelled out here. "Newest first" is one rule with one tie-break, and a second copy of it
- * would agree today and drift the first time either was touched - leaving the picker listing
- * runs in an order the stats table contradicts, which is not a disagreement anybody would think
- * to go looking for.
+ * Holds layout and nothing else. The ordering is asked of DrillStatsTable.order under that
+ * object's own default sort, and each of the three figures on a line is asked of the very
+ * function the matching stats column is drawn with. "Newest first", "when a run was" and "how
+ * it scored" are one rule each, and a second copy of any of them would agree today and drift the
+ * first time either was touched - leaving the picker contradicting the table it exists to help
+ * the user get back to, which is not a disagreement anybody would think to go looking for.
  *
  * The cap is the whole difference between this and the stats screen: this lists the last few
  * runs so one can be reopened quickly, that one holds every run there is.
@@ -25,13 +26,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import net.jacoblo.simpleanki.data.DrillRun
-import net.jacoblo.simpleanki.table.TableEngine
-import java.time.Instant
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 /**
  * How many runs the picker lists.
@@ -73,10 +71,12 @@ fun RunPicker(
 				// failed to load, so it says so instead.
 				Text(text = "No runs yet.", style = MaterialTheme.typography.bodyMedium)
 			} else {
-				// A scrolling Column and not a LazyColumn. Fifty short lines are nothing to lay
-				// out at once, and a lazy list needs a bounded height that a dialog's content
-				// slot does not promise: given an unbounded one it throws, where this merely
-				// stops needing to scroll.
+				// A scrolling Column and not a LazyColumn, and not for want of a bounded
+				// height: AlertDialog gives its text slot a weighted Box, so the constraint
+				// here is bounded and a lazy list would work perfectly well. It is a size
+				// judgement. [PICKER_LIMIT] lines of one Text each are nothing to lay out at
+				// once, so recycling would buy nothing and cost the stable keys that a lazy
+				// list needs to not reuse one run's row for another.
 				Column(Modifier.verticalScroll(rememberScrollState())) {
 					for (run in recent) {
 						RunLine(run = run, onPick = onPick)
@@ -105,34 +105,31 @@ private fun RunLine(run: DrillRun, onPick: (DrillRun) -> Unit) {
 			.fillMaxWidth()
 			.clickable { onPick(run) }
 			.padding(vertical = 14.dp),
-		style = MaterialTheme.typography.bodyMedium
+		// Monospaced, which is the only thing that makes the three figures line up into columns:
+		// the separators in [lineFor] are literal spaces, and in a proportional face an
+		// accuracy of "-", "86%" or "100%" would leave fifty lines ragged. The content is
+		// digits, colons and a percent sign, so nothing here suffers for the face.
+		style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
 	)
 }
 
 /**
  * `08-24 14:32:07   01:12   86%` - when the run was, how long it took, and how it scored.
  *
- * Dated with the pattern DrillStatsTable's When column uses and timed through the very same
- * [DrillOps.minutesSeconds], so a line here and that run's row in the stats table read
- * identically. That is what lets a user who spotted a run in the table pick it out of this
- * list. The date pattern is a third copy of the one TableEngine holds - DrillStatsTable's own
- * note explains why the second copy exists - and nothing but hand keeps the three in step.
+ * Every one of the three is asked of the function the matching stats column is drawn with, so a
+ * line here and that run's row in the table are the same characters by construction rather than
+ * by promise. That is what lets a user who spotted a run in the table pick it back out of this
+ * list, and it is why none of the three is formatted here: a hand copy would read identically
+ * on the day it was written, which is exactly what makes a later drift invisible.
  *
- * The accuracy is a whole percentage, matching that Accuracy column rather than the tally on
- * the drill screen, or [TableEngine.EMPTY_CELL] for the empty run that only a hand-edited file
- * can produce. See [DrillRun.accuracy] for why that case is a dash and not a zero.
+ * The accuracy comes back as [net.jacoblo.simpleanki.table.TableEngine.EMPTY_CELL] for the empty
+ * run only a hand-edited file can produce - see [DrillRun.accuracy] for why that case is a dash
+ * and not a zero.
+ *
+ * The zone is fetched per call rather than held, so a device that crosses a timezone while the
+ * app is alive dates the next line it draws in the zone it is now in.
  */
 private fun lineFor(run: DrillRun): String {
-	val started = WHEN_FORMATTER.withZone(ZoneId.systemDefault())
-		.format(Instant.ofEpochMilli(run.startedAt))
-	val accuracy = run.accuracy?.let { "%.0f%%".format(Locale.ROOT, it * 100) }
-		?: TableEngine.EMPTY_CELL
-	return "$started   ${DrillOps.minutesSeconds(run.seconds)}   $accuracy"
+	val started = DrillStatsTable.whenText(run, ZoneId.systemDefault())
+	return "$started   ${DrillOps.minutesSeconds(run.seconds)}   ${DrillStatsTable.accuracyText(run)}"
 }
-
-/**
- * The zone is applied per call rather than baked in here, so a device that crosses a timezone
- * while the app is alive dates the next line it draws in the zone it is now in.
- */
-private val WHEN_FORMATTER: DateTimeFormatter =
-	DateTimeFormatter.ofPattern("MM-dd HH:mm:ss", Locale.ROOT)

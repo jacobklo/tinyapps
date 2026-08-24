@@ -112,7 +112,16 @@ object DrillStatsTable {
 			visibleRowCount = rows.size,
 			// Nothing here can go wrong the way a view can: the columns are fixed, so there
 			// is no unknown column id and no formula to fail.
-			warnings = emptyList()
+			warnings = emptyList(),
+			// The same fixed columns seen from the page's side. With no views.json behind
+			// them there is nowhere for the header menu's Hide, Freeze/Unfreeze or two Moves
+			// to persist, so each would revert on the next render - and Unfreeze would do
+			// lasting damage before it did, for the reason [COLUMNS] gives about the frozen
+			// pair. Decided here and not by the screen that hosts the table: [render] is what
+			// FIXES these columns, so it is the only place that knows the four have nowhere
+			// to go, and no caller of it could sensibly ask for true. Sorting is untouched -
+			// see RenderedTable.viewEditable, which spells out the whole of what is suppressed.
+			viewEditable = false
 		)
 	}
 
@@ -203,9 +212,7 @@ object DrillStatsTable {
 			frozen = true,
 			type = ColumnType.TIME,
 			comparator = ::whenComparator,
-			cell = { run, _, zone ->
-				WHEN_FORMATTER.withZone(zone).format(Instant.ofEpochMilli(run.startedAt))
-			}
+			cell = { run, _, zone -> whenText(run, zone) }
 		),
 		StatsColumn(
 			id = ID_TIME,
@@ -245,9 +252,7 @@ object DrillStatsTable {
 			frozen = false,
 			type = ColumnType.NUMBER,
 			comparator = sortsBy { it.accuracy },
-			// A fraction on the way in, a percentage on the way out. Rendering the stored
-			// 0.8 would read as eight tenths of one percent under a header saying Accuracy.
-			cell = { run, _, _ -> percent(run.accuracy) }
+			cell = { run, _, _ -> accuracyText(run) }
 		),
 		StatsColumn(
 			id = ID_SEC_PER_ITEM,
@@ -343,17 +348,43 @@ object DrillStatsTable {
 	private val WHEN_FORMATTER = DateTimeFormatter.ofPattern("MM-dd HH:mm:ss", Locale.ROOT)
 
 	/**
-	 * A fraction as a whole percentage, or the dash for a run that has none.
+	 * When [run] started, as the [ID_WHEN] column draws it.
 	 *
-	 * No decimal place, unlike TableEngine's PERCENT format: an accuracy over 52 cards moves
-	 * in steps of about two points, so a tenth of a percent is a digit that carries no
-	 * information and costs the column width to show.
+	 * Internal rather than private because the run picker dates its lines with it too, and the
+	 * picker exists to find a run the user already spotted in this table: the two have to read
+	 * the same or the line and the row stop being recognisable as one run. A second hand-written
+	 * copy of the pattern would agree today and drift the first time either was touched, which
+	 * is the same argument this object makes for [order] serving both the rows and the row-tap
+	 * mapping.
+	 *
+	 * The zone still arrives from the caller, so this object keeps no clock of its own; the
+	 * default is here only so a caller with no opinion does not have to fetch one.
 	 */
-	private fun percent(fraction: Float?): String =
-		if (fraction == null) TableEngine.EMPTY_CELL
-		else "%.0f%%".format(Locale.ROOT, fraction * 100)
+	internal fun whenText(run: DrillRun, zone: ZoneId = ZoneId.systemDefault()): String =
+		WHEN_FORMATTER.withZone(zone).format(Instant.ofEpochMilli(run.startedAt))
 
-	/** Two decimals, or the dash. Split from [percent] only so each is one expression. */
+	/**
+	 * How [run] scored, as the [ID_ACCURACY] column draws it: a whole percentage, or the dash
+	 * for a run with no accuracy at all.
+	 *
+	 * A fraction on the way in and a percentage on the way out, because rendering the stored 0.8
+	 * would read as eight tenths of one percent under a header saying Accuracy.
+	 *
+	 * No decimal place, unlike TableEngine's PERCENT format: an accuracy over 52 cards moves in
+	 * steps of about two points, so a tenth of a percent is a digit that carries no information
+	 * and costs the column width to show.
+	 *
+	 * Internal for the reason [whenText] gives - the picker scores its lines with it too.
+	 */
+	internal fun accuracyText(run: DrillRun): String {
+		val fraction = run.accuracy ?: return TableEngine.EMPTY_CELL
+		return "%.0f%%".format(Locale.ROOT, fraction * 100)
+	}
+
+	/**
+	 * Two decimals, or the dash. Private where [accuracyText] is internal, because [ID_SEC_PER_ITEM]
+	 * is a column of this table and of nothing else.
+	 */
 	private fun twoDecimals(value: Float?): String =
 		if (value == null) TableEngine.EMPTY_CELL else "%.2f".format(Locale.ROOT, value)
 

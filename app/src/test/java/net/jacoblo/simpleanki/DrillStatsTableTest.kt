@@ -10,6 +10,7 @@ import net.jacoblo.simpleanki.drill.DrillStatsTable
 import net.jacoblo.simpleanki.table.RenderedTable
 import net.jacoblo.simpleanki.table.TableEngine
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -97,6 +98,18 @@ class DrillStatsTableTest {
 	@Test
 	fun highlightEveryIsPassedThrough() {
 		assertEquals(7, render(emptyList(), highlightEvery = 7).highlightEvery)
+	}
+
+	@Test
+	fun theTableIsNotViewEditable() {
+		// The page reads this to decide whether a header menu offers Hide, Freeze/Unfreeze and
+		// the two Moves. These columns are fixed here in Kotlin with no views.json to save such
+		// an edit into, so all four would revert on the next render - and Unfreeze would send
+		// "When" to the RIGHT edge on the way, for the reason the frozen-column case above
+		// spells out. Asserted here rather than left to the screen that hosts the table,
+		// because a flag that damaging has to be covered somewhere a JVM test can reach.
+		assertFalse(render(emptyList()).viewEditable)
+		assertFalse(render(fourRuns(), kind = DrillKind.POKER).viewEditable)
 	}
 
 	// ---------------------------------------------------------------------------

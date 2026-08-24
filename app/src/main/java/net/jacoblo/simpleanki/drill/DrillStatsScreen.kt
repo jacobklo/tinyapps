@@ -36,8 +36,9 @@ private const val LOG_TAG = "SimpleAnkiTable"
  * @param runs every stored run of [kind], in storage order. Ordering is this screen's business
  *   and not the caller's, because the order the rows are drawn in and the order a tap is
  *   resolved against have to be the same one.
- * @param tableSettings read for the row-banding interval, and handed on to the page for the
- *   highlight colour, exactly as TableScreen does.
+ * @param tableSettings read here for the row-banding interval, and handed on to the page for the
+ *   highlight colour the way TableScreen hands it on. The interval is read HERE and not there,
+ *   because TableScreen takes it off the view it is rendering and a fixed table has no view.
  * @param onOpenRun raised by a row tap with the run that row stands for. The caller shows it on
  *   the drill screen.
  * @param onRendered fired after each render with the table that was produced. Wired to
@@ -61,19 +62,11 @@ fun DrillStatsScreen(
 	remember(kind) { sortState.value = DrillStatsTable.DEFAULT_SORT }
 	var sort by sortState
 
+	// The table already carries viewEditable = false, so the page leaves the header menu's four
+	// view items off by itself and this screen does nothing to suppress them - see the note at
+	// that argument in DrillStatsTable.render.
 	val table = remember(runs, kind, sort, tableSettings.highlightEvery) {
-		// viewEditable = false, which is what keeps Hide, Freeze/Unfreeze and the two Moves out
-		// of the page's header menu. These columns are fixed in Kotlin with no views.json
-		// behind them, so all four edits would revert on the next render - and Unfreeze would
-		// do lasting damage before it did, since "#" and "When" are frozen as a pair and
-		// Tabulator sends everything from the first unfrozen column rightwards to the far edge.
-		// The full account is on RenderedTable.viewEditable.
-		//
-		// Turned off here rather than inside render, because the flag describes the finished
-		// table rather than anything render decides, and it defaults to true for the
-		// view-backed tables that can genuinely persist all four.
 		DrillStatsTable.render(runs, kind, sort, tableSettings.highlightEvery)
-			.copy(viewEditable = false)
 	}
 
 	// The bridge is captured once by the WebView, so it must outlive recomposition - and [runs]
@@ -120,15 +113,24 @@ fun DrillStatsScreen(
 			onRowTap = { index ->
 				// Mapped through order() with the sort IN FORCE, which is the one thing this
 				// screen can get wrong. The rows were rendered from that same call, so index
-				// for index the two lists are the same one; mapping against [runs] itself would
-				// open a neighbour of the tapped row under every sort but the default - and
-				// under the default it would look perfectly correct.
+				// for index the two lists are the same one whenever the page's payload is
+				// current - which is every case but a tap that crosses a render, see below.
+				// Mapping against [runs] itself would instead open a neighbour of the tapped
+				// row under every sort but the default, and under the default it would look
+				// perfectly correct.
 				val run = DrillStatsTable.order(currentRuns, sort).getOrNull(index)
 				if (run == null) {
 					// The page reports an index into the payload it currently holds, and a tap
 					// can cross a render that shortened the table. Ignored rather than
 					// range-checked into a crash: there is no run to open, and the next render
 					// puts the page and this list back in step by itself.
+					//
+					// The same window has a quieter half that nothing here closes: an index
+					// still IN range after such a render resolves to a real but different run.
+					// Closing it would mean tracking which payload the page is actually showing,
+					// which is renderComplete threaded through this screen for a race the user
+					// has to tap inside a single frame to reach. TableScreen lives with the
+					// same one.
 					Log.w(LOG_TAG, "row tap $index outside ${currentRuns.size} runs")
 				} else {
 					// The id, because the failure this screen risks is opening the wrong run,
