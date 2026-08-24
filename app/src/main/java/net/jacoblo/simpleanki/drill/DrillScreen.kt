@@ -43,7 +43,6 @@ import kotlinx.coroutines.delay
 import net.jacoblo.simpleanki.data.DrillItem
 import net.jacoblo.simpleanki.data.DrillRun
 import net.jacoblo.simpleanki.data.Settings
-import java.util.Locale
 import kotlin.random.Random
 
 /**
@@ -334,16 +333,18 @@ private fun freshItems(kind: DrillKind, settings: Settings): List<DrillItem> =
 /**
  * The live tally, `40/50 = 80%`.
  *
- * Both figures come off the run rather than being counted here, so the percentage on screen
- * and the one in the stats table are the same rule - including that the denominator is the
- * whole count, which makes an unchecked item cost exactly what a missed one does.
+ * Every figure comes off the run - including the denominator, which is the whole count, so an
+ * unchecked item costs exactly what a missed one does. The percentage is FORMATTED by the stats
+ * table's own accuracyText rather than by a second "%.0f%%" written out here: the timer and that
+ * run's row are two renderings of one number, and a copy would be one edit away from disagreeing
+ * - take the column to a decimal place and this would go on saying 80% beside a row reading
+ * 80.0%. The same consolidation minutesSeconds and whenText already have.
  *
- * The percentage is dropped for an empty run, which only a hand-edited count of zero reaches.
+ * An empty run - which only a hand-edited count of zero reaches - therefore reads `0/0 = -`,
+ * the dash the rest of the feature prints for a figure that does not exist.
  */
-private fun tally(run: DrillRun): String {
-	val accuracy = run.accuracy ?: return "${run.right}/${run.count}"
-	return "%d/%d = %.0f%%".format(Locale.ROOT, run.right, run.count, accuracy * 100)
-}
+private fun tally(run: DrillRun): String =
+	"${run.right}/${run.count} = ${DrillStatsTable.accuracyText(run)}"
 
 
 private const val MILLIS_PER_SECOND = 1000f
