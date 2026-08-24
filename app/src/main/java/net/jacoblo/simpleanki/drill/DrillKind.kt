@@ -66,14 +66,14 @@ fun DrillKind.itemCount(settings: Settings): Int = when (this) {
 	DrillKind.POKER -> DrillOps.DECK_SIZE
 }
 
-/** The drawer entry and the title of the drill screen. */
+/** The drawer entry for the drill. */
 fun DrillKind.displayName(): String = when (this) {
 	DrillKind.NUMBERS -> "Numbers"
 	DrillKind.POKER -> "Poker"
 }
 
 /**
- * The drawer entry and the title of the stats screen.
+ * The drawer entry for the drill's stats screen.
  *
  * Built from [displayName] rather than spelled out per drill, so the two drawer entries for
  * one drill cannot drift into disagreeing about what that drill is called.

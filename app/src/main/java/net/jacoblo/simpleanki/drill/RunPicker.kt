@@ -38,7 +38,7 @@ import java.time.ZoneId
  * already more scrolling than that. Nothing is hidden by the cap: every older run is one drawer
  * entry away in the stats table, which caps nothing.
  */
-const val PICKER_LIMIT = 50
+const val MAX_PICKER_RUNS = 50
 
 /**
  * The dialog the Runs button opens - [runs] newest first, one tappable line each.
@@ -58,7 +58,7 @@ fun RunPicker(
 	onDismiss: () -> Unit
 ) {
 	val recent = remember(runs) {
-		DrillStatsTable.order(runs, DrillStatsTable.DEFAULT_SORT).take(PICKER_LIMIT)
+		DrillStatsTable.order(runs, DrillStatsTable.DEFAULT_SORT).take(MAX_PICKER_RUNS)
 	}
 	AlertDialog(
 		onDismissRequest = onDismiss,
@@ -74,7 +74,7 @@ fun RunPicker(
 				// A scrolling Column and not a LazyColumn, and not for want of a bounded
 				// height: AlertDialog gives its text slot a weighted Box, so the constraint
 				// here is bounded and a lazy list would work perfectly well. It is a size
-				// judgement. [PICKER_LIMIT] lines of one Text each are nothing to lay out at
+				// judgement. [MAX_PICKER_RUNS] lines of one Text each are nothing to lay out at
 				// once, so recycling would buy nothing and cost the stable keys that a lazy
 				// list needs to not reuse one run's row for another.
 				Column(Modifier.verticalScroll(rememberScrollState())) {
